@@ -128,6 +128,7 @@ class ActionDecoratorImpl(BaseDecoratorImpl):
    
     def _getLibDataType(self, name):
         ctor = Ctor.inst()
+        print("Action name: %s" % name)
         ds_t = ctor.ctxt().findDataTypeAction(name)
         if ds_t is None:
             ds_t = ctor.ctxt().mkDataTypeAction(name)

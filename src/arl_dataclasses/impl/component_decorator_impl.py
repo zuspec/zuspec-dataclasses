@@ -44,6 +44,9 @@ class ComponentDecoratorImpl(BaseDecoratorImpl):
         if ds_t is None:
             ds_t = ctor.ctxt().mkDataTypeComponent(name)
             ctor.ctxt().addDataTypeComponent(ds_t)
+
+            if ctor.ctxt().findDataTypeComponent(name) is None:
+                raise Exception("It's None Jim")
         else:
             raise Exception("Type %s is already registered" % name)
 
