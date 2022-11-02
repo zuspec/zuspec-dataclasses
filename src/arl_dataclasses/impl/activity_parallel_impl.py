@@ -1,5 +1,6 @@
 
 from .ctor import Ctor
+from .modelinfo_activity import ModelinfoActivity
 
 class ActivityParallelImpl(object):
 
@@ -13,11 +14,14 @@ class ActivityParallelImpl(object):
             "",
             scope_dt,
             True)
-        ctor_a.activity_scope().addActivity(scope_ft)
-        ctor_a.push_activity_scope(scope_dt)
+        scope_mi = ModelinfoActivity(scope_dt)
+        print("Parallel.__enter__")
+        ctor_a.add_activity(scope_ft)
+        ctor_a.push_activity_scope_mi(scope_mi)
 
     def __exit__(self, t, v, tb):
         ctor_a = Ctor.inst()
-        ctor_a.pop_activity_scope()
+        ctor_a.pop_activity_scope_mi()
+        print("Parallel.__leave__")
 
     

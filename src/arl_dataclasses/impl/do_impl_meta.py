@@ -27,25 +27,8 @@ class DoImplMeta(type):
         action_ti = TypeInfoAction.get(ti)
 
         print("DoImplMeta: %s" % str(action_ti.lib_typeobj), flush=True)
-        
-        # Add a field declaration to the activity scope
-        field_t = ctor.ctxt().mkTypeFieldPhy(
-            action_ti.info.T.__qualname__,
-            action_ti.lib_typeobj,
-            False,
-            vsc_ctxt.TypeFieldAttr.NoAttr,
-            None)
-        
-        ctor.bottom_up_mi().libobj.addField(field_t)
-        ctor.push_scope(None, field_t, True)
-        field = action_ti.createTypeInst()
-        ctor.pop_scope()
 
-        print("Scope for tempvar is: %s" % str(ctor.bottom_up_mi()))
-        field._modelinfo.idx = len(ctor.bottom_up_mi()._subfield_modelinfo)
-        ctor.bottom_up_mi().addSubfield(field._modelinfo)
-
-        print("field._modelinfo.parent=%s" % str(field._modelinfo._parent))
+        field_t, field = ctor_a.add_anonymous_traversal(action_ti)
 
         # Link the field into the containing scope
 
@@ -65,7 +48,7 @@ class DoImplMeta(type):
             dt_traverse,
             True)
         
-        ctor.bottom_up_mi().libobj.addActivity(ft_traverse)
+        ctor_a.add_activity(ft_traverse)
 
         
         # Add a traversal statement to the current activity scope

@@ -67,6 +67,7 @@ class Ctor(object):
             type_mode = self._scope_s[-1]._type_mode
         s = CtorScope(facade_obj, lib_scope, type_mode)
         self._scope_s.append(s)
+        self.push_bo
         return s
         
     def pop_scope(self):
@@ -121,15 +122,46 @@ class Ctor(object):
         self._activity_l.clear()
         return ret
     
-    def push_activity_scope(self, s):
-        self._activity_s.append(s)
+    def push_activity_scope_mi(self, s_mi):
+        from vsc_dataclasses.impl import Ctor as VscCtor
+        VscCtor.inst().push_bottom_up_mi(s_mi)
+#        self._activity_s.append(s)
     
-    def pop_activity_scope(self):
-        self._activity_s.pop()
+    def pop_activity_scope_mi(self):
+        from vsc_dataclasses.impl import Ctor as VscCtor
+        VscCtor.inst().pop_bottom_up_mi()
+#        self._activity_s.pop()
+
+    def add_activity(self, activity_ft):
+        """Adds an activity field type to the containing activity data-type scope"""
+        from vsc_dataclasses.impl import Ctor as VscCtor
+        VscCtor.inst().bottom_up_mi().libobj.addActivity(activity_ft)
+
+    def add_anonymous_traversal(self, action_ti):
+        from vsc_dataclasses.impl import Ctor as VscCtor
+        import vsc_dataclasses.impl.context as vsc_ctxt
+        ctor = VscCtor.inst()
+
+        # Add a field declaration to the activity scope
+        field_t = ctor.ctxt().mkTypeFieldPhy(
+            action_ti.info.T.__qualname__,
+            action_ti.lib_typeobj,
+            False,
+            vsc_ctxt.TypeFieldAttr.NoAttr,
+            None)
         
-    def activity_scope(self):
-        return self._activity_s[-1]
-    
+        ctor.bottom_up_mi().libobj.addField(field_t)
+        ctor.push_scope(None, field_t, True)
+        field = action_ti.createTypeInst()
+        ctor.pop_scope()
+
+        print("Scope for tempvar is: %s" % str(ctor.bottom_up_mi()))
+        field._modelinfo.idx = len(ctor.bottom_up_mi()._subfield_modelinfo)
+        ctor.bottom_up_mi().addSubfield(field._modelinfo)
+        print("field._modelinfo.parent=%s" % str(field._modelinfo._parent))
+
+        return (field_t, field)
+        
     def push_constraint_decl(self, c):
         self._constraint_l.append(c)
         

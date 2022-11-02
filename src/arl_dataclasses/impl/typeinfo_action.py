@@ -70,22 +70,23 @@ class TypeInfoAction(TypeInfo):
         ctor_a.push_activity_mode()
         for a in self.activities:
             activity_s = ctor_a.ctxt().mkDataTypeActivitySequence()
-            mi_activity = ModelinfoActivity(activity_s)
-            ctor.push_bottom_up_mi(mi_activity)
+            activity_mi = ModelinfoActivity(activity_s)
             print("activity_s: %s" % str(activity_s))
             activity_f = ctor_a.ctxt().mkTypeFieldActivity(
                     "activity",
                     activity_s,
                     True)
+
+            # Add the activity to the action's type object
             self.lib_typeobj.addActivity(activity_f)
             print("activity index=%d" % activity_f.getIndex())
             
-            ctor_a.push_activity_scope(activity_s)
+            ctor_a.push_activity_scope_mi(activity_mi)
             print("--> activity")
             a.func(obj)
             print("<-- activity %d", len(activity_s.getActivities()))
-            ctor.pop_bottom_up_mi()
-            ctor_a.pop_activity_scope()
+            ctor_a.pop_activity_scope_mi()
+
         ctor_a.pop_activity_mode()
         ctor.pop_scope()
         pass
