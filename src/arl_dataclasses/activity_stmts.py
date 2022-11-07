@@ -7,6 +7,7 @@ from .impl.activity_sequence_meta_t import ActivitySequenceMetaT
 from .impl.do_impl import DoImpl
 from .impl.activity_parallel_impl import ActivityParallelImpl
 from .impl.activity_parallel_meta_t import ActivityParallelMetaT
+from .impl.activity_replicate_impl import ActivityReplicateImpl
 from .impl.activity_sequence_impl import ActivitySequenceImpl
 
 from .impl.activity_block_meta_t import ActivityBlockMetaT
@@ -14,7 +15,10 @@ from .impl.do_impl_meta import DoImplMeta
 
 
 class parallel(ActivityParallelImpl, metaclass=ActivityParallelMetaT):
-        pass
+    pass
+
+class replicate(ActivityReplicateImpl):
+    pass
 
 class sequence(ActivitySequenceImpl,metaclass=ActivitySequenceMetaT):
     pass

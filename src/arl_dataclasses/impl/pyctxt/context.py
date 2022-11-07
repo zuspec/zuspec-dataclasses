@@ -3,6 +3,10 @@ import arl_dataclasses.impl.context as ctxt_api
 import vsc_dataclasses.impl.pyctxt as vsc_pyctxt
 from .data_type_action import DataTypeAction
 from .data_type_component import DataTypeComponent
+from .data_type_activity_replicate import DataTypeActivityReplicate
+from .data_type_activity_sequence import DataTypeActivitySequence
+from .data_type_activity_traverse import DataTypeActivityTraverse
+from .type_field_activity import TypeFieldActivity
 
 class Context(vsc_pyctxt.Context,ctxt_api.Context):
 
@@ -18,7 +22,7 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
             return None
     
     def mkDataTypeAction(self, name) -> DataTypeAction:
-        return DataTypeAction(name)
+        return DataTypeAction(self, name)
 
     def addDataTypeAction(self, t : DataTypeAction) -> bool:
         if t._name not in self._action_t_m.keys():
@@ -42,3 +46,16 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
             return True
         else:
             return False
+
+    def mkDataTypeActivityReplicate(self, count) -> 'DataTypeActivityReplicate':
+        return DataTypeActivityReplicate(count)
+
+    def mkDataTypeActivitySequence(self) -> 'DataTypeActivitySequence':
+        return DataTypeActivitySequence()
+
+    def mkDataTypeActivityTraverse(self, target, with_c):
+        return DataTypeActivityTraverse(target, with_c)
+
+    def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
+        return TypeFieldActivity(name, type)
+

@@ -23,6 +23,40 @@ class DataTypeAction(vsc_ctxt.DataTypeStruct):
     def activities(self) -> List['TypeFieldActivity']:
         raise NotImplementedError('activities')
 
+class DataTypeActivity(vsc_ctxt.DataType):
+
+    def mkActivity(self, ctxt : vsc_ctxt.ModelBuildContext, type : 'TypeFieldActivity'):
+        raise NotImplementedError("mkActivity")
+
+
+class DataTypeActivityScope(DataTypeActivity, vsc_ctxt.DataTypeStruct):
+
+    def getActivities(self) -> List['TypeFieldActivity']:
+        raise NotImplementedError("getActivities")
+
+    def addActivity(self, a : 'TypeFieldActivity'):
+        raise NotImplementedError("addActivity")
+    
+    def addActivityField(self, a : 'TypeFieldActivity'):
+        raise NotImplementedError("addActivityField")
+
+class DataTypeActivityReplicate(DataTypeActivityScope):
+
+    def getCount(self) -> 'TypeExpr':
+        pass
+
+class DataTypeActivityTraverse(DataTypeActivity):
+
+    def getTarget(self) -> vsc_ctxt.TypeExprFieldRef:
+        raise NotImplementedError("getTarget")
+
+    def getWithC(self) -> 'vsc_ctxt.TypeConstraint':
+        raise NotImplementedError("getWithC")
+
+    def setWithC(self, c : 'vsc_ctxt.TypeConstraint'):
+        raise NotImplementedError("setWithC")
+
+
 class DataTypeComponent(vsc_ctxt.DataTypeStruct):
 
     def getActionTypes(self) -> List[DataTypeAction]:
@@ -40,11 +74,28 @@ class FlowObjKindE(IntEnum):
     State    = 2
     Stream   = 3
 
+class ModelBuildContext(vsc_ctxt.ModelBuildContext):
+
+    def __init__(self, ctxt):
+        super().__init__(ctxt)
+    pass
+
 class ModelEvalNodeT(IntEnum):
     Action = 0
 
+class ModelFieldComponent(vsc_ctxt.ModelField):
+
+    def initCompTree(self):
+        raise NotImplementedError("initCompTree")
+
+
 class PoolBindKind(IntEnum):
     All = 0
+
+class TypeFieldActivity(vsc_ctxt.TypeField):
+
+    def mkActivity(self, ctxt : ModelBuildContext):
+        raise NotImplementedError("mkActivity")
 
 class Context(vsc.impl.Context):
 
@@ -59,6 +110,9 @@ class Context(vsc.impl.Context):
 
     def mkDataTypeActivityParallel(self) -> 'DataTypeActivityParallel':
         raise NotImplementedError("mkDataTypeActivityParallel")
+
+    def mkDataTypeActivityReplicate(self, count) -> 'DataTypeActivityReplicate':
+        raise NotImplementedError("mkDataTypeActivityReplicate")
 
     def mkDataTypeActivitySchedule(self) -> 'DataTypeActivitySchedule':
         raise NotImplementedError("mkDataTypeActivitySchedule")
@@ -77,5 +131,8 @@ class Context(vsc.impl.Context):
 
     def addDataTypeComponent(self, t : 'DataTypeComponent') -> bool:
         raise NotImplementedError("addDataTypeComponent")
+
+    def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
+        raise NotImplementedError("mkTypeFieldActivity")
 
     pass
