@@ -34,7 +34,7 @@ class ActivityReplicateImpl(object):
 
     def __enter__(self):
         ctor_a = Ctor.inst()
-        scope_dt = ctor_a.ctxt().mkDataTypeActivityReplicate(self._count)
+        scope_dt = ctor_a.ctxt().mkDataTypeActivityReplicate(self._count.model)
         scope_ft = ctor_a.ctxt().mkTypeFieldActivity(
             "",
             scope_dt,
