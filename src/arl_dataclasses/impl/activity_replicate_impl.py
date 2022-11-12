@@ -33,6 +33,7 @@ class ActivityReplicateImpl(object):
         ctor.pop_expr(self._count)
 
     def __enter__(self):
+        print("Replicate.__enter__")
         ctor_a = Ctor.inst()
         scope_dt = ctor_a.ctxt().mkDataTypeActivityReplicate(self._count.model)
         scope_ft = ctor_a.ctxt().mkTypeFieldActivity(
@@ -44,10 +45,8 @@ class ActivityReplicateImpl(object):
         ctor_a.add_activity(scope_ft)
         ctor_a.push_activity_scope_mi(scope_mi)
 
-        pass
-
     def __exit__(self, t, v, tb):
+        print("Replicate.__exit__")
         ctor_a = Ctor.inst()
         ctor_a.pop_activity_scope_mi()
-        pass
 
