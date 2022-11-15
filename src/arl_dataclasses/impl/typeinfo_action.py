@@ -15,13 +15,13 @@ class TypeInfoAction(TypeInfo):
 
     def init(self, obj, args, kwargs, modelinfo=None, ctxt_b=None):
         ctor_vsc = vsc_impl.Ctor.inst()
-        print("==> Action.init %d" % len(ctor_vsc._scope_s))
+        print("==> Action.init %s %d" % (self.info.T.__name__, len(ctor_vsc._scope_s)))
 
         if ctxt_b is None:
             ctxt_b = ctor_vsc.ctxt().mkModelBuildContext(Ctor.inst().ctxt())
         
         super().init(obj, args, kwargs, modelinfo, ctxt_b)
-        print("<== Action.init %d" % len(ctor_vsc._scope_s))
+        print("<== Action.init %s %d" % (self.info.T.__name__, len(ctor_vsc._scope_s)))
 
     @property
     def component_ti(self):
@@ -60,7 +60,7 @@ class TypeInfoAction(TypeInfo):
         field._modelinfo.name = name
         field._modelinfo.idx = idx
         modelinfo_p.addSubfield(field._modelinfo)
-        ctor.pop_scope()
+
         return field
 
     def elabActivities(self, obj):

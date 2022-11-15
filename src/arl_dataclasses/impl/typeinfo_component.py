@@ -57,10 +57,10 @@ class TypeInfoComponent(TypeInfo):
         # we always need to provide a Field (ModelField/TypeField) as the 
         # parent. 
 
-        print("createInst: pre-size: %d" % len(vsc_ctor._scope_s))
+        print("TypeInfoComponent.createInst: pre-size: %d" % len(vsc_ctor._scope_s))
         vsc_ctor.push_scope(None, modelinfo_p.libobj.getField(idx), vsc_ctor.is_type_mode())
         field = self.info.Tp()
-        print("createInst: post-size: %d" % len(vsc_ctor._scope_s))
+        print("TypeInfoComponent.createInst: post-size: %d" % len(vsc_ctor._scope_s))
 
         field._modelinfo.name = name
         field._modelinfo.idx = idx

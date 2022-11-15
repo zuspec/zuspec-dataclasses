@@ -101,8 +101,8 @@ class ActionImpl(ImplBase):
 
         # How do we determine where this field is instanced?
         target = ctor_a.ctxt().mkTypeExprFieldRef()
+        target.addIdxRef(self._modelinfo._libobj.getIndex())
         target.addActiveScopeRef(-1)
-        target.addIdxRef(self._modelinfo._lib_obj.getIndex())
 
         dt_traverse = ctor_a.ctxt().mkDataTypeActivityTraverse(
             target,
@@ -112,9 +112,9 @@ class ActionImpl(ImplBase):
             dt_traverse,
             True)
 
-        ctor_a.activity_scope().addActivity(ft_traverse)
+        ctor_a.add_activity(ft_traverse)
 
-        return ActivityTraverseClosure(dt_traverse)
+        return ActivityTraverseClosure(dt_traverse, self)
     
     @staticmethod
     def getattribute(self, name):

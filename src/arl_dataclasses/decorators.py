@@ -46,9 +46,9 @@ def component(*args, **kwargs):
 def buffer(*args, **kwargs): 
     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
         # No-argument form
-        return StructDecoratorImpl(StructKindE.Buffer, {})(args[0])
+        return StructDecoratorImpl(StructKindE.Buffer, [], {})(args[0])
     else:
-        return ActionDecoratorImpl(StructKindE.Buffer, kwargs)
+        return ActionDecoratorImpl(StructKindE.Buffer, args, kwargs)
     
 def resource(*args, **kwargs): 
     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
