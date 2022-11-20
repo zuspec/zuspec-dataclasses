@@ -102,7 +102,7 @@ class ActionImpl(ImplBase):
         # How do we determine where this field is instanced?
         target = ctor_a.ctxt().mkTypeExprFieldRef()
         target.addIdxRef(self._modelinfo._libobj.getIndex())
-        target.addActiveScopeRef(-1)
+        target.addRootRef()
 
         dt_traverse = ctor_a.ctxt().mkDataTypeActivityTraverse(
             target,

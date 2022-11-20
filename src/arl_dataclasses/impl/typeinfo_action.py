@@ -14,13 +14,15 @@ class TypeInfoAction(TypeInfo):
         self._component_ti = None
 
     def init(self, obj, args, kwargs, modelinfo=None, ctxt_b=None):
+        ctor_a = Ctor.inst()
         ctor_vsc = vsc_impl.Ctor.inst()
         print("==> Action.init %s %d" % (self.info.T.__name__, len(ctor_vsc._scope_s)))
 
         if ctxt_b is None:
             ctxt_b = ctor_vsc.ctxt().mkModelBuildContext(Ctor.inst().ctxt())
-        
+
         super().init(obj, args, kwargs, modelinfo, ctxt_b)
+
         print("<== Action.init %s %d" % (self.info.T.__name__, len(ctor_vsc._scope_s)))
 
     @property
@@ -66,7 +68,10 @@ class TypeInfoAction(TypeInfo):
     def elabActivities(self, obj):
         ctor_a = Ctor.inst()
         ctor = vsc_impl.Ctor.inst()
-        ctor.push_scope(None, None, True) # Ensure we're in type mode
+        # Save the current scope stack and clear it. This allows us to
+        # treat the activity scope as a distinct scope
+        scopes = ctor.save_scopes()
+        ctor.push_type_mode()
         ctor_a.push_activity_mode()
         for a in self.activities:
             activity_s = ctor_a.ctxt().mkDataTypeActivitySequence()
@@ -87,8 +92,9 @@ class TypeInfoAction(TypeInfo):
             print("<-- activity %d", len(activity_s.getActivities()))
             ctor_a.pop_activity_scope_mi()
 
+        ctor.pop_type_mode()
         ctor_a.pop_activity_mode()
-        ctor.pop_scope()
+        ctor.restore_scopes(scopes)
         pass
 
     @staticmethod

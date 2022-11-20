@@ -24,6 +24,8 @@ from .action_impl import ActionImpl
 from .exec_kind_e import ExecKindE
 from .ctor import Ctor
 from .typeinfo_action import TypeInfoAction
+from .typeinfo_flow_obj_ref import TypeInfoFlowObjRef
+from .typeinfo_claim import TypeInfoClaim
 
 class ActionDecoratorImpl(BaseDecoratorImpl):
 
@@ -58,7 +60,8 @@ class ActionDecoratorImpl(BaseDecoratorImpl):
             obj_t_ti = typeworks.TypeInfo.get(value.T, False)
             if obj_t_ti is None:
                 raise Exception("Type %s is not registered" % str(value.T))
-            
+
+            # obj_t_base_ti is the type info for the buffer/state/stream/resource type
             obj_t_base_ti = TypeInfo.get(obj_t_ti, False)
 
             if issubclass(value, InputOutputT):
@@ -66,13 +69,15 @@ class ActionDecoratorImpl(BaseDecoratorImpl):
                     key,
                     obj_t_base_ti.lib_typeobj,
                     value.IsInput)
+                field_ti = TypeInfoFlowObjRef(key, obj_t_base_ti, value.IsInput)
             else:
                 field_obj = ctor_a.ctxt().mkTypeFieldClaim(
                     key,
                     obj_t_base_ti.lib_typeobj,
                     value.IsLock)
+                field_ti = TypeInfoClaim(key, obj_t_base_ti, value.IsLock)
 
-            field_ti = vsc_impl.TypeInfoField(key, vsc_impl.TypeInfoRef(obj_t_base_ti))
+#            field_ti = vsc_impl.TypeInfoField(key, core_ti)
             action_ti.addField(field_ti, field_obj)
             self.set_field_initial(key, None)
         elif ti is not None:
