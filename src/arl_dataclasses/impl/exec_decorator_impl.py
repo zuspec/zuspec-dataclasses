@@ -3,6 +3,9 @@ Created on Mar 19, 2022
 
 @author: mballance
 '''
+
+import ast
+import inspect
 import typeworks
 from .exec_type import ExecType
 from .exec_kind_e import ExecKindE
@@ -17,20 +20,24 @@ class ExecDecoratorImpl(typeworks.RegistrationDecoratorBase):
     def register_decl(self, T):
         print("Register exec: %s %s" % (T.__name__, hasattr(T, "__annotations__")))
         print("  %s" % str(T.__annotations__))
+
+        if self._kind == ExecKindE.Body:
+            if not inspect.iscoroutinefunction(T):
+                raise Exception("Body exec method %s is not declared 'async'" % T.__name__)
         # lines = inspect.getsource(T)
         # print(lines)
 
-        # file = inspect.getfile(T)
-
-        # module = T.__module__
-        # print("module: %s %s" % (str(module), file))
-
-        # with open(file, "r") as fp:
-        #     tree = ast.parse(fp.read())
-        # print("tree: %s" % str(tree))
-
-        for key,value in getattr(T, "__annotations__", {}).items():
-            print("Key: %s ; %s" % (key, str(value)))
+#        file = inspect.getfile(T)
+#
+#        module = T.__module__
+#        print("module: %s %s" % (str(module), file))
+#
+#        with open(file, "r") as fp:
+#            tree = ast.parse(fp.read())
+#        print("tree: %s" % str(tree))
+#
+#        for key,value in getattr(T, "__annotations__", {}).items():
+#            print("Key: %s ; %s" % (key, str(value)))
         typeworks.DeclRgy.push_decl(
             ExecType, 
             ExecType(self._kind, T), 

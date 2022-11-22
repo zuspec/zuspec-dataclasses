@@ -28,7 +28,16 @@ class TypeInfoExtendAction(TypeInfoExtendBase):
 
     def __init__(self, info, kind=TypeKindE.ExtendAction):
         super().__init__(info, kind)
-        pass
+        self.activities = []
+
+    def addActivity(self, activity_t):
+        self.activities.append(activity_t)
+
+    def applyExtension(self, target):
+        super().applyExtension(target)
+
+        for activity in self.activities:
+            target.addActivity(activity)
 
     @staticmethod
     def get(info) -> 'TypeInfoExtendAction':

@@ -20,11 +20,31 @@
 #*
 #****************************************************************************
 
+from typing import Dict
 from vsc_dataclasses.impl import TypeInfoExtendRandClass
+from .exec_kind_e import ExecKindE
+from .exec_group import ExecGroup
+from .exec_type import ExecType
 
 class TypeInfoExtendBase(TypeInfoExtendRandClass):
 
     def __init__(self, info, kind):
         super().__init__(info, kind)
-        pass
+
+        # Dict of exec kind to list of exec blocks
+        self._exec_m : Dict[ExecKindE,ExecGroup] = {}
+
+
+    def addExec(self, exec_t : ExecType):
+        if exec_t.kind not in self._exec_m.keys():
+            self._exec_m[exec_t.kind] = ExecGroup(exec_t.kind)
+        self._exec_m[exec_t.kind].add_exec(exec_t)
+
+    def applyExtension(self, target):
+        super().applyExtension(target)
+
+        # Propagate any exec blocks added via extension
+        for kind,group in self._exec_m.items():
+            for exec in group.execs:
+                target.addExec(exec)
 
