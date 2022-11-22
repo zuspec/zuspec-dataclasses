@@ -8,6 +8,10 @@ from vsc_dataclasses.decorators import *
 from .impl.action_decorator_impl import ActionDecoratorImpl
 from .impl.exec_decorator_impl import ExecDecoratorImpl
 from .impl.exec_kind_e import ExecKindE
+from .impl.extend_kind_e import ExtendKindE
+from .impl.extend_decorator_impl import ExtendDecoratorImpl
+from .impl.extend_action_decorator_impl import ExtendActionDecoratorImpl
+from .impl.extend_component_decorator_impl import ExtendComponentDecoratorImpl
 from .impl.struct_decorator_impl import StructDecoratorImpl
 from .impl.struct_kind_e import StructKindE
 from .impl.component_decorator_impl import ComponentDecoratorImpl
@@ -118,7 +122,16 @@ class exec(object):
             return ExecDecoratorImpl(ExecKindE.PostSolve, [], {})(args[0])
         else:
             return ExecDecoratorImpl(ExecKindE.PostSolve, args, kwargs)
-        
+
+class extend(object):
+    @staticmethod
+    def action(target, *args, **kwargs):
+        return ExtendActionDecoratorImpl(target, args, kwargs)
+
+    @staticmethod
+    def component(target, *args, **kwargs):
+        return ExtendComponentDecoratorImpl(target, args, kwargs)
+
 class extern(object):
 
     # TODO:    

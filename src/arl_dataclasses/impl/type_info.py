@@ -30,6 +30,9 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
         # List of field-name, field-constructor
         self._field_ctor_l : Tuple[str,object] = []
 
+        # List of type extensions
+        self._extension_l = []
+
     def addExec(self, exec_t : ExecType):
         if exec_t.kind not in self._exec_m.keys():
             self._exec_m[exec_t.kind] = ExecGroup(exec_t.kind)
@@ -45,6 +48,8 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
             else:
                 self._exec_m[kind] = super_ti._exec_m[kind]
 
+    def addExtension(self, ext):
+        self._extension_l.append(ext)
 
     @property
     def kind(self):
@@ -69,7 +74,7 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
     def elab(self, obj):
         super().elab(obj)
         self._is_elab = True
-        
+
     def _elabFields(self):
         from .rand_t import RandT
         from .scalar_t import ScalarT

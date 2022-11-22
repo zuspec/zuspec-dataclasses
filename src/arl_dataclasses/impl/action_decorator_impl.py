@@ -38,7 +38,6 @@ class ActionDecoratorImpl(BaseDecoratorImpl):
         ctor_a = Ctor.inst()
 
         for activity_t in typeworks.DeclRgy.pop_decl(ActivityDecl, typeworks.scopename(T)):
-            print("activity: %s" % str(activity_t))
             action_ti.addActivity(activity_t)
 
         super().pre_decorate(T)

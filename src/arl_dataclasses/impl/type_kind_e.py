@@ -14,4 +14,6 @@ class TypeKindE(Enum):
     State = auto()
     Stream = auto()
     Struct = auto()
+    ExtendAction = auto()
+    ExtendComponent = auto()
     
