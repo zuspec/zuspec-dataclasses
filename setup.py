@@ -8,7 +8,7 @@ if "BUILD_NUM" in os.environ.keys():
     version += "." + os.environ["BUILD_NUM"]
 
 setup(
-  name = "pyarl-dataclasses",
+  name = "zuspec-dataclasses",
   version=version,
   packages=find_namespace_packages(where='src'),
   package_dir = {'' : 'src'},
@@ -21,7 +21,7 @@ setup(
   """,
   license = "Apache 2.0",
   keywords = ["SystemVerilog", "Verilog", "RTL"],
-  url = "https://github.com/vsc-tools/pyarl-dataclasses",
+  url = "https://github.com/zuspec/zuspec-dataclasses",
   setup_requires=[
     'setuptools_scm',
   ],
