@@ -20,7 +20,7 @@
 #*
 #****************************************************************************
 
-import arl_dataclasses.impl.context as ctxt_api
+import zsp_dataclasses.impl.context as ctxt_api
 import vsc_dataclasses.impl.context as vsc_ctxt
 
 class DataTypeActivityTraverse(ctxt_api.DataTypeActivityTraverse):

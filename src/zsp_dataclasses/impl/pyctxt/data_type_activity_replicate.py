@@ -20,7 +20,7 @@
 #*
 #****************************************************************************
 
-import arl_dataclasses.impl.context as ctxt_api
+import zsp_dataclasses.impl.context as ctxt_api
 from .data_type_activity_scope import DataTypeActivityScope
 
 class DataTypeActivityReplicate(ctxt_api.DataTypeActivityReplicate,DataTypeActivityScope):

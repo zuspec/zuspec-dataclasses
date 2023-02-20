@@ -35,9 +35,11 @@ class DoImplMeta(type):
         # Get a reference to this field
 #        target = field_t.mkFieldRefExpr()
 
-        target = ctor.ctxt().mkTypeExprFieldRef()
-        target.addIdxRef(field_t.getIndex())
-        target.addActiveScopeRef(-1)
+        target = ctor.ctxt().mkTypeExprFieldRef(
+            vsc_ctxt.TypeExprFieldRefKind.TopDownScope,
+            -1
+        )
+        target.addPathElem(field_t.getIndex())
 
         dt_traverse = ctor_a.ctxt().mkDataTypeActivityTraverse(
             target,

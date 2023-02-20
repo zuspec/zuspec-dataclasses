@@ -1,5 +1,5 @@
 #****************************************************************************
-#* model_field_component.py
+#* data_type_activity_scope.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,15 +20,21 @@
 #*
 #****************************************************************************
 
-import arl_dataclasses.impl.context as ctxt_api
-from vsc_dataclasses.impl.pyctxt.model_field import ModelField
+import zsp_dataclasses.impl.context as ctxt_api
+from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
 
-class ModelFieldComponent(ctxt_api.ModelFieldComponent,ModelField):
+class DataTypeActivityScope(ctxt_api.DataTypeActivityScope,DataTypeStruct):
 
-    def __init__(self, name, dt):
-        ModelField.__init__(self, name, dt)
+    def __init__(self):
+        DataTypeStruct.__init__(self, "")
+        self.activities = []
 
-    def initCompTree(self):
-        print("TODO: initCompTree")
-        pass
+    def getActivities(self):
+        return self.activities
+
+    def addActivity(self, a):
+        self.activities.append(a)
+
+    def addActivityField(self, a):
+        self.activities.append(a)
 

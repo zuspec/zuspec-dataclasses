@@ -20,7 +20,7 @@
 #*
 #****************************************************************************
 
-import arl_dataclasses.impl.context as ctxt_api
+import zsp_dataclasses.impl.context as ctxt_api
 from vsc_dataclasses.impl.pyctxt.type_field_phy import TypeFieldPhy
 
 class TypeFieldActivity(ctxt_api.TypeFieldActivity,TypeFieldPhy):
