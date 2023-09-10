@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_replicate.py
+#* fn_decorator_impl.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,28 +19,23 @@
 #*     Author: 
 #*
 #****************************************************************************
+import typeworks
+from .type_kind_e import TypeKindE
 
-import arl_dataclasses as arl
-from .test_base import TestBase
+class FnDecoratorImpl(typeworks.MethodDecoratorBase):
 
-class TestReplicate(TestBase):
+    def __init__(self, kwargs):
+        super().__init__([], kwargs)
+        pass
+
+    def get_category(self):
+        return TypeKindE.Function
+    
+    def pre_decorate(self, T):
+        print("Function: pre_decorate")
+        super().pre_decorate(T)
+    
 
 
-    def test_smoke(self):
 
-        @arl.component
-        class pss_top(object):
 
-            @arl.action
-            class A(object):
-                pass
-
-            @arl.action
-            class Entry(object):
-
-                @arl.activity
-                def activity(self):
-                    with arl.replicate(5):
-                        arl.do[pss_top.A]
-
-        root = pss_top()

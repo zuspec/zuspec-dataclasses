@@ -1,5 +1,5 @@
 
-import arl_dataclasses.impl as impl
+import zsp_dataclasses.impl as impl
 import vsc_dataclasses.impl as vsc_impl
 from unittest import TestCase
 

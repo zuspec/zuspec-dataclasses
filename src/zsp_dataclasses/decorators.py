@@ -12,6 +12,7 @@ from .impl.extend_kind_e import ExtendKindE
 from .impl.extend_decorator_impl import ExtendDecoratorImpl
 from .impl.extend_action_decorator_impl import ExtendActionDecoratorImpl
 from .impl.extend_component_decorator_impl import ExtendComponentDecoratorImpl
+from .impl.fn_decorator_impl import FnDecoratorImpl
 from .impl.struct_decorator_impl import StructDecoratorImpl
 from .impl.struct_kind_e import StructKindE
 from .impl.component_decorator_impl import ComponentDecoratorImpl
@@ -143,4 +144,10 @@ class extern(object):
             return ExecDecoratorImpl(ExecKindE.PreSolve, {})(args[0])
         else:
             return ExecDecoratorImpl(ExecKindE.PreSolve, kwargs)
-    
+
+def fn(*args, **kwargs): 
+    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
+        # No-argument form
+        return FnDecoratorImpl({})(args[0])
+    else:
+        return FnDecoratorImpl(kwargs)

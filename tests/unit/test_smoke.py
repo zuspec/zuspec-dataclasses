@@ -1,6 +1,6 @@
 
 from .test_base import TestBase
-import arl_dataclasses as arl
+import zsp_dataclasses as arl
 
 class TestSmoke(TestBase):
 

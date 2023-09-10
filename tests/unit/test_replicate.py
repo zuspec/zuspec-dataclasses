@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_type_extension.py
+#* test_replicate.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,42 +20,27 @@
 #*
 #****************************************************************************
 
-import arl_dataclasses as arl
+import zsp_dataclasses as arl
 from .test_base import TestBase
 
-class TestTypeExtension(TestBase):
+class TestReplicate(TestBase):
+
 
     def test_smoke(self):
 
         @arl.component
-        class PssTop(object):
+        class pss_top(object):
+
+            @arl.action
+            class A(object):
+                pass
 
             @arl.action
             class Entry(object):
-                a : arl.rand_int16_t
 
-        @arl.extend.action(PssTop.Entry)
-        class ext(object): # Note: really want a way for this to be anonymous
-            b : arl.rand_int16_t
+                @arl.activity
+                def activity(self):
+                    with arl.replicate(5):
+                        arl.do[pss_top.A]
 
-#            @arl.constraint
-#            def ab_c(self):
-#                self.a != self.b
-
-        @arl.extend.action(PssTop.Entry)
-        class ext(object): # Note: really want a way for this to be anonymous
-            c : arl.rand_int16_t
-
-            # @arl.constraint
-            # def ab_c(self):
-            #     self.a != self.b
-
-        @arl.extend.component(PssTop)
-        class ext(object):
-            c : arl.int16_t
-
-        pss_top = PssTop()
-        print("pss_top.c=%d" % pss_top.c)
-
-
-
+        root = pss_top()

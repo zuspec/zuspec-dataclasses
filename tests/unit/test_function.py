@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* test_function.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,26 @@
 #*     Author: 
 #*
 #****************************************************************************
-
-import arl_dataclasses as arl
+import zsp_dataclasses as zdc
 from .test_base import TestBase
 
-class TestLabel(TestBase):
-
+class TestFunction(TestBase):
 
     def test_smoke(self):
 
-        @arl.component
-        class pss_top(object):
+        @zdc.fn
+        def my_function(a : int, b : int):
+            pass
 
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
+        @zdc.component
+        class my_component(object):
 
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
+            @zdc.fn
+            def my_method(self, a : int, b : int):
+                with zdc.if_then():
+                    pass
+                with zdc.else_if():
+                    pass
+                with zdc.else:
+                    pass
 
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

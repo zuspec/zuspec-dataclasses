@@ -1,6 +1,7 @@
 
 
 import typeworks
+import types
 import vsc_dataclasses.impl as vsc_impl
 from .activity_decl import ActivityDecl
 
@@ -30,6 +31,10 @@ class BaseDecoratorImpl(vsc_impl.RandClassDecoratorImpl):
         base_ti.lib_typeobj.setCreateHook(lambda obj: base_ti.createHook(obj))
 
     def _get_super_ti(self, T):
+        if not hasattr(T, "__bases__"):
+            raise Exception("Decorator %s can only be applied to class, not %s" % (
+                type(self).__name__, str(T)))
+
         if len(T.__bases__) > 0:
             ti = typeworks.TypeInfo.get(T.__bases__[0], False)
             if ti is not None:

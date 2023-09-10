@@ -1,11 +1,14 @@
 package:
-    name: pyarl-dataclasses
+    name: zuspec-dataclasses
     version: 0.0.1
     deps:
     - name: pyvsc-dataclasses
       src: pypi
+
     dev-deps:
     - name: pyvsc-dataclasses
       url: https://github.com/vsc-tools/pyvsc-dataclasses.git
+    - name: pytypeworks
+      url: https://github.com/mballance/pytypeworks.git
 
 

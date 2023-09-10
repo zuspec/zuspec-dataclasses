@@ -16,4 +16,5 @@ class TypeKindE(Enum):
     Struct = auto()
     ExtendAction = auto()
     ExtendComponent = auto()
+    Function = auto()
     
