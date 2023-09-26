@@ -23,6 +23,7 @@ from .decorator_impl_base import DecoratorImplBase
 from .action_impl import ActionImpl
 from .exec_kind_e import ExecKindE
 from .ctor import Ctor
+from .method_proxy_fn import MethodProxyFn
 from .typeinfo_action import TypeInfoAction
 from .typeinfo_flow_obj_ref import TypeInfoFlowObjRef
 from .typeinfo_claim import TypeInfoClaim
@@ -53,6 +54,12 @@ class ActionDecoratorImpl(BaseDecoratorImpl):
 
         print("value: %s" % str(value))
         ti = typeworks.TypeInfo.get(value)
+
+        if callable(value):
+            print("Callable")
+            print("  Value: %s" % str(value()))
+        else:
+            print("Not callable")
 
         if issubclass(value, (InputOutputT,LockShareT)):
             print("Ref or Claim")
@@ -113,6 +120,16 @@ class ActionDecoratorImpl(BaseDecoratorImpl):
     def pre_register(self):
         print("Action.pre_register")
         action_ti = TypeInfoAction.get(self.get_typeinfo())
+        funcs = typeworks.DeclRgy.pop_decl(
+            MethodProxyFn,
+            typeworks.scopename(self.T)
+        )
+
+        # TODO: add function declarations to type
+        print("Action: funcs=%s" % str(funcs))
+
+        # TODO: add execs to 
+
         typeworks.DeclRgy.push_decl(
             TypeInfoAction, 
             action_ti, 

@@ -21,19 +21,38 @@
 #****************************************************************************
 import typeworks
 from .type_kind_e import TypeKindE
+from .fn_impl import FnImpl
+from .method_proxy_fn import MethodProxyFn
 
 class FnDecoratorImpl(typeworks.MethodDecoratorBase):
 
-    def __init__(self, kwargs):
+    def __init__(self, is_import, kwargs):
         super().__init__([], kwargs)
+        self._is_import = is_import
         pass
 
     def get_category(self):
         return TypeKindE.Function
     
     def pre_decorate(self, T):
-        print("Function: pre_decorate")
+        # Ensure everything that needs a type hint has one
+        self.validate_hints()
         super().pre_decorate(T)
+
+    def decorate(self, T):
+        return MethodProxyFn(T)
+
+    def post_decorate(self, T, Tp):
+        is_method, rtype, params = self.get_signature()
+        Tp._is_import = self._is_import
+        Tp._is_method = is_method
+        Tp._rtype = rtype
+        Tp._params = params
+
+    def pre_register(self):
+        return super().pre_register()
+    
+
     
 
 

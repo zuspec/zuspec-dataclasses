@@ -19,15 +19,15 @@
 #*     Author: 
 #*
 #****************************************************************************
-from .decorators import component
+from .impl.component_base import ComponentBase
+from .impl.typeinfo_component import TypeInfoComponent
 
 from .impl.reg_c_meta import RegCMeta
 
 class reg_c(metaclass=RegCMeta):
     pass
 
-@component
-class reg_group_c(object):
+class reg_group_c(ComponentBase):
     pass
 
 

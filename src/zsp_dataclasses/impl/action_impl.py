@@ -88,6 +88,13 @@ class ActionImpl(ImplBase):
     #     pass
 
     @staticmethod
+    def __init__(self, *args, **kwargs):
+        print("--> __init__")
+        action_ti = TypeInfoAction.get(typeworks.TypeInfo.get(type(self)))
+        action_ti.init(self, args, kwargs)
+        print("<-- __init__")
+
+    @staticmethod
     def __call__(self, *args, **kwargs):
         action_ti = TypeInfoAction.get(typeworks.TypeInfo.get(type(self)))
         ctor_a = Ctor.inst()
@@ -215,6 +222,7 @@ class ActionImpl(ImplBase):
     def addMethods(cls, T):
         ImplBase.addMethods(T)
         T.__call__ = cls.__call__
+#        T.__init__ = cls.__init__
 #        base_init = T.__init__
 #        setattr(T, "__super_init__", getattr(T, "__init__"))
 #        setattr(T, "__init__", lambda self, *args, **kwargs: cls.init(

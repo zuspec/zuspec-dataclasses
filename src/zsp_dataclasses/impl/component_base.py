@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_function.py
+#* component_base.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,27 +19,14 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
-from .test_base import TestBase
 
-class TestFunction(TestBase):
+from typeworks.impl.typeinfo import TypeInfo
+from .typeinfo_component import TypeInfoComponent
 
-    def test_smoke(self):
+class ComponentBase(object):
 
-        @zdc.fn
-        def my_function(a : int, b : int):
-            pass
+    def __init__(self):
+        super().__init__()
 
-        @zdc.component
-        class my_component(object):
-
-            @zdc.fn
-            def my_method(self, a : int, b : int):
-                pass
-#                with zdc.if_then():
-#                    pass
-#                with zdc.else_if():
-#                    pass
-#                with zdc.else:
-#                    pass
-
+ComponentBase._typeinfo = TypeInfo(ComponentBase)
+TypeInfoComponent.get(ComponentBase._typeinfo)

@@ -38,3 +38,6 @@ class DataTypeActivityScope(ctxt_api.DataTypeActivityScope,DataTypeStruct):
     def addActivityField(self, a):
         self.activities.append(a)
 
+    def accept(self, v):
+        v.visitDataTypeActivityScope(self)
+

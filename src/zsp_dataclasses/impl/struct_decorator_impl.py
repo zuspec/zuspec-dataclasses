@@ -48,10 +48,11 @@ class StructDecoratorImpl(BaseDecoratorImpl):
         }
         ctor_a = Ctor.inst()
 
-        ds_t = ctor_a.ctxt().findDataTypeFlowObj(name, kind_m[self._kind])
-        
-        if ds_t is None:
-            ds_t = ctor_a.ctxt().mkDataTypeFlowObj(name, kind_m[self._kind])
-            ctor_a.ctxt().addDataTypeFlowObj(ds_t)
+        ds_t = None
+#        ds_t = ctor_a.ctxt().findDataTypeFlowObj(name, kind_m[self._kind])
+#        
+#        if ds_t is None:
+#            ds_t = ctor_a.ctxt().mkDataTypeFlowObj(name, kind_m[self._kind])
+#            ctor_a.ctxt().addDataTypeFlowObj(ds_t)
 
         return ds_t

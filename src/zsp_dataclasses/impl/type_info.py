@@ -10,6 +10,7 @@ from .exec_kind_e import ExecKindE
 from .exec_group import ExecGroup
 from .constraint_impl import ConstraintImpl
 from .exec_type import ExecType
+from .method_proxy_fn import MethodProxyFn
 
 class TypeInfo(vsc_impl.TypeInfoRandClass):
     
@@ -32,6 +33,8 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
 
         # List of type extensions
         self._extension_l = []
+
+        self._function_l : List[MethodProxyFn] = []
 
     def addExec(self, exec_t : ExecType):
         if exec_t.kind not in self._exec_m.keys():
@@ -73,7 +76,18 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
 
     def elab(self, obj):
         super().elab(obj)
+        self._elabExecs(obj)
         self._is_elab = True
+
+    def _elabExecs(self, obj):
+        from .ctor import Ctor
+
+        ctxt = Ctor.inst().ctxt()
+        for kind in self._exec_m.keys():
+            print("Elaborating exec-kind %s" % str(kind))
+            for e in self._exec_m[kind].execs:
+                  print("  Exec %s" % str(e))
+                  e.func(obj)
 
     def _elabFields(self):
         from .rand_t import RandT

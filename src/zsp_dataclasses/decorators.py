@@ -79,9 +79,9 @@ def stream(*args, **kwargs):
 def struct(*args, **kwargs): 
     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
         # No-argument form
-        return StructDecoratorImpl(StructKindE.Struct, {})(args[0])
+        return StructDecoratorImpl(StructKindE.Struct, [], {})(args[0])
     else:
-        return ActionDecoratorImpl(StructKindE.Struct, kwargs)
+        return ActionDecoratorImpl(StructKindE.Struct, args, kwargs)
 
 class exec(object):
     @staticmethod
@@ -148,6 +148,13 @@ class extern(object):
 def fn(*args, **kwargs): 
     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
         # No-argument form
-        return FnDecoratorImpl({})(args[0])
+        return FnDecoratorImpl(False, {})(args[0])
     else:
-        return FnDecoratorImpl(kwargs)
+        return FnDecoratorImpl(False, kwargs)
+
+def import_fn(*args, **kwargs): 
+    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
+        # No-argument form
+        return FnDecoratorImpl(True, {})(args[0])
+    else:
+        return FnDecoratorImpl(True, kwargs)

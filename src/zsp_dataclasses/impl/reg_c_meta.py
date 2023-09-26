@@ -26,7 +26,7 @@ class RegCMeta(object):
         self.type_m = {}
 
     def __getitem__(self, item):
-        if item in self.tye_m.keys():
+        if item in self.type_m.keys():
             return self.type_m[item]
         else:
             t = type("reg_c[%s]" % item.__qualname__)

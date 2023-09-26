@@ -21,9 +21,9 @@ class ExecDecoratorImpl(typeworks.RegistrationDecoratorBase):
         print("Register exec: %s %s" % (T.__name__, hasattr(T, "__annotations__")))
         print("  %s" % str(T.__annotations__))
 
-        if self._kind == ExecKindE.Body:
-            if not inspect.iscoroutinefunction(T):
-                raise Exception("Body exec method %s is not declared 'async'" % T.__name__)
+#        if self._kind == ExecKindE.Body:
+#            if not inspect.iscoroutinefunction(T):
+#                raise Exception("Body exec method %s is not declared 'async'" % T.__name__)
         # lines = inspect.getsource(T)
         # print(lines)
 

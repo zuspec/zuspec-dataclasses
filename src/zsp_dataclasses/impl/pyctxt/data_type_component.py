@@ -33,3 +33,6 @@ class DataTypeComponent(vsc_pyctxt.DataTypeStruct, ctxt_api.DataTypeComponent):
         # TODO: build out constraints
         return ret
 
+    def accept(self, v):
+        v.visitDataTypeComponent(self)
+

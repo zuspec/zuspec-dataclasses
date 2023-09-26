@@ -27,4 +27,7 @@ class DataTypeActivitySequence(DataTypeActivityScope):
     def __init__(self):
         super().__init__()
 
+    def accept(self, v):
+        v.visitDataTypeActivitySequence(self)
+
 

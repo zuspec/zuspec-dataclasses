@@ -1,5 +1,7 @@
 #****************************************************************************
-#* test_function.py
+#* __main__.py
+#*
+#* zsp_dataclasses.util.gen_cpp_dt_defs
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,27 +21,9 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
-from .test_base import TestBase
 
-class TestFunction(TestBase):
+def main():
+    pass
 
-    def test_smoke(self):
-
-        @zdc.fn
-        def my_function(a : int, b : int):
-            pass
-
-        @zdc.component
-        class my_component(object):
-
-            @zdc.fn
-            def my_method(self, a : int, b : int):
-                pass
-#                with zdc.if_then():
-#                    pass
-#                with zdc.else_if():
-#                    pass
-#                with zdc.else:
-#                    pass
-
+if __name__ == "__main__":
+    main()

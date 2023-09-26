@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_function.py
+#* type_proc_stmt_var_decl.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,27 +19,20 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
-from .test_base import TestBase
+import vsc_dataclasses.impl.context as vsc_ctxt
 
-class TestFunction(TestBase):
+class TypeProcStmtVarDecl(object):
 
-    def test_smoke(self):
+    def __init__(self, name, type, init):
+        self._name = name
+        self._type = type
+        self._init = init
 
-        @zdc.fn
-        def my_function(a : int, b : int):
-            pass
-
-        @zdc.component
-        class my_component(object):
-
-            @zdc.fn
-            def my_method(self, a : int, b : int):
-                pass
-#                with zdc.if_then():
-#                    pass
-#                with zdc.else_if():
-#                    pass
-#                with zdc.else:
-#                    pass
-
+    def name(self) -> str:
+        return self._name
+    
+    def getDataType(self) -> vsc_ctxt.DataType:
+        return self._type
+    
+    def getInit(self):
+        return self._init

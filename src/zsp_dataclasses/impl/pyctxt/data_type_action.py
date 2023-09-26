@@ -3,10 +3,12 @@ from typing import List
 import zsp_dataclasses.impl.context as ctxt_api
 import vsc_dataclasses.impl.context as vsc_ctxt
 import vsc_dataclasses.impl.pyctxt as vsc_pyctxt
+from .data_type_arl_struct import DataTypeArlStruct
 
-class DataTypeAction(ctxt_api.DataTypeAction,vsc_pyctxt.DataTypeStruct):
+class DataTypeAction(ctxt_api.DataTypeAction,DataTypeArlStruct):
     
     def __init__(self, ctxt: 'ctxt_api.Context', name):
+        DataTypeArlStruct.__init__(self, name)
         super().__init__(name)
         self._comp_t = None
         self._activities = []
@@ -30,3 +32,6 @@ class DataTypeAction(ctxt_api.DataTypeAction,vsc_pyctxt.DataTypeStruct):
 
     def activities(self) -> List['TypeFieldActivity']:
         return self._activities
+    
+    def accept(self, v):
+        v.visitDataTypeAction(self)

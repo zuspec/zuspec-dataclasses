@@ -1,12 +1,27 @@
 
-from enum import IntEnum
+from enum import IntEnum, auto
 from tokenize import Intnumber
 from typing import List
 import vsc_dataclasses as vsc
 
 import vsc_dataclasses.impl.context as vsc_ctxt
 
-class DataTypeAction(vsc_ctxt.DataTypeStruct):
+class DataTypeArlStruct(vsc_ctxt.DataTypeStruct):
+
+    def addExec(self, exec : 'TypeExec'):
+        raise NotImplementedError("addExec")
+    
+    def getExecs(self):
+        raise NotImplementedError("getExecs")
+    
+    def addFunction(self, f : 'DataTypeFunction'):
+        raise NotImplementedError("addFunction")
+    
+    def getFunctions(self):
+        raise NotImplementedError("getFunctions")
+
+
+class DataTypeAction(DataTypeArlStruct):
 
     def getComponentType(self) -> 'DataTypeComponent':
         raise NotImplementedError("getComponentType")
@@ -67,6 +82,41 @@ class DataTypeComponent(vsc_ctxt.DataTypeStruct):
 
     def addPoolBindDirective(self, bind : 'PoolBindDirective'):
         raise NotImplementedError("addPoolBindDirective")
+    
+class ParamDir(IntEnum):
+    In = auto()
+    Out = auto()
+    InOut = auto()
+
+class TypeProcStmtVarDecl(object):
+
+    def name(self) -> str:
+        raise NotImplementedError("name")
+    
+    def getDataType(self) -> vsc_ctxt.DataType:
+        raise NotImplementedError("getDataType")
+    
+    def getInit(self):
+        raise NotImplementedError("getInit")
+    
+class DataTypeFunctionParamDecl(TypeProcStmtVarDecl):
+    def getDirection(self) -> ParamDir:
+        raise NotImplementedError("getDirection")
+    
+class DataTypeFunction(vsc_ctxt.DataType):
+
+    def name(self):
+        raise NotImplementedError("DataTypeFunction.name")
+    
+    def getReturnType(self) -> vsc_ctxt.DataType:
+        raise NotImplementedError("DataTypeFunction.getReturnType")
+    
+    def getParameters(self) -> List[DataTypeFunctionParamDecl]:
+        raise NotImplementedError("DataTypeFunction.getParameters")
+    
+    def addParameter(self, p : DataTypeFunctionParamDecl):
+        raise NotImplementedError("DataTypeFunction.addParameter")
+
 
 class FlowObjKindE(IntEnum):
     Buffer   = 0
@@ -131,8 +181,26 @@ class Context(vsc.impl.Context):
 
     def addDataTypeComponent(self, t : 'DataTypeComponent') -> bool:
         raise NotImplementedError("addDataTypeComponent")
+    
+    def mkDataTypeFunction(self,
+                           name : str,
+                           rtype : vsc_ctxt.DataType,
+                           own_rtype : bool,
+                           is_target : bool,
+                           is_solve : bool):
+        raise NotImplementedError("mkDataTypeFunction")
+
+    def mkDataTypeFunctionParamDecl(self,
+                                name,
+                                dir : ParamDir,
+                                type : vsc_ctxt.DataType,
+                                own : bool,
+                                init : vsc_ctxt.TypeExpr) -> DataTypeFunctionParamDecl:
+        raise NotImplementedError("mkDataTypeFunctionParamDecl")
+
 
     def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
         raise NotImplementedError("mkTypeFieldActivity")
+    
 
     pass

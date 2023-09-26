@@ -28,7 +28,7 @@ class BaseDecoratorImpl(vsc_impl.RandClassDecoratorImpl):
         super().pre_decorate(T)
 
         # Now, register an object-creation hook
-        base_ti.lib_typeobj.setCreateHook(lambda obj: base_ti.createHook(obj))
+#        base_ti.lib_typeobj.setCreateHook(lambda obj: base_ti.createHook(obj))
 
     def _get_super_ti(self, T):
         if not hasattr(T, "__bases__"):

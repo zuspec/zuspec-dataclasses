@@ -32,15 +32,48 @@ class TestRegModel(TestBase):
             f3 : zdc.uint8_t
             f4 : zdc.uint8_t
 
-        @zdc.reg_group_c
+        @zdc.component
         class my_regs(object):
-            r1 : zdc.reg_c[my_reg1](offset=10)
-            r2 : zdc.reg_c[my_reg1](offset=20)
-            r3 : zdc.reg_c[my_reg1]
-            r4 : zdc.reg_c[my_reg1]
+#            r1 : zdc.reg_c[my_reg1] # (offset=10)
+#            r2 : zdc.reg_c[my_reg1] # (offset=20)
+#            r3 : zdc.reg_c[my_reg1]
+#            r4 : zdc.reg_c[my_reg1]
+            pass
+
+#            @zdc.fn
+#            def get_offset(self):
+#                pass
 
         @zdc.component
         class pss_top(object):
-            regs : my_regs
+#            regs : my_regs
+
+            @zdc.action
+            class DoSomething(object):
+                a : 'pss_top.Entry'
+                pass
+
+            @zdc.action
+            class Entry(object):
+
+                @zdc.constraint
+                def ab_c(self):
+                    self.a
+
+                @zdc.activity
+                def activity(self):
+                    a  = pss_top.DoSomething()
+                    b  = pss_top.DoSomething()
+
+                    with zdc.constraint():
+                        a == b
+
+                    a()
+                    b()
+
+                    with zdc.do[pss_top.DoSomething](dat_i=a.dat_o) as it:
+                        pass
+                    pass
+            pass
         
 

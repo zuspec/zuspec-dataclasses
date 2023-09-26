@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_function.py
+#* obj_base.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,27 +19,10 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
-from .test_base import TestBase
 
-class TestFunction(TestBase):
+class ObjBase(object):
 
-    def test_smoke(self):
-
-        @zdc.fn
-        def my_function(a : int, b : int):
-            pass
-
-        @zdc.component
-        class my_component(object):
-
-            @zdc.fn
-            def my_method(self, a : int, b : int):
-                pass
-#                with zdc.if_then():
-#                    pass
-#                with zdc.else_if():
-#                    pass
-#                with zdc.else:
-#                    pass
+    def __init__(self, typeinfo):
+        self._typeinfo = typeinfo
+        pass
 

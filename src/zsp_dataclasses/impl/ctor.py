@@ -46,6 +46,15 @@ class Ctor(object):
             return
         self._is_elab = True
 
+        functions = typeworks.TypeRgy.get_methods(TypeKindE.Function)
+        print("Elab with %d functions" % len(functions))
+
+        for f in functions:
+            f.elab_decl()
+
+        for f in functions:
+            f.elab_body()
+
         components = typeworks.TypeRgy.get_types(TypeKindE.Component)
         print("Elab with %d components" % len(components))
         
@@ -124,12 +133,12 @@ class Ctor(object):
     
     def push_activity_scope_mi(self, s_mi):
         from vsc_dataclasses.impl import Ctor as VscCtor
-        VscCtor.inst().push_bottom_up_mi(s_mi)
+        VscCtor.inst().push_bottom_up_scope(s_mi)
 #        self._activity_s.append(s)
     
     def pop_activity_scope_mi(self):
         from vsc_dataclasses.impl import Ctor as VscCtor
-        VscCtor.inst().pop_bottom_up_mi()
+        VscCtor.inst().pop_bottom_up_scope()
 #        self._activity_s.pop()
 
     def add_activity(self, activity_ft):

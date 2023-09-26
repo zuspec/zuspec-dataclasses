@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_function.py
+#* data_type_arl_struct.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,27 +19,28 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
-from .test_base import TestBase
+from zsp_dataclasses.impl.context import DataTypeArlStruct
+from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
 
-class TestFunction(TestBase):
+class DataTypeArlStruct(DataTypeArlStruct,DataTypeStruct):
 
-    def test_smoke(self):
+    def __init__(self, name):
+        DataTypeStruct.__init__(self, name)
+        self._execs = []
+        self._functions = []
 
-        @zdc.fn
-        def my_function(a : int, b : int):
-            pass
-
-        @zdc.component
-        class my_component(object):
-
-            @zdc.fn
-            def my_method(self, a : int, b : int):
-                pass
-#                with zdc.if_then():
-#                    pass
-#                with zdc.else_if():
-#                    pass
-#                with zdc.else:
-#                    pass
+    def addExec(self, exec : 'TypeExec'):
+        self._execs.append(exec)
+    
+    def getExecs(self):
+        return self._execs
+    
+    def addFunction(self, f : 'DataTypeFunction'):
+        self._functions.append(f)
+    
+    def getFunctions(self):
+        return self._functions
+    
+    def accept(self, v):
+        v.visitDataTypeArlStruct(self)
 

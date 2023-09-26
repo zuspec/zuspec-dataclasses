@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_function.py
+#* data_type_function_param_decl.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,27 +19,15 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
-from .test_base import TestBase
+import zsp_dataclasses.impl.context as ctxt_api
+from .type_proc_stmt_var_decl import TypeProcStmtVarDecl
 
-class TestFunction(TestBase):
+class DataTypeFunctionParamDecl(TypeProcStmtVarDecl):
 
-    def test_smoke(self):
+    def __init__(self, name, dir, type, init):
+        super().__init__(name, type, init)
+        self._dir = dir
 
-        @zdc.fn
-        def my_function(a : int, b : int):
-            pass
-
-        @zdc.component
-        class my_component(object):
-
-            @zdc.fn
-            def my_method(self, a : int, b : int):
-                pass
-#                with zdc.if_then():
-#                    pass
-#                with zdc.else_if():
-#                    pass
-#                with zdc.else:
-#                    pass
+    def getDirection(self) -> ctxt_api.ParamDir:
+        return self._dir
 

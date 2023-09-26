@@ -31,4 +31,7 @@ class DataTypeActivityReplicate(ctxt_api.DataTypeActivityReplicate,DataTypeActiv
 
     def getCount(self) -> 'TypeExpr':
         return self._count
+    
+    def accept(self, v):
+        v.visitDataTypeActivityReplicate(self)
 

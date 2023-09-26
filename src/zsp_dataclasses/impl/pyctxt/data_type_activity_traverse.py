@@ -38,3 +38,6 @@ class DataTypeActivityTraverse(ctxt_api.DataTypeActivityTraverse):
     def setWithC(self, c : 'vsc_ctxt.TypeConstraint'):
         self._with_c = c
 
+    def accept(self, v):
+        v.visitDataTypeActivityTraverse(self)
+
