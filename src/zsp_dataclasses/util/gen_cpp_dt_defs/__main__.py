@@ -74,12 +74,19 @@ def main():
         _globals = globals().copy()
         exec(fragment_m[fn].content, _globals)
 
+        Ctor.inst().elab()
+
         header_path = os.path.join(args.outdir, "%s.h" % fn)
-        root_t = Ctor.inst().ctxt().findDataTypeStruct(fragment_m[fn].root_types[0])
+        root_comp = Ctor.inst().ctxt().findDataTypeComponent(fragment_m[fn].root_comp)
+        if root_comp is None:
+            raise Exception("Failed to find root component %s" % fragment_m[fn].root_comp)
+        root_action = Ctor.inst().ctxt().findDataTypeAction(fragment_m[fn].root_action)
+        if root_action is None:
+            raise Exception("Failed to find root action %s" % fragment_m[fn].root_action)
         gen = ZspDataModelCppGen()
         gen._ctxt = "m_ctxt"
         with open(header_path, "w") as fp:
-            fp.write(gen.generate(root_t))
+            fp.write(gen.generate(root_comp, root_action))
 
         pass
 

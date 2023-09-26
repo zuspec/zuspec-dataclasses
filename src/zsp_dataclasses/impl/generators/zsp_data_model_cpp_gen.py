@@ -60,7 +60,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self._ctxt,
                 i.name()))
         else:
-            self.println("zsp::arl::dm::IDataTypeComponent %s_t = %s->mkDataTypeComponent(\"%s\");" % (
+            self.println("zsp::arl::dm::IDataTypeComponent *%s_t = %s->mkDataTypeComponent(\"%s\");" % (
                 self.leaf_name(i.name()),
                 self._ctxt,
                 i.name()))
@@ -120,7 +120,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
         else:
             self.println("{")
             self.inc_indent()
-            self.println("zsp::arl::dm::IDataTypeAction %s_t = %s->mkDataTypeAction(\"%s\");" % (
+            self.println("zsp::arl::dm::IDataTypeAction *%s_t = %s->mkDataTypeAction(\"%s\");" % (
                 self.leaf_name(i.name()),
                 self._ctxt,
                 i.name()))

@@ -6,6 +6,7 @@ Created on Mar 19, 2022
 
 import typeworks
 
+from vsc_dataclasses.impl.ctor import Ctor as VscCtor
 from .type_info import TypeInfo
 from .type_kind_e import TypeKindE
 from .ctor_scope import CtorScope
@@ -228,6 +229,7 @@ class Ctor(object):
 
     @classmethod
     def init(cls, ctxt):
+        VscCtor.init(ctxt)
         cls._inst = Ctor()
         cls._inst._ctxt = ctxt
 

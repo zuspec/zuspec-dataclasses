@@ -64,6 +64,10 @@ class TypeInfoAction(TypeInfo):
         modelinfo_p.addSubfield(field._modelinfo)
 
         return field
+    
+    # def createTypeInst(self):
+    #     obj = super().createTypeInst()
+    #     print("LibObj: %s" % str(obj._modelinfo.libobj))
 
     def elabActivities(self, obj):
         ctor_a = Ctor.inst()
