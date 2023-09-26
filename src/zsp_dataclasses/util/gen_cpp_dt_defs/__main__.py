@@ -22,8 +22,71 @@
 #*
 #****************************************************************************
 
+import argparse
+import os
+import zsp_dataclasses as zdc
+from zsp_dataclasses.impl.ctor import Ctor
+from zsp_dataclasses.impl.pyctxt.context import Context
+from zsp_dataclasses.impl.generators.zsp_data_model_cpp_gen import ZspDataModelCppGen
+from ..extract_cpp_embedded_dsl import ExtractCppEmbeddedDSL
+
+def get_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-o","--outdir", default="zspdefs",
+        help="Specifies the output directory")
+    parser.add_argument("-d", "--depfile",
+        help="Specifies a dependency file")
+    parser.add_argument("files", nargs='+')
+
+    return parser
+
 def main():
-    pass
+    parser = get_parser()
+    args = parser.parse_args()
+
+    deps_ts = None
+    if args.depfile is not None and os.path.isfile(args.depfile):
+        deps_ts = os.path.getmtime(args.depfile)
+
+    fragment_m = {}
+    for file in args.files:
+        print("Process %s" % file)
+        if deps_ts is not None:
+            file_ts = os.path.getmtime(file)
+            if file_ts <= deps_ts:
+                print("Skip due to deps")
+                continue
+
+        fragments = ExtractCppEmbeddedDSL(file).extract()
+        print("fragments: %s" % str(fragments))
+
+        for f in fragments:
+            if f.name in fragment_m.keys():
+                raise Exception("Duplicate fragment-name %s" % f.name)
+            fragment_m[f.name] = f
+
+    if not os.path.isdir(args.outdir):
+        os.makedirs(args.outdir, exist_ok=True)
+
+    for fn in fragment_m.keys():
+        Ctor.init(Context())
+
+        _globals = globals().copy()
+        exec(fragment_m[fn].content, _globals)
+
+        header_path = os.path.join(args.outdir, "%s.h" % fn)
+        root_t = Ctor.inst().ctxt().findDataTypeStruct(fragment_m[fn].root_types[0])
+        gen = ZspDataModelCppGen()
+        gen._ctxt = "m_ctxt"
+        with open(header_path, "w") as fp:
+            fp.write(gen.generate(root_t))
+
+        pass
+
+    if args.depfile is not None:
+        with open(args.depfile, "w") as fp:
+            fp.write("\n")
 
 if __name__ == "__main__":
     main()
+
