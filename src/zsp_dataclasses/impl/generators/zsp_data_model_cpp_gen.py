@@ -96,9 +96,13 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
     def visitTypeExprFieldRef(self, i : 'TypeExprFieldRef'):
         pass
 
-    def visitTypeField(self, i : 'TypeField'):
-        super().visitTypeFieldPhy(i)
+#    def visitTypeField(self, i : 'TypeField'):
+#        super().visitTypeFieldPhy(i)
 #        pass
+
+    def visitTypeFieldRef(self, i : 'TypeFieldRef'):
+        if i.name() != "comp":
+            super().visitTypeFieldRef(i)
 
 #    def visitTypeFieldPhy(self, i : 'TypeFieldPhy'):
 #        self.visitTypeField(i)
@@ -132,8 +136,14 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             for e in i.getExecs():
                 pass
             self._type_s.pop()
+            self.println("%s_t->setComponentType(%s_t);" % (
+                self.leaf_name(i.name()),
+                self.leaf_name(self._type_s[-1].name())))
             self.println("%s_t->addActionType(%s_t);" % (
                 self.leaf_name(self._type_s[-1].name()),
+                self.leaf_name(i.name())))
+            self.println("%s->addDataTypeAction(%s_t);" % (
+                self._ctxt,
                 self.leaf_name(i.name())
             ))
             self.dec_indent()
