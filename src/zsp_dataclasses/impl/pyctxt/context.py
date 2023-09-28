@@ -66,6 +66,7 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
                            own_rtype : bool,
                            is_target : bool,
                            is_solve : bool):
+        return DataTypeFunction(name, type)
         raise NotImplementedError("mkDataTypeFunction")
 
     def mkDataTypeFunctionParamDecl(self,
