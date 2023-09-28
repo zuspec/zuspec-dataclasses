@@ -36,3 +36,6 @@ class TypeProcStmtVarDecl(object):
     
     def getInit(self):
         return self._init
+    
+    def accept(self, v):
+        v.visitTypeProcStmtVarDecl(self)

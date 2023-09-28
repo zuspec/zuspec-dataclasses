@@ -9,6 +9,7 @@ from .data_type_activity_sequence import DataTypeActivitySequence
 from .data_type_activity_traverse import DataTypeActivityTraverse
 from .data_type_function_param_decl import DataTypeFunctionParamDecl
 from .type_field_activity import TypeFieldActivity
+from .type_proc_stmt_var_decl import TypeProcStmtVarDecl
 
 
 class Context(vsc_pyctxt.Context,ctxt_api.Context):
@@ -78,4 +79,7 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
 
     def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
         return TypeFieldActivity(name, type)
+    
+    def mkTypeProcStmtVarDecl(self, name, type, init):
+        return TypeProcStmtVarDecl(name, type, init)
 

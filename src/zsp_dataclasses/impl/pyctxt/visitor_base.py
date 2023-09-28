@@ -23,7 +23,8 @@
 from vsc_dataclasses.impl.pyctxt.visitor_base import VisitorBase as VscVisitorBase
 from ..context import DataTypeAction, DataTypeActivity, DataTypeActivityScope
 from ..context import DataTypeActivityTraverse
-from ..context import DataTypeComponent, DataTypeArlStruct
+from ..context import DataTypeComponent, DataTypeArlStruct, DataTypeFunction, DataTypeFunctionParamDecl
+from ..context import TypeExprMethodCallStatic, TypeProcStmtVarDecl
 
 class VisitorBase(VscVisitorBase):
 
@@ -55,4 +56,23 @@ class VisitorBase(VscVisitorBase):
 
     def visitDataTypeComponent(self, i : DataTypeComponent):
         self.visitDataTypeStruct(i)
+
+    def visitDataTypeFunction(self, i : DataTypeFunction):
+        if i.getReturnType() is not None:
+            i.getReturnType().accept(self)
+        for p in i.getParameters():
+            p.accept(self)
+
+    def visitDataTypeFunctionParamDecl(self, i : DataTypeFunctionParamDecl):
+        self.visitTypeProcStmtVarDecl(i)
+
+    def visitTypeExprMethodCallStatic(self, i : TypeExprMethodCallStatic):
+        i.getTarget().accept(self)
+        for p in i.getParameters():
+            p.accept(self)
+    
+    def visitTypeProcStmtVarDecl(self, i : TypeProcStmtVarDecl):
+        i.getDataType().accept(self)
+        if i.getInit() is not None:
+            i.getInit().accept(self)
 

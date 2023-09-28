@@ -1,5 +1,5 @@
 #****************************************************************************
-#* data_type_function.py
+#* data_type_function_import.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,35 +20,17 @@
 #*
 #****************************************************************************
 import zsp_dataclasses.impl.context as ctxt
-from typing import List
 
-class DataTypeFunction(object):
+class DataTypeFunctionImport(ctxt.DataTypeFunctionImport):
 
-    def __init__(self,
-                 name,
-                 rtype):
-        self._name = name
-        self._rtype = rtype
-        self._params = []
-        self._imp_specs = []
+    def __init__(self, lang, is_target, is_solve):
+        self._lang = lang
+        self._is_target = is_target
+        self._is_solve = is_solve
 
-    def name(self):
-        return self._name
+    def isTarget(self) -> bool:
+        return self._is_target
     
-    def getReturnType(self) -> 'vsc_ctxt.DataType':
-        return self._rtype
-    
-    def getParameters(self) -> List['DataTypeFunctionParamDecl']:
-        return self._params
-    
-    def addParameter(self, p : 'DataTypeFunctionParamDecl'):
-        self._params.append(p)
+    def isSolve(self) -> bool:
+        return self._is_solve
 
-    def addImportSpec(self, spec : 'DataTypeFunctionImport'):
-        self._imp_specs.append(spec)
-    
-    def getImportSpecs(self) -> List['DataTypeFunctionImport']:
-        return self._imp_specs
-
-    def accept(self, v):
-        v.visitDataTypeFunction(self)

@@ -30,4 +30,7 @@ class DataTypeFunctionParamDecl(TypeProcStmtVarDecl):
 
     def getDirection(self) -> ctxt_api.ParamDir:
         return self._dir
+    
+    def accept(self, v):
+        v.visitDataTypeFunctionParamDecl(self)
 

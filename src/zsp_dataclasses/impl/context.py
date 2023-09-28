@@ -116,6 +116,20 @@ class DataTypeFunction(vsc_ctxt.DataType):
     
     def addParameter(self, p : DataTypeFunctionParamDecl):
         raise NotImplementedError("DataTypeFunction.addParameter")
+    
+    def addImportSpec(self, spec : 'DataTypeFunctionImport'):
+        raise NotImplementedError("addImportSpec")
+    
+    def getImportSpecs(self) -> List['DataTypeFunctionImport']:
+        raise NotImplementedError("getImportSpecs")
+
+class DataTypeFunctionImport(object):
+
+    def isTarget(self) -> bool:
+        raise NotImplementedError("isTarget")
+    
+    def isSolve(self) -> bool:
+        raise NotImplementedError("isSolve")
 
 
 class FlowObjKindE(IntEnum):
@@ -141,6 +155,14 @@ class ModelFieldComponent(vsc_ctxt.ModelField):
 
 class PoolBindKind(IntEnum):
     All = 0
+
+class TypeExprMethodCallStatic(vsc_ctxt.TypeExpr):
+
+    def getTarget(self) -> DataTypeFunction:
+        raise NotImplementedError("getTarget")
+    
+    def getParameters(self) -> List[vsc_ctxt.TypeExpr]:
+        raise NotImplementedError("getParameters")
 
 class TypeFieldActivity(vsc_ctxt.TypeField):
 
@@ -198,6 +220,10 @@ class Context(vsc.impl.Context):
                                 init : vsc_ctxt.TypeExpr) -> DataTypeFunctionParamDecl:
         raise NotImplementedError("mkDataTypeFunctionParamDecl")
 
+    def mkTypeExprMethodCallStatic(self,
+                                target : DataTypeFunction,
+                                params : List[vsc_ctxt.TypeExpr]):
+        raise NotImplementedError("mkTypeExprMethodCallStatic")
 
     def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
         raise NotImplementedError("mkTypeFieldActivity")

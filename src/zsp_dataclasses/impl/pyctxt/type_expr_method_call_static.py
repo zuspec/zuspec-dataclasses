@@ -1,5 +1,5 @@
 #****************************************************************************
-#* data_type_function.py
+#* type_expr_method_call_static.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,36 +19,21 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses.impl.context as ctxt
 from typing import List
+import zsp_dataclasses.impl.context as ctxt
 
-class DataTypeFunction(object):
+class TypeExprMethodCallStatic(ctxt.TypeExprMethodCallStatic):
 
-    def __init__(self,
-                 name,
-                 rtype):
-        self._name = name
-        self._rtype = rtype
-        self._params = []
-        self._imp_specs = []
+    def __init__(self, target : 'DataTypeFunction', params):
+        self._target = target
+        self._params = params.copy()
+        pass
 
-    def name(self):
-        return self._name
+    def getTarget(self) -> 'DataTypeFunction':
+        return self._target
     
-    def getReturnType(self) -> 'vsc_ctxt.DataType':
-        return self._rtype
-    
-    def getParameters(self) -> List['DataTypeFunctionParamDecl']:
+    def getParameters(self) -> List['vsc_ctxt.TypeExpr']:
         return self._params
     
-    def addParameter(self, p : 'DataTypeFunctionParamDecl'):
-        self._params.append(p)
-
-    def addImportSpec(self, spec : 'DataTypeFunctionImport'):
-        self._imp_specs.append(spec)
-    
-    def getImportSpecs(self) -> List['DataTypeFunctionImport']:
-        return self._imp_specs
-
     def accept(self, v):
-        v.visitDataTypeFunction(self)
+        v.visitTypeExprMethodCallStatic(self)
