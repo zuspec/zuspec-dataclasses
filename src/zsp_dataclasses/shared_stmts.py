@@ -35,6 +35,7 @@ class if_then(object):
         cond_e = Expr.toExpr(e)
         ctor.pop_expr(cond_e)
 
+        # Have constraint, proc, and activity
         if ctor.is_type_mode():
             true_c = ctor.ctxt().mkTypeConstraintScope()
             self.stmt = ctor.ctxt().mkTypeConstraintIfElse(

@@ -1,5 +1,5 @@
 #****************************************************************************
-#* data_type_arl_struct.py
+#* type_proc_stmt_scope.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,23 +20,26 @@
 #*
 #****************************************************************************
 import zsp_dataclasses.impl.context as ctxt_api
-from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
 
-class DataTypeArlStruct(ctxt_api.DataTypeArlStruct, DataTypeStruct):
+class TypeProcStmtScope(ctxt_api.TypeProcStmtScope):
 
-    def __init__(self, name):
-        DataTypeStruct.__init__(self, name)
-        self._exec_l = []
-        pass
+    def __init__(self):
+        self._statements = []
+        self._variables = []
 
-    def addExec(self, exec : 'TypeExec'):
-        self._exec_l.append(exec)
+    def addStatement(self, s):
+        self._statements.append(s)
     
-    def getExecs(self):
-        return self._exec_l
+    def addVariable(self, v):
+        self._variables.append(v)
+
+    def getStatements(self):
+        return self._statements
+
+    def getVariables(self):
+        return self._variables
     
-    def addFunction(self, f : 'DataTypeFunction'):
-        raise NotImplementedError("addFunction")
-    
-    def getFunctions(self):
-        raise NotImplementedError("getFunctions")
+    def accept(self, v):
+        v.visitTypeProcStmtScope(self)
+
+

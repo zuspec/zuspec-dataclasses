@@ -16,16 +16,26 @@ class DataTypeAction(ctxt_api.DataTypeAction,DataTypeArlStruct):
             "comp", 
             None, 
             vsc_ctxt.TypeFieldAttr.NoAttr))
+        print("Field: %s (%s)" % (self.getField(0).name(), type(self.getField(0)).__qualname__))
 
     def getComponentType(self) -> 'DataTypeComponent':
         return self._comp_t
     
     def setComponentType(self, t : 'DataTypeComponent'):
+        print("setComponent")
+        print("Field: %s (%s)" % (self.getField(0).name(), type(self.getField(0)).__qualname__))
         self.getField(0).setDataType(t)
         self._comp_t = t
+        pass
 
     def getCompField(self) -> 'vsc_ctxt.TypeFieldRef':
         return self._fields[0]
+    
+    def addField(self, f: 'TypeField'):
+        print("DataTypeAction.addField %s" % f.name())
+        if f.name().endswith(".Entry"):
+            raise Exception("Bad addition")
+        return super().addField(f)
 
     def addActivity(self, activity : 'TypeFieldActivity'):
         self._activities.append(activity)

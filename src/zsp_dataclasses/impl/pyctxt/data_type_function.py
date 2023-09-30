@@ -30,6 +30,7 @@ class DataTypeFunction(object):
         self._name = name
         self._rtype = rtype
         self._params = []
+        self._body = None
         self._imp_specs = []
 
     def name(self):
@@ -43,6 +44,12 @@ class DataTypeFunction(object):
     
     def addParameter(self, p : 'DataTypeFunctionParamDecl'):
         self._params.append(p)
+
+    def getBody(self):
+        return self._body
+    
+    def setBody(self, b):
+        self._body = b
 
     def addImportSpec(self, spec : 'DataTypeFunctionImport'):
         self._imp_specs.append(spec)

@@ -80,6 +80,43 @@ class TestCppGen(TestBase):
             action_t)
         print("Cpp:\n%s\n" % cpp)
 
+    def test_single_action_exec(self):
+        @zdc.import_fn
+        def my_fn(a : int, b : int = 2) -> int:
+            print("my_fn")
+
+        @zdc.component
+        class pss_top(object):
+
+            @zdc.action
+            class Entry(object):
+
+                @zdc.exec.body
+                def body(self):
+                    print("== body ==")
+                    my_fn(10, 12)
+
+        ctor = zdc.impl.Ctor.inst()
+
+        action_t = ctor.ctxt().findDataTypeAction(pss_top.Entry.__qualname__)
+        comp_t = ctor.ctxt().findDataTypeComponent(pss_top.__qualname__)
+
+        print("Test: Field[0]: %s" % action_t.getField(0).name())
+        ctor.elab()
+        print("Test: Field[0]: %s" % action_t.getField(0).name())
+
+        self.assertIsNotNone(comp_t)
+        print("Test: Field[0]: %s" % action_t.getField(0).name())
+        self.assertIsNotNone(action_t)
+        print("Test: Field[0]: %s" % action_t.getField(0).name())
+
+        cpp = ZspDataModelCppGen().generate(
+            comp_t,
+            action_t,
+            ctor.ctxt().getDataTypeFunctions())
+        print("Cpp:\n%s\n" % cpp)
+
+
 # Issue: Anonymous type, so pool binding rules are unclear
 # Resolution: with fully-specified binding, is a pool mandatory?
 # Resolution: Pool comes from the source and destination

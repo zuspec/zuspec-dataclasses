@@ -21,6 +21,7 @@
 #****************************************************************************
 import vsc_dataclasses.impl as vsc_impl
 import vsc_dataclasses.impl.context as vsc_ctxt
+from vsc_dataclasses.impl.ctor import Ctor as VscCtor
 
 from .modelinfo_component import ModelInfoComponent
 
@@ -97,6 +98,8 @@ class TypeInfoComponent(TypeInfo):
         self._invokeInit(obj)
 
     def _invokeInit(self, obj):
+        ctor = Ctor.inst()
+        vsc_ctor = vsc_impl.Ctor.inst()
         ctxt = RtCtxt.inst()
 
         typeinfo : TypeInfoComponent = obj._modelinfo._typeinfo
@@ -107,7 +110,14 @@ class TypeInfoComponent(TypeInfo):
 
             ctxt.push_exec_group(exec_g)
             for e in exec_g.execs:
+                # Push stmt scope to put 
+                print("--> push_proc_scope")
+                ctor.push_proc_scope(None)
                 e.func(obj)
+                ctor.pop_proc_scope()
+                print("<-- pop_proc_scope")
+
+#                for le in vsc_ctor.pop_expr()
             ctxt.pop_exec_group()
 
         for comp_mi in obj._modelinfo.component_fields:
@@ -167,6 +177,7 @@ class TypeInfoComponent(TypeInfo):
         vsc_ctor.pop_scope()
 
         print("<-- TypeInfoComponent.elab %s %d" % (self.info.T.__name__, len(vsc_ctor._scope_s)))
+        print("Field[0]=%s" % self._action_t[0].lib_typeobj.getField(0).name())
 
     def addActionT(self, a):
         self._action_t.append(a)

@@ -38,10 +38,14 @@ class TypeInfoAction(TypeInfo):
 
     def elab(self, obj):
         print("TypeInfoAction.elab")
+        print("Field[0]=%s" % self.lib_typeobj.getField(0).name())
         self.lib_typeobj.setComponentType(self.component_ti.lib_typeobj)
+        print("Field[0]=%s" % self.lib_typeobj.getField(0).name())
         super().elab(obj)
+        print("Field[0]=%s" % self.lib_typeobj.getField(0).name())
 
         self.elabActivities(obj)
+        print("Field[0]=%s" % self.lib_typeobj.getField(0).name())
         pass
 
     def addActivity(self, activity_t):

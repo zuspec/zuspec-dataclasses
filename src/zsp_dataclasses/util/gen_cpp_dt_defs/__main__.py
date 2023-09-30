@@ -86,9 +86,10 @@ def main():
         gen = ZspDataModelCppGen()
         gen._ctxt = "m_ctxt"
         with open(header_path, "w") as fp:
-            fp.write(gen.generate(root_comp, root_action))
-
-        pass
+            fp.write(gen.generate(
+                root_comp, 
+                root_action, 
+                Ctor.inst().ctxt().getDataTypeFunctions()))
 
     if args.depfile is not None:
         with open(args.depfile, "w") as fp:

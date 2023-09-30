@@ -33,6 +33,7 @@ class Ctor(object):
         self._component_l = []
         self._action_typeinfo_m = {}       
         self._activity_s = []
+        self._proc_scope_s = []
 
         pass
     
@@ -131,6 +132,21 @@ class Ctor(object):
         ret = self._activity_l.copy()
         self._activity_l.clear()
         return ret
+    
+    def push_proc_scope(self, s):
+        self._proc_scope_s.append(s)
+
+    def proc_scope(self):
+        return self._proc_scope_s[-1]
+    
+    def pop_proc_scope(self):
+        from vsc_dataclasses.impl.ctor import Ctor
+        vsc_ctor = Ctor.inst()
+        ps = self._proc_scope_s.pop()
+
+        for e in vsc_ctor.pop_exprs():
+            ps.addStatement(self._ctxt.mkTypeProcStmtExpr(e.model))
+        return ps
     
     def push_activity_scope_mi(self, s_mi):
         from vsc_dataclasses.impl import Ctor as VscCtor

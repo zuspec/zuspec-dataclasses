@@ -1,5 +1,5 @@
 #****************************************************************************
-#* data_type_arl_struct.py
+#* type_exec.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,23 +20,19 @@
 #*
 #****************************************************************************
 import zsp_dataclasses.impl.context as ctxt_api
-from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
+from zsp_dataclasses.impl.context import ExecKindT
 
-class DataTypeArlStruct(ctxt_api.DataTypeArlStruct, DataTypeStruct):
+class TypeExec(ctxt_api.TypeExec):
 
-    def __init__(self, name):
-        DataTypeStruct.__init__(self, name)
-        self._exec_l = []
-        pass
+    def __init__(self, kind, body):
+        self._kind = kind
+        self._body = body
 
-    def addExec(self, exec : 'TypeExec'):
-        self._exec_l.append(exec)
+    def getKind(self) -> ExecKindT:
+        return self._kind
     
-    def getExecs(self):
-        return self._exec_l
-    
-    def addFunction(self, f : 'DataTypeFunction'):
-        raise NotImplementedError("addFunction")
-    
-    def getFunctions(self):
-        raise NotImplementedError("getFunctions")
+    def getBody(self):
+        return self._body
+
+    def accept(self, v):
+        v.visitTypeExec(self)

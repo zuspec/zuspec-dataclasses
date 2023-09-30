@@ -88,6 +88,20 @@ class ParamDir(IntEnum):
     Out = auto()
     InOut = auto()
 
+class TypeProcStmtScope(object):
+
+    def addStatement(self, s):
+        raise NotImplementedError("addStatement")
+    
+    def addVariable(self, v):
+        raise NotImplementedError("addVariable")
+
+    def getStatements(self):
+        raise NotImplementedError("getStatements")
+
+    def getVariables(self):
+        raise NotImplementedError("getVariables")
+
 class TypeProcStmtVarDecl(object):
 
     def name(self) -> str:
@@ -116,6 +130,12 @@ class DataTypeFunction(vsc_ctxt.DataType):
     
     def addParameter(self, p : DataTypeFunctionParamDecl):
         raise NotImplementedError("DataTypeFunction.addParameter")
+    
+    def getBody(self):
+        raise NotImplementedError("getBody")
+    
+    def setBody(self, b):
+        raise NotImplementedError("setBody")
     
     def addImportSpec(self, spec : 'DataTypeFunctionImport'):
         raise NotImplementedError("addImportSpec")
@@ -156,6 +176,21 @@ class ModelFieldComponent(vsc_ctxt.ModelField):
 class PoolBindKind(IntEnum):
     All = 0
 
+class ExecKindT(IntEnum):
+    Body = auto()
+    InitDown = auto()
+    InitUp = auto()
+    PreSolve = auto()
+    PostSolve = auto()
+
+class TypeExec(object):
+
+    def getKind(self) -> ExecKindT:
+        raise NotImplementedError("getKind")
+    
+    def getBody(self):
+        raise NotImplementedError("getBody")
+
 class TypeExprMethodCallStatic(vsc_ctxt.TypeExpr):
 
     def getTarget(self) -> DataTypeFunction:
@@ -168,6 +203,12 @@ class TypeFieldActivity(vsc_ctxt.TypeField):
 
     def mkActivity(self, ctxt : ModelBuildContext):
         raise NotImplementedError("mkActivity")
+
+class TypeProcStmtExpr(object):
+
+    def getExpr() -> vsc_ctxt.TypeExpr:
+        raise NotImplementedError("getExpr")
+
 
 class Context(vsc.impl.Context):
 
@@ -211,6 +252,21 @@ class Context(vsc.impl.Context):
                            is_target : bool,
                            is_solve : bool):
         raise NotImplementedError("mkDataTypeFunction")
+    
+    def addDataTypeFunction(self, f):
+        raise NotImplementedError("addDataTypeFunction")
+    
+    def getDataTypeFunctions(self):
+        raise NotImplementedError("getDataTypeFunctions")
+    
+    def findDataTypeFunction(self, name):
+        raise NotImplementedError("findDataTypeFunction")
+    
+    def mkDataTypeFunctionImport(self,
+                                lang,
+                                is_target,
+                                is_solve):
+        raise NotImplementedError("mkDataTypeFunctionImport")
 
     def mkDataTypeFunctionParamDecl(self,
                                 name,
@@ -220,6 +276,11 @@ class Context(vsc.impl.Context):
                                 init : vsc_ctxt.TypeExpr) -> DataTypeFunctionParamDecl:
         raise NotImplementedError("mkDataTypeFunctionParamDecl")
 
+    def mkTypeExec(self,
+                   kind,
+                   body):
+        raise NotImplementedError("mkTypeExec")
+
     def mkTypeExprMethodCallStatic(self,
                                 target : DataTypeFunction,
                                 params : List[vsc_ctxt.TypeExpr]):
@@ -227,6 +288,12 @@ class Context(vsc.impl.Context):
 
     def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
         raise NotImplementedError("mkTypeFieldActivity")
+    
+    def mkTypeProcStmtScope(self):
+        raise NotImplementedError("mkTypeProcStmtScope")
+    
+    def mkTypeProcStmtExpr(self, expr):
+        raise NotImplementedError("mkTypeProcStmtExpr")
     
 
     pass

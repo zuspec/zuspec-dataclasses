@@ -36,9 +36,19 @@ class MethodProxyFn(typeworks.MethodProxy):
         from .ctor import Ctor
         ctxt = Ctor.inst().ctxt()
 
-#        self._libobj = ctxt.mkDataTypeFunction(
-#            typeworks.localname(self.T),
-#            None)
+        print("elab_decl: %s" % self.T.__name__)
+
+        self._libobj = ctxt.mkDataTypeFunction(
+            typeworks.localname(self.T),
+            None,
+            False,
+            False,
+            False)
+        ctxt.addDataTypeFunction(self._libobj)
+
+        if self._is_import:
+            self._libobj.addImportSpec(
+                ctxt.mkDataTypeFunctionImport("", False, False))
 
         # TODO: need to resolve types for rtype and parameters
 
@@ -46,15 +56,39 @@ class MethodProxyFn(typeworks.MethodProxy):
         pass
 
     def elab_body(self):
+        from .ctor import Ctor
+
+        print("elab_body: %s" % self.T.__name__)
+
         if self._is_import:
-            from .ctor import Ctor
             print("Elab: %s" % typeworks.localname(self.T))
         else:
             pass
         pass
 
     def __call__(self, *args, **kwargs):
-        # TODO: 
-        return self.T(*args, *kwargs)
+        from vsc_dataclasses.impl.ctor import Ctor as VscCtor
+        from vsc_dataclasses.impl.expr import Expr as VscExpr
+        vsc_ctor = VscCtor.inst()
+        from .ctor import Ctor
+        ctor = Ctor.inst()
+        print("__call__ %s %s" % (ctor.is_type_mode(), vsc_ctor.is_type_mode()))
+
+        if vsc_ctor.is_type_mode():
+            print("Function call in type mode")
+            params = []
+            for a in args:
+                e = VscExpr.toExpr(a)
+                e = vsc_ctor.pop_expr(e)
+                print("Expr: %s" % str(e.model))
+                params.append(e.model)
+            call_expr = ctor.ctxt().mkTypeExprMethodCallStatic(
+                self._libobj,
+                params)
+            return VscExpr(call_expr)
+        else:
+            # TODO: 
+            raise Exception("Illegal to invoke function outside type mode")
+            return self.T(*args, *kwargs)
     
 

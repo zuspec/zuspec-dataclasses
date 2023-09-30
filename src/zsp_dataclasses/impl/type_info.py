@@ -5,6 +5,7 @@ Created on Apr 4, 2022
 '''
 import dataclasses
 import vsc_dataclasses.impl as vsc_impl
+import zsp_dataclasses.impl.context as ctxt_api
 from typing import Dict, List, Tuple
 from .exec_kind_e import ExecKindE
 from .exec_group import ExecGroup
@@ -37,6 +38,7 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
         self._function_l : List[MethodProxyFn] = []
 
     def addExec(self, exec_t : ExecType):
+        print("TypeInfo.addExec")
         if exec_t.kind not in self._exec_m.keys():
             self._exec_m[exec_t.kind] = ExecGroup(exec_t.kind)
         self._exec_m[exec_t.kind].add_exec(exec_t)
@@ -81,13 +83,38 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
 
     def _elabExecs(self, obj):
         from .ctor import Ctor
+        exec_kind_m = {
+            ExecKindE.Body : ctxt_api.ExecKindT.Body,
+            ExecKindE.InitDown : ctxt_api.ExecKindT.InitDown,
+            ExecKindE.InitUp : ctxt_api.ExecKindT.InitUp,
+            ExecKindE.PreSolve : ctxt_api.ExecKindT.PreSolve,
+            ExecKindE.PostSolve : ctxt_api.ExecKindT.PostSolve
+        }
 
         ctxt = Ctor.inst().ctxt()
         for kind in self._exec_m.keys():
             print("Elaborating exec-kind %s" % str(kind))
+            root_scope = None
+            scope = None
             for e in self._exec_m[kind].execs:
-                  print("  Exec %s" % str(e))
-                  e.func(obj)
+                print("  Exec %s" % str(e))
+                if scope is not None:
+                    if root_scope is None:
+                        root_scope = ctxt.mkTypeProcStmtScope()
+                    root_scope.addStatement(scope)
+                scope = ctxt.mkTypeProcStmtScope()
+                Ctor.inst().push_proc_scope(scope)
+                e.func(obj)
+                Ctor.inst().pop_proc_scope()
+
+                if root_scope is not None:
+                    root_scope.addStatement(scope)
+            if root_scope is not None:
+                self._lib_typeobj.addExec(
+                    ctxt.mkTypeExec(exec_kind_m[kind], root_scope))
+            else:
+                self._lib_typeobj.addExec(
+                    ctxt.mkTypeExec(exec_kind_m[kind], scope))
 
     def _elabFields(self):
         from .rand_t import RandT

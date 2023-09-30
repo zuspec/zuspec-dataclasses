@@ -43,3 +43,21 @@ class TestFunction(TestBase):
 #                with zdc.else:
 #                    pass
 
+    def test_import_func(self):
+        @zdc.import_fn
+        def my_function(a : int, b : int):
+            pass
+
+        @zdc.component
+        class pss_top(object):
+
+            @zdc.action
+            class Entry(object):
+
+                @zdc.exec.body
+                def body(self):
+                    print("exec body")
+                    my_function(1, 2)
+
+        from zsp_dataclasses.impl.ctor import Ctor
+        Ctor.inst().elab()
