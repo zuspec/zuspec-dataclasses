@@ -23,7 +23,11 @@
 import zsp_dataclasses.impl.context as ctxt_api
 from vsc_dataclasses.impl.generators.vsc_data_model_cpp_gen import VscDataModelCppGen
 from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
+<<<<<<< HEAD
 from ..context import DataTypeAction, DataTypeComponent, DataTypeFunction, TypeExec, TypeExprMethodCallStatic, TypeFieldReg, TypeFieldRegGroup, TypeProcStmtExpr, TypeProcStmtIfElse, TypeProcStmtScope
+=======
+from ..context import DataTypeAction, DataTypeComponent, DataTypeFunction, TypeExec, TypeExprMethodCallStatic, TypeProcStmtExpr, TypeProcStmtScope
+>>>>>>> refs/remotes/origin/main
 from ..pyctxt.visitor_base import VisitorBase
 
 class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
@@ -57,7 +61,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                     self._ctxt,
                     f.name()))
                 if len(f.getImportSpecs()) > 0:
-                    self.println("%s_t->addImportSpec(" % self._ctxt)
+                    self.println("%s_t->addImportSpec(" % (self.leaf_name(f.name())))
                     self.inc_indent()
                     self.println("%s->mkDataTypeFunctionImport(\"%s\", false, false)" % (
                         self._ctxt,
@@ -145,7 +149,11 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self._emit_type_mode += 1
                 i.getReturnType().accept(self)
                 self._emit_type_mode -= 1
+<<<<<<< HEAD
                 self.write(",\n")
+=======
+            self.println("false") # own_rtype
+>>>>>>> refs/remotes/origin/main
             self.dec_indent()
             self.println(");")
             # Add parameter declarations
@@ -180,17 +188,14 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             ctxt_api.ExecKindT.PreSolve : "zsp::arl::dm::ExecKindT::PreSolve",
             ctxt_api.ExecKindT.PostSolve : "zsp::arl::dm::ExecKindT::PostSolve",
         }
-        self.println("%s_t->addExec(%s->mkTypeExec(" % (
+        self.println("%s_t->addExec(%s->mkTypeExecProc(" % (
             self.leaf_name(self._type_s[-1].name()),
             self._ctxt
         ))
         self.inc_indent()
         self.println("%s," % exec_kind_m[i.getKind()])
-        self.println("%s->mkTypeProcStmtScope({" % self._ctxt)
         self.inc_indent()
         i.getBody().accept(self)
-        self.dec_indent()
-        self.println("})")
         self.dec_indent()
         self.println("));")
 
@@ -202,9 +207,10 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             i.getTarget().name()))
         self.println("{")
         self.inc_indent()
-        self.push_comma()
-        for p in i.getParameters():
+        for ii,p in enumerate(i.getParameters()):
+            self.push_comma(ii+1 < len(i.getParameters()))
             p.accept(self)
+            self.pop_comma()
         self.dec_indent()
         self.println("}")
         self.dec_indent()
@@ -293,9 +299,11 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
 
     def visitTypeProcStmtExpr(self, i: TypeProcStmtExpr):
         self.println("%s->mkTypeProcStmtExpr(" % self._ctxt)
+        self.inc_indent()
         self.push_comma(False)
         i.getExpr().accept(self)
         self.pop_comma()
+        self.dec_indent()
         self.println(")%s" % self.comma())
 
     def visitTypeProcStmtIfElse(self, i: TypeProcStmtIfElse):
