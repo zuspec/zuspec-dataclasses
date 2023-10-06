@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* type_info_proc_scope.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,16 +20,9 @@
 #*
 #****************************************************************************
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+class TypeInfoProcScope(object):
 
-class reg_c(metaclass=RegCMeta):
-    pass
-
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    def __init__(self, scope, parent=None):
+        self._scope = scope
+        self._parent = parent
 

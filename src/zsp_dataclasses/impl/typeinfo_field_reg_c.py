@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* type_info_field_reg_c.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,17 +19,18 @@
 #*     Author: 
 #*
 #****************************************************************************
+from vsc_dataclasses.impl.typeinfo_field import TypeInfoField
+from .field_reg_c_impl import FieldRegCImpl
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+class TypeInfoFieldRegC(TypeInfoField):
 
-class reg_c(metaclass=RegCMeta):
-    pass
+    def __init__(self, name, typeinfo):
+        super().__init__(name, typeinfo)
 
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    def createInst(
+        self,
+        modelinfo_p,
+        name,
+        idx):
+        return FieldRegCImpl(modelinfo_p, name, idx)
 

@@ -15,8 +15,11 @@ from .data_type_function_param_decl import DataTypeFunctionParamDecl
 from .type_exec import TypeExec
 from .type_expr_method_call_static import TypeExprMethodCallStatic
 from .type_field_activity import TypeFieldActivity
+from .type_field_reg import TypeFieldReg
+from .type_field_reg_group import TypeFieldRegGroup
 from .type_proc_stmt_var_decl import TypeProcStmtVarDecl
 from .type_proc_stmt_expr import TypeProcStmtExpr
+from .type_proc_stmt_if_else import TypeProcStmtIfElse
 from .type_proc_stmt_scope import TypeProcStmtScope
 
 
@@ -98,7 +101,7 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
                                 type : vsc_ctxt.DataType,
                                 own : bool,
                                 init : vsc_ctxt.TypeExpr) -> ctxt_api.DataTypeFunctionParamDecl:
-        return DataTypeFunctionParamDecl(name, dir, type, own, init)
+        return DataTypeFunctionParamDecl(name, dir, type, init)
     
     def mkTypeExec(self,
                    kind,
@@ -130,6 +133,18 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
             raise Exception("Creating action-named field")
         else:
             return super().mkTypeFieldRef(name, dtype, attr)
+        
+    def mkTypeFieldReg(self,
+                       name,
+                       type,
+                       owned):
+        return TypeFieldReg(name, type, owned)
+
+    def mkTypeFieldRegGroup(self,
+                            name,
+                            type,
+                            owned):
+        return TypeFieldRegGroup(name, type, owned)
     
     def mkTypeExprMethodCallStatic(self, 
                                    target: DataTypeFunction, 
@@ -144,4 +159,10 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
     
     def mkTypeProcStmtScope(self):
         return TypeProcStmtScope()
+
+    def mkTypeProcStmtIfElse(self,
+                             cond,
+                             true_s,
+                             false_s):
+        return TypeProcStmtIfElse(cond, true_s, false_s)
 

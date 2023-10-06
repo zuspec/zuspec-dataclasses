@@ -32,25 +32,30 @@ class TestRegModel(TestBase):
             f3 : zdc.uint8_t
             f4 : zdc.uint8_t
 
-        @zdc.component
+        @zdc.reg_group_c
         class my_regs(object):
-#            r1 : zdc.reg_c[my_reg1] # (offset=10)
-#            r2 : zdc.reg_c[my_reg1] # (offset=20)
-#            r3 : zdc.reg_c[my_reg1]
-#            r4 : zdc.reg_c[my_reg1]
-            pass
+            r1 : zdc.reg_c[my_reg1](offset=0x10)
+            r2 : zdc.reg_c[my_reg1](offset=0x14)
+            r3 : zdc.reg_c[my_reg1] = dict(offset=0x18)
+            r4 : zdc.reg_c[my_reg1]
 
 #            @zdc.fn
 #            def get_offset(self):
 #                pass
 
+        @zdc.reg_group_c
+        class upper_regs(object):
+#            rg1 : zdc.reg_group_c[my_regs](offset=0x20)
+#            rg2 : zdc.reg_group_c[my_regs](offset=0x30)
+            rg1 : my_regs = dict(offset=0x20)
+
         @zdc.component
         class pss_top(object):
-#            regs : my_regs
+            regs : upper_regs
 
             @zdc.action
             class DoSomething(object):
-                a : 'pss_top.Entry'
+#                a : 'pss_top.Entry'
                 pass
 
             @zdc.action

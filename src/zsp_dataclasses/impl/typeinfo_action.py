@@ -1,7 +1,7 @@
 
 import vsc_dataclasses.impl as vsc_impl
 
-from .ctor import Ctor
+from .ctor import Ctor, CtxtE
 from .modelinfo_activity import ModelinfoActivity
 from .type_info import TypeInfo
 
@@ -80,7 +80,7 @@ class TypeInfoAction(TypeInfo):
         # treat the activity scope as a distinct scope
         scopes = ctor.save_scopes()
         ctor.push_type_mode()
-        ctor_a.push_activity_mode()
+        ctor_a.push_ctxt_type(CtxtE.Activity)
         for a in self.activities:
             activity_s = ctor_a.ctxt().mkDataTypeActivitySequence()
             activity_mi = ModelinfoActivity(activity_s)
@@ -101,7 +101,7 @@ class TypeInfoAction(TypeInfo):
             ctor_a.pop_activity_scope_mi()
 
         ctor.pop_type_mode()
-        ctor_a.pop_activity_mode()
+        ctor_a.pop_ctxt_type()
         ctor.restore_scopes(scopes)
         pass
 

@@ -116,6 +116,158 @@ class TestCppGen(TestBase):
             ctor.ctxt().getDataTypeFunctions())
         print("Cpp:\n%s\n" % cpp)
 
+    def test_single_layer_reg_group(self):
+        ctor = zdc.impl.Ctor.inst()
+
+        @zdc.struct
+        class my_reg1(object):
+            f1 : zdc.uint8_t
+            f2 : zdc.uint8_t
+            f3 : zdc.uint8_t
+            f4 : zdc.uint8_t
+
+        @zdc.reg_group_c
+        class my_regs(object):
+            r1 : zdc.reg_c[my_reg1] = dict(offset=0x10)
+            r2 : zdc.reg_c[my_reg1] = dict(offset=0x14)
+            r3 : zdc.reg_c[my_reg1] = dict(offset=0x18)
+            r4 : zdc.reg_c[my_reg1] = dict(offset=0x1c)
+
+        @zdc.component
+        class pss_top(object):
+            regs : my_regs
+
+            @zdc.action
+            class Entry(object):
+
+                @zdc.exec.body
+                def body(self):
+                    self.comp.regs.r1.read()
+                    self.comp.regs.r3.read()
+
+        ctor.elab()
+
+        action_t = ctor.ctxt().findDataTypeAction(pss_top.Entry.__qualname__)
+        comp_t = ctor.ctxt().findDataTypeComponent(pss_top.__qualname__)
+
+        cpp = ZspDataModelCppGen().generate(
+            comp_t,
+            action_t,
+            ctor.ctxt().getDataTypeFunctions(),
+            [
+                ctor.ctxt().findDataTypeComponent(my_regs.__qualname__)
+            ])
+        print("Cpp:\n%s\n" % cpp)
+
+    def test_proc_stmt_if(self):
+        ctor = zdc.impl.Ctor.inst()
+
+        @zdc.import_fn
+        def f1():
+            pass
+
+        @zdc.import_fn
+        def f2():
+            pass
+
+        @zdc.component
+        class pss_top(object):
+
+            @zdc.action
+            class Entry(object):
+                f1 : zdc.rand_int16_t
+
+                @zdc.exec.body
+                def body(self):
+                    with zdc.if_then(self.f1 < 10):
+                        f1()
+                    with zdc.else_if(self.f1 > 20):
+                        f2()
+                    with zdc.else_then:
+                        f2()
+                    pass
+
+        ctor.elab()
+
+        action_t = ctor.ctxt().findDataTypeAction(pss_top.Entry.__qualname__)
+        comp_t = ctor.ctxt().findDataTypeComponent(pss_top.__qualname__)
+
+        cpp = ZspDataModelCppGen().generate(
+            comp_t,
+            action_t,
+            ctor.ctxt().getDataTypeFunctions())
+        print("Cpp:\n%s\n" % cpp)
+
+    def test_proc_stmt_repeat(self):
+        ctor = zdc.impl.Ctor.inst()
+
+        @zdc.import_fn
+        def f1(a : zdc.int16_t):
+            pass
+
+        @zdc.import_fn
+        def f2():
+            pass
+
+        @zdc.component
+        class pss_top(object):
+
+            @zdc.action
+            class Entry(object):
+                f1 : zdc.rand_int16_t
+
+                @zdc.exec.body
+                def body(self):
+                    with zdc.repeat(20) as i:
+                        f1(i)
+                    pass
+
+        ctor.elab()
+
+        action_t = ctor.ctxt().findDataTypeAction(pss_top.Entry.__qualname__)
+        comp_t = ctor.ctxt().findDataTypeComponent(pss_top.__qualname__)
+
+        cpp = ZspDataModelCppGen().generate(
+            comp_t,
+            action_t,
+            ctor.ctxt().getDataTypeFunctions())
+        print("Cpp:\n%s\n" % cpp)
+
+    def test_proc_stmt_repeat_nested_2(self):
+        ctor = zdc.impl.Ctor.inst()
+
+        @zdc.import_fn
+        def f1(a : zdc.int16_t, b : zdc.output[zdc.int16_t]):
+            pass
+
+        @zdc.import_fn
+        def f2() -> zdc.int32_t:
+            pass
+
+        @zdc.component
+        class pss_top(object):
+
+            @zdc.action
+            class Entry(object):
+                f1 : zdc.rand_int16_t
+
+                @zdc.exec.body
+                def body(self):
+                    with zdc.repeat(20) as i:
+                        with zdc.repeat(20) as ii:
+                            f1(i, ii)
+                    pass
+
+        ctor.elab()
+
+        action_t = ctor.ctxt().findDataTypeAction(pss_top.Entry.__qualname__)
+        comp_t = ctor.ctxt().findDataTypeComponent(pss_top.__qualname__)
+
+        cpp = ZspDataModelCppGen().generate(
+            comp_t,
+            action_t,
+            ctor.ctxt().getDataTypeFunctions())
+        print("Cpp:\n%s\n" % cpp)
 
 # Issue: Anonymous type, so pool binding rules are unclear
 # Resolution: with fully-specified binding, is a pool mandatory?

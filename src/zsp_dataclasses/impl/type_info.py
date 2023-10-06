@@ -82,7 +82,7 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
         self._is_elab = True
 
     def _elabExecs(self, obj):
-        from .ctor import Ctor
+        from .ctor import Ctor, CtxtE
         exec_kind_m = {
             ExecKindE.Body : ctxt_api.ExecKindT.Body,
             ExecKindE.InitDown : ctxt_api.ExecKindT.InitDown,
@@ -103,9 +103,11 @@ class TypeInfo(vsc_impl.TypeInfoRandClass):
                         root_scope = ctxt.mkTypeProcStmtScope()
                     root_scope.addStatement(scope)
                 scope = ctxt.mkTypeProcStmtScope()
+                Ctor.inst().push_ctxt_type(CtxtE.Exec)
                 Ctor.inst().push_proc_scope(scope)
                 e.func(obj)
                 Ctor.inst().pop_proc_scope()
+                Ctor.inst().pop_ctxt_type()
 
                 if root_scope is not None:
                     root_scope.addStatement(scope)

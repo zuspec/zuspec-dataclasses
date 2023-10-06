@@ -177,7 +177,6 @@ class TypeInfoComponent(TypeInfo):
         vsc_ctor.pop_scope()
 
         print("<-- TypeInfoComponent.elab %s %d" % (self.info.T.__name__, len(vsc_ctor._scope_s)))
-        print("Field[0]=%s" % self._action_t[0].lib_typeobj.getField(0).name())
 
     def addActionT(self, a):
         self._action_t.append(a)

@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* field_reg_c_impl.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,16 +20,31 @@
 #*
 #****************************************************************************
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+class FieldRegCImpl(object):
 
-class reg_c(metaclass=RegCMeta):
-    pass
+    def __init__(self, modelinfo_p, name, idx):
+        self._modelinfo_p = modelinfo_p
+        self._name = name
+        self._idx = idx
+        pass
 
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    def read(self):
+        print("READ: %s %d" % (self._name, self._idx))
+        mi = self._modelinfo_p
+
+        offset_l = [self._idx]
+        while mi is not None and mi._idx != -1:
+            print("MI: %s %d %s" % (str(mi), mi._idx, mi._name))
+            offset_l.insert(0, mi._idx)
+            mi = mi._parent
+        print("Offset: %s" % str(offset_l))
+
+    def write(self, value):
+        pass
+
+    def read_val(self):
+        pass
+
+    def write_val(self, value):
+        pass
 

@@ -6,11 +6,15 @@ Created on Mar 19, 2022
 
 import typeworks
 
+from enum import Enum, auto
 from vsc_dataclasses.impl.ctor import Ctor as VscCtor
-from .type_info import TypeInfo
 from .type_kind_e import TypeKindE
 from .ctor_scope import CtorScope
-from .pyctxt.context import Context
+
+class CtxtE(Enum):
+    Constraint = auto()
+    Exec = auto()
+    Activity = auto()
 
 class Ctor(object):
     _inst = None
@@ -34,6 +38,7 @@ class Ctor(object):
         self._action_typeinfo_m = {}       
         self._activity_s = []
         self._proc_scope_s = []
+        self._ctxt_type_l = []
 
         pass
     
@@ -43,6 +48,7 @@ class Ctor(object):
         return self._ctxt
     
     def elab(self):
+        from .type_info import TypeInfo
         if self._is_elab:
             print("Skip elab")
             return
@@ -84,38 +90,47 @@ class Ctor(object):
     def pop_scope(self):
         self._scope_s.pop()
         
-    def is_type_mode(self):
-        return len(self._scope_s) > 0 and self._scope_s[-1]._type_mode
+#    def is_type_mode(self):
+#        return len(self._scope_s) > 0 and self._scope_s[-1]._type_mode
         
-    def push_expr(self, e):
-        self._expr_s.append(e)
+#    def push_expr(self, e):
+#        self._expr_s.append(e)
         
-    def pop_expr(self):
-        self._expr_s.pop()
+#    def pop_expr(self):
+#        self._expr_s.pop()
         
-    def expr(self):
-        if len(self._expr_s) > 0:
-            return self._expr_s[-1]
-        else:
-            return None
+#    def expr(self):
+#        if len(self._expr_s) > 0:
+#            return self._expr_s[-1]
+#        else:
+#            return None
         
-    def activity_mode(self):
-        return len(self._activity_mode_s) > 0 and self._activity_mode_s[-1]
+    def push_ctxt_type(self, t : CtxtE):
+        self._ctxt_type_l.append(t)
+
+    def ctxt_type(self) -> CtxtE:
+        return self._ctxt_type_l[-1]
     
-    def push_activity_mode(self, m=True):
-        self._activity_mode_s.append(m)
+    def pop_ctxt_type(self):
+        self._ctxt_type_l.pop()
         
-    def pop_activity_mode(self):
-        return self._activity_mode_s.pop()
+#    def activity_mode(self):
+#        return len(self._activity_mode_s) > 0 and self._activity_mode_s[-1]
+    
+#    def push_activity_mode(self, m=True):
+#        self._activity_mode_s.append(m)
         
-    def push_expr_mode(self, m=True):
-        self._expr_mode_s.append(m)
+#    def pop_activity_mode(self):
+#        return self._activity_mode_s.pop()
         
-    def expr_mode(self):
-        return len(self._expr_mode_s) > 0 and self._expr_mode_s[-1]
+#    def push_expr_mode(self, m=True):
+#        self._expr_mode_s.append(m)
         
-    def pop_expr_mode(self):
-        return self._expr_mode_s.pop()
+#    def expr_mode(self):
+#        return len(self._expr_mode_s) > 0 and self._expr_mode_s[-1]
+        
+#    def pop_expr_mode(self):
+#        return self._expr_mode_s.pop()
     
     def push_action_decl(self, Ta):
         self._action_decl_l.append(Ta)

@@ -19,8 +19,10 @@
 #*     Author: 
 #*
 #****************************************************************************
+from .reg_c import RegC
+from .reg_c_meta_meta import RegCMetaMeta
 
-class RegCMeta(object):
+class RegCMeta(type):
 
     def __init__(self, name, bases, dct):
         self.type_m = {}
@@ -29,7 +31,9 @@ class RegCMeta(object):
         if item in self.type_m.keys():
             return self.type_m[item]
         else:
-            t = type("reg_c[%s]" % item.__qualname__)
+            t = RegCMetaMeta("reg_c[%s]" % item.__qualname__, (RegC,), {})
+            t.T = item
+            print("RegCMeta: T=%s" % str(t.T))
             self.type_m[item] = t
             return t
 

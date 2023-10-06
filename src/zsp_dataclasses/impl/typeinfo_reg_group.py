@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* type_info_reg_group.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,17 +19,17 @@
 #*     Author: 
 #*
 #****************************************************************************
+import vsc_dataclasses.impl as vsc_impl
+from .typeinfo_component import TypeInfoComponent
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+class TypeInfoRegGroup(TypeInfoComponent):
 
-class reg_c(metaclass=RegCMeta):
-    pass
+    def __init__(self, info):
+        super().__init__(info)
 
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    @staticmethod
+    def get(info) -> 'TypeInfoRegGroup':
+        if not hasattr(info, vsc_impl.TypeInfoRandClass.ATTR_NAME):
+            setattr(info, vsc_impl.TypeInfoRandClass.ATTR_NAME, TypeInfoRegGroup(info))
+        return getattr(info, vsc_impl.TypeInfoRandClass.ATTR_NAME)
 

@@ -20,6 +20,10 @@
 #*
 #****************************************************************************
 import typeworks
+from .input_output_t import InputOutputT
+from .typeinfo_proc_scope import TypeInfoProcScope
+from .type_utils import TypeUtils
+import zsp_dataclasses.impl.context as ctxt_api
 
 
 class MethodProxyFn(typeworks.MethodProxy):
@@ -38,13 +42,35 @@ class MethodProxyFn(typeworks.MethodProxy):
 
         print("elab_decl: %s" % self.T.__name__)
 
+        rtype_dt = None
+        if self._rtype is not None:
+            rtype_dt = TypeUtils().val2TypeInfo(self._rtype)._lib_typeobj
+
         self._libobj = ctxt.mkDataTypeFunction(
             typeworks.localname(self.T),
-            None,
+            rtype_dt,
             False,
             False,
             False)
         ctxt.addDataTypeFunction(self._libobj)
+
+        dir = ctxt_api.ParamDir.In
+        init = None
+
+        for p in self._params:
+            t = p[1]
+            if issubclass(t, InputOutputT):
+                dir = ctxt_api.ParamDir.Out if not t.IsInput else ctxt_api.ParamDir.In
+                t = t.T
+
+            p_ti = TypeUtils().val2TypeInfo(t)
+            self._libobj.addParameter(
+                ctxt.mkDataTypeFunctionParamDecl(
+                    p[0], # name
+                    dir,
+                    p_ti._lib_typeobj, # Type
+                    False,
+                    init))
 
         if self._is_import:
             self._libobj.addImportSpec(
@@ -56,13 +82,24 @@ class MethodProxyFn(typeworks.MethodProxy):
         pass
 
     def elab_body(self):
-        from .ctor import Ctor
-
-        print("elab_body: %s" % self.T.__name__)
+        from .ctor import Ctor, CtxtE
+        from vsc_dataclasses.impl.ctor import Ctor as VscCtor
+        ctor_a = Ctor.inst()
+        ctor = VscCtor.inst()
 
         if self._is_import:
             print("Elab: %s" % typeworks.localname(self.T))
         else:
+            # TODO: need a scope for function parameters
+            params = TypeInfoProcScope(None)
+            scope = ctor_a.ctxt().mkTypeProcStmtScope()
+            ctor.push_bottom_up_scope(TypeInfoProcScope(scope, params))
+            ctor_a.push_proc_scope()
+            ctor_a.push_ctxt_type(CtxtE.Exec)
+
+            ctor_a.pop_ctxt_type()
+            ctor.pop_bottom_up_scope()
+
             pass
         pass
 
@@ -72,7 +109,6 @@ class MethodProxyFn(typeworks.MethodProxy):
         vsc_ctor = VscCtor.inst()
         from .ctor import Ctor
         ctor = Ctor.inst()
-        print("__call__ %s %s" % (ctor.is_type_mode(), vsc_ctor.is_type_mode()))
 
         if vsc_ctor.is_type_mode():
             print("Function call in type mode")

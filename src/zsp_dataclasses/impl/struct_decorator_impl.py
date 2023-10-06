@@ -1,8 +1,25 @@
-'''
-Created on Mar 19, 2022
-
-@author: mballance
-'''
+#****************************************************************************
+#* struct_decorator_impl.py
+#*
+#* Copyright 2022 Matthew Ballance and Contributors
+#*
+#* Licensed under the Apache License, Version 2.0 (the "License"); you may 
+#* not use this file except in compliance with the License.  
+#* You may obtain a copy of the License at:
+#*
+#*   http://www.apache.org/licenses/LICENSE-2.0
+#*
+#* Unless required by applicable law or agreed to in writing, software 
+#* distributed under the License is distributed on an "AS IS" BASIS, 
+#* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  
+#* See the License for the specific language governing permissions and 
+#* limitations under the License.
+#*
+#* Created on Mar 19, 2022
+#*
+#* @author: mballance
+#*
+#****************************************************************************
 
 import vsc_dataclasses.impl as vsc_impl
 
@@ -49,6 +66,14 @@ class StructDecoratorImpl(BaseDecoratorImpl):
         ctor_a = Ctor.inst()
 
         ds_t = None
+        if self._kind ==StructKindE.Struct:
+            ds_t = ctor_a.ctxt().findDataTypeStruct(name)
+
+            if ds_t is None:
+                ds_t = ctor_a.ctxt().mkDataTypeStruct(name)
+                ctor_a.ctxt().addDataTypeStruct(ds_t)
+        else:
+            raise Exception("Unhandled flow-object type")
 #        ds_t = ctor_a.ctxt().findDataTypeFlowObj(name, kind_m[self._kind])
 #        
 #        if ds_t is None:

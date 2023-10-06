@@ -21,85 +21,112 @@
 #* Defines statements used in multiple contexts. For example, if/else is 
 #* supported in constraint, activity, and procedural context.
 #****************************************************************************
+import zsp_dataclasses.impl.context as ctxt_api
 from vsc_dataclasses.impl.expr import Expr
-from .impl.ctor import Ctor
+from vsc_dataclasses.impl.ctor import Ctor as VscCtor
+from vsc_dataclasses.impl.field_scalar_impl import FieldScalarImpl
+from vsc_dataclasses.impl.typeinfo_scalar import TypeInfoScalar
+from .impl.ctor import Ctor, CtxtE
 
 class if_then(object):
 
     def __init__(self, e):
-        ctor = Ctor.inst()
+        ctor_a = Ctor.inst()
+        ctor = VscCtor.inst()
 
-        if not ctor.in_constraint_scope():
-            raise Exception("Attempting to use if_then constraint outside constraint scope")
-        
+        ctxt_t = ctor_a.ctxt_type()
+
         cond_e = Expr.toExpr(e)
         ctor.pop_expr(cond_e)
+        print("Cond: %s" % str(cond_e.model))
 
         # Have constraint, proc, and activity
-        if ctor.is_type_mode():
-            true_c = ctor.ctxt().mkTypeConstraintScope()
-            self.stmt = ctor.ctxt().mkTypeConstraintIfElse(
-                cond_e.model,
-                true_c,
-                None)
+        if ctxt_t == CtxtE.Activity:
+            print("Activity")
+            pass
+        elif ctxt_t == CtxtE.Constraint:
+            print("Constraint")
+            pass
+        elif ctxt_t == CtxtE.Exec:
+            scope = ctor_a.proc_scope()
+            true_s = ctor_a.ctxt().mkTypeProcStmtScope()
+            scope.addStatement(ctor_a.ctxt().mkTypeProcStmtIfElse(
+                cond_e.model, true_s, None))
+            ctor_a.push_proc_scope(true_s)
         else:
-            true_c = ctor.ctxt().mkModelConstraintScope()
-            self.stmt = ctor.ctxt().mkModelConstraintIfElse(
-                cond_e.model,
-                true_c,
-                None)
+            raise Exception("Unknown context %s" % ctxt_t)
 
 #        if in_srcinfo_mode():
 #            self.stmt.srcinfo = SourceInfo.mk()
-        ctor.push_constraint_scope(true_c)
+#        ctor.push_constraint_scope(true_c)
         
     def __enter__(self):
         pass
         
     def __exit__(self, t, v, tb):
-        ctor = Ctor.inst()
-        ctor.pop_constraint_scope()
-        ctor.constraint_scope().addConstraint(self.stmt)
+        ctor_a = Ctor.inst()
+        ctor = VscCtor.inst()
+
+        ctxt_t = ctor_a.ctxt_type()
+
+        # Have constraint, proc, and activity
+        if ctxt_t == CtxtE.Activity:
+            print("Activity")
+            pass
+        elif ctxt_t == CtxtE.Constraint:
+            print("Constraint")
+            pass
+        elif ctxt_t == CtxtE.Exec:
+            ctor_a.pop_proc_scope()
+        else:
+            raise Exception("Unknown context %s" % ctxt_t)
+#        ctor.pop_constraint_scope()
+#        ctor.constraint_scope().addConstraint(self.stmt)
 
 class else_if(object):
 
     def __init__(self, e):
-        self.stmt = None
-        ctor = Ctor.inst()
-        
-        if not ctor.in_constraint_scope():
-            raise Exception("Attempting to use if_then constraint outside constraint scope")
-        
-        last_stmt = ctor.last_constraint_stmt()
-        if last_stmt == None or not isinstance(last_stmt, (core.ModelConstraintIfElse,core.TypeConstraintIfElse)):
-            raise Exception("Attempting to use else_if where it doesn't follow if_then")
-        
+        ctor_a = Ctor.inst()
+        ctor = VscCtor.inst()
+
+        ctxt_t = ctor_a.ctxt_type()
+
         cond_e = Expr.toExpr(e)
         ctor.pop_expr(cond_e)
 
-        # Need to find where to think this in
-        while last_stmt.getFalse() is not None:
-            last_stmt = last_stmt.getFalse()
+        # Have constraint, proc, and activity
+        if ctxt_t == CtxtE.Activity:
+            print("Activity")
+            pass
+        elif ctxt_t == CtxtE.Constraint:
+            print("Constraint")
+            pass
+        elif ctxt_t == CtxtE.Exec:
+            scope = ctor_a.proc_scope()
+            last = scope.getStatements()[-1]
 
-        if ctor.is_type_mode():            
-            raise Exception("TODO")
+            print("Scope: %s" % str(last))
+            if not isinstance(last, ctxt_api.TypeProcStmtIfElse):
+                raise Exception("Expecting to find TypeProcStmtIfElse, but found %s" % str(last))
+            false_s = ctor_a.ctxt().mkTypeProcStmtScope()
+
+            true_s = ctor_a.ctxt().mkTypeProcStmtScope()
+            false_s.addStatement(ctor_a.ctxt().mkTypeProcStmtIfElse(
+                cond_e.model, true_s, None))
+            last.setFalse(false_s)
+            ctor_a.push_proc_scope(false_s)
         else:
-            self.stmt = ctor.ctxt().mkModelConstraintIfElse(
-                cond_e._model,
-                None,
-                None)
+            raise Exception("Unknown context %s" % ctxt_t)
 
 #        if in_srcinfo_mode():
 #            self.stmt.srcinfo = SourceInfo.mk()
-        last_stmt.false_c = self.stmt
         
     def __enter__(self):
-        if self.stmt is not None:
-            self.stmt.true_c = ConstraintScopeModel()
-            push_constraint_scope(self.stmt.true_c)
+        pass
         
     def __exit__(self, t, v, tb):
-        pop_constraint_scope()
+        ctor_a = Ctor.inst()
+        ctor_a.pop_proc_scope()
 
 class else_then_c(object):
 
@@ -110,29 +137,69 @@ class else_then_c(object):
         return self
         
     def __enter__(self):
-        ctor = Ctor.inst()
-        if not ctor.in_constraint_scope():
-            raise Exception("Attempting to use if_then constraint outside constraint scope")
-        
-        last_stmt = ctor.last_constraint_stmt()
-        print("last_stmt=%s" % str(last_stmt))
-        if last_stmt is None or not isinstance(last_stmt, (core.ModelConstraintIfElse,core.TypeConstraintIfElse)):
-            raise Exception("Attempting to use else_then where it doesn't follow if_then/else_if")
-        
-        # Need to find where to think this in
-        while last_stmt.getFalse() is not None:
-            last_stmt = last_stmt.getFalse()
+        ctor_a = Ctor.inst()
+        ctor = VscCtor.inst()
 
-        if ctor.is_type_mode():            
-            stmt = ctor.ctxt().mkTypeConstraintScope()
+        ctxt_t = ctor_a.ctxt_type()
+        
+        # Have constraint, proc, and activity
+        if ctxt_t == CtxtE.Activity:
+            print("Activity")
+            pass
+        elif ctxt_t == CtxtE.Constraint:
+            print("Constraint")
+            pass
+        elif ctxt_t == CtxtE.Exec:
+            scope = ctor_a.proc_scope()
+            last = scope.getStatements()[-1]
+
+            print("Scope: %s" % str(last))
+            if not isinstance(last, ctxt_api.TypeProcStmtIfElse):
+                raise Exception("Expecting to find TypeProcStmtIfElse, but found %s" % str(last))
+            false_s = ctor_a.ctxt().mkTypeProcStmtScope()
+            last.setFalse(false_s)
+            ctor_a.push_proc_scope(false_s)
         else:
-            stmt = ctor.ctxt().mkModelConstraintScope()
-        last_stmt.setFalse(stmt)
-        ctor.push_constraint_scope(stmt)
+            raise Exception("Unknown context %s" % ctxt_t)
+        # ctor = Ctor.inst()
+        # if not ctor.in_constraint_scope():
+        #     raise Exception("Attempting to use if_then constraint outside constraint scope")
+        
+        # last_stmt = ctor.last_constraint_stmt()
+        # print("last_stmt=%s" % str(last_stmt))
+        # if last_stmt is None or not isinstance(last_stmt, (core.ModelConstraintIfElse,core.TypeConstraintIfElse)):
+        #     raise Exception("Attempting to use else_then where it doesn't follow if_then/else_if")
+        
+        # # Need to find where to think this in
+        # while last_stmt.getFalse() is not None:
+        #     last_stmt = last_stmt.getFalse()
+
+        # if ctor.is_type_mode():            
+        #     stmt = ctor.ctxt().mkTypeConstraintScope()
+        # else:
+        #     stmt = ctor.ctxt().mkModelConstraintScope()
+        # last_stmt.setFalse(stmt)
+        # ctor.push_constraint_scope(stmt)
         
     def __exit__(self, t, v, tb):
-        ctor = Ctor.inst()
-        ctor.pop_constraint_scope()
+        ctor_a = Ctor.inst()
+        ctor = VscCtor.inst()
+
+        ctxt_t = ctor_a.ctxt_type()
+
+        # Have constraint, proc, and activity
+        if ctxt_t == CtxtE.Activity:
+            print("Activity")
+            pass
+        elif ctxt_t == CtxtE.Constraint:
+            print("Constraint")
+            pass
+        elif ctxt_t == CtxtE.Exec:
+            ctor_a.pop_proc_scope()
+        else:
+            raise Exception("Unknown context %s" % ctxt_t)
+#        ctor = Ctor.inst()
+#        ctor.pop_constraint_scope()
 
 else_then = else_then_c()
 
@@ -180,14 +247,33 @@ class foreach(object):
 
 class repeat(object):
 
-    def __init__(self, cond):
+    def __init__(self, count):
+        ctor = VscCtor.inst()
+
+        # This scope is a root of its own
+        self._parent = None
+
+        self.index = FieldScalarImpl(
+            "__index__",
+            TypeInfoScalar(ctor.ctxt().findDataTypeInt(True, 32)),
+            0
+        )
+        self.index._modelinfo._is_topdown_scope = False
+        self.index._modelinfo._parent = self
+
+        count_e = Expr.toExpr(count)
+        ctor.pop_expr(count_e)
         pass
 
     def __enter__(self):
-        return self
+        ctor = VscCtor.inst()
+        ctor.push_bottom_up_scope(self)
+
+        return self.index
     
     def __exit__(self, t, v, tb):
-        pass
+        ctor = VscCtor.inst()
+        ctor.pop_bottom_up_scope()
 
 class while_do(object):
 

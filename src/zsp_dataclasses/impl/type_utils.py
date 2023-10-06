@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* type_utils.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,17 +19,29 @@
 #*     Author: 
 #*
 #****************************************************************************
+import typeworks
+from vsc_dataclasses.impl.type_utils import TypeUtils as VscTypeUtils
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+class TypeUtils(VscTypeUtils):
 
-class reg_c(metaclass=RegCMeta):
-    pass
+    def __init__(self):
+        super().__init__()
+        pass
 
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    def val2TypeInfo(self, value):
+        from .ctor import Ctor
+        from .pool_t import PoolT
+        from .pool_meta_sz_t import PoolMetaSzT
+        from .reg_c import RegC
+        from .type_info import TypeInfo
+
+        if issubclass(value, (PoolT,PoolMetaSzT)):
+            pool_t_ti = typeworks.TypeInfo.get(value.T, False)
+            return TypeInfo.get(pool_t_ti, False)
+        elif issubclass(value, RegC):
+            value_ti = typeworks.TypeInfo.get(value, False)
+            return TypeInfo.get(value_ti, False)
+        else:
+            return super().val2TypeInfo(value)
+
 

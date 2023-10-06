@@ -26,6 +26,7 @@ from ..context import DataTypeActivityTraverse
 from ..context import DataTypeComponent, DataTypeArlStruct, DataTypeFunction, DataTypeFunctionParamDecl
 from ..context import TypeExprMethodCallStatic, TypeProcStmtExpr, TypeProcStmtVarDecl
 from ..context import TypeExec, TypeProcStmtScope
+from ..context import TypeFieldReg, TypeFieldRegGroup, TypeProcStmtIfElse
 
 class VisitorBase(VscVisitorBase):
 
@@ -74,9 +75,21 @@ class VisitorBase(VscVisitorBase):
         i.getTarget().accept(self)
         for p in i.getParameters():
             p.accept(self)
+
+    def visitTypeFieldReg(self, i : TypeFieldReg):
+        self.visitTypeField(i)
+
+    def visitTypeFieldRegGroup(self, i : TypeFieldRegGroup):
+        self.visitTypeField(i)
     
     def visitTypeProcStmtExpr(self, i : TypeProcStmtExpr):
         i.getExpr().accept(self)
+
+    def visitTypeProcStmtIfElse(self, i : TypeProcStmtIfElse):
+        i.getCond().accept(self)
+        i.getTrue().accept(self)
+        if i.getFalse() is not None:
+            i.getFalse().accept(self)
 
     def visitTypeProcStmtScope(self, i : TypeProcStmtScope):
         for s in i.getStatements():

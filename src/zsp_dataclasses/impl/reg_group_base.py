@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* reg_group_base.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,16 +20,14 @@
 #*
 #****************************************************************************
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+from typeworks.impl.typeinfo import TypeInfo
+from .typeinfo_reg_group import TypeInfoRegGroup
 
-class reg_c(metaclass=RegCMeta):
-    pass
+class RegGroupBase(object):
 
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    def __init__(self):
+        pass
+
+RegGroupBase._typeinfo = TypeInfo(RegGroupBase)
+TypeInfoRegGroup.get(RegGroupBase._typeinfo)
 

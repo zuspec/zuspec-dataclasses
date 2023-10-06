@@ -121,11 +121,29 @@ class ComponentDecoratorImpl(BaseDecoratorImpl):
             else:
                 self.set_field_initial(key, None)
         elif value_ti is not None:
+            from .typeinfo_reg_group import TypeInfoRegGroup
             # TODO: catch fields of component type (?)
             value_base_ti = TypeInfo.get(value_ti, False)
 
             if value_base_ti is not None:
-                if isinstance(value_base_ti, TypeInfoComponent):
+                if isinstance(value_base_ti, TypeInfoRegGroup):
+                    ctor = vsc_impl.Ctor.inst()
+
+                    field_type_obj = ctor.ctxt().mkTypeFieldRegGroup(
+                        key,
+                        value_base_ti.lib_typeobj,
+                        False
+                    )
+
+                    if has_init:
+                        field_type_obj.setOffset(init["offset"])
+                    
+                    field_fi = vsc_impl.TypeInfoField(key, value_base_ti)
+                    component_ti.addField(field_fi, field_type_obj)
+
+                    print("TypeInfoRegGroup")
+                    self.set_field_initial(key, None)
+                elif isinstance(value_base_ti, TypeInfoComponent):
                     ctor = vsc_impl.Ctor.inst()
 
                     comp_obj = ctor.ctxt().mkTypeFieldPhy(

@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* type_field_reg.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,17 +19,21 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zsp_dataclasses.impl.context as ctxt_api
+import vsc_dataclasses.impl.context as vsc_api
+from vsc_dataclasses.impl.pyctxt.type_field import TypeField
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+class TypeFieldReg(ctxt_api.TypeFieldReg, TypeField):
 
-class reg_c(metaclass=RegCMeta):
-    pass
+    def __init__(self, name, type, owned):
+        TypeField.__init__(self, name, type, vsc_api.TypeFieldAttr.NoAttr)
+        self._offset = -1
 
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    def setOffset(self, off):
+        self._offset = off
 
+    def getOffset(self):
+        return self._offset
+
+    def accept(self, v):
+        v.visitTypeFieldReg(self)

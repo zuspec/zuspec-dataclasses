@@ -203,12 +203,43 @@ class TypeFieldActivity(vsc_ctxt.TypeField):
 
     def mkActivity(self, ctxt : ModelBuildContext):
         raise NotImplementedError("mkActivity")
+    
+class TypeFieldReg(vsc_ctxt.TypeField):
+
+    def getOffset(self):
+        raise NotImplementedError("getOffset")
+    
+    def setOffset(self, off):
+        raise NotImplementedError("setOffset")
+    
+class TypeFieldRegGroup(vsc_ctxt.TypeField):
+    def getOffset(self):
+        raise NotImplementedError("getOffset")
+    
+    def setOffset(self, off):
+        raise NotImplementedError("setOffset")
 
 class TypeProcStmtExpr(object):
 
     def getExpr() -> vsc_ctxt.TypeExpr:
         raise NotImplementedError("getExpr")
 
+class TypeProcStmtIfElse(object):
+
+    def getCond(self):
+        raise NotImplementedError("getCond")
+    
+    def setTrue(self, s):
+        raise NotImplementedError("setTrue")
+    
+    def getTrue(self):
+        raise NotImplementedError("getTrue")
+
+    def setFalse(self, s):
+        raise NotImplementedError("setFalse")
+
+    def getFalse(self):
+        raise NotImplementedError("getFalse")
 
 class Context(vsc.impl.Context):
 
@@ -289,11 +320,29 @@ class Context(vsc.impl.Context):
     def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
         raise NotImplementedError("mkTypeFieldActivity")
     
+    def mkTypeFieldReg(self,
+                    name,
+                    type,
+                    owned):
+        raise NotImplementedError("mkTypeFieldReg")
+
+    def mkTypeFieldRegGroup(self,
+                    name,
+                    type,
+                    owned):
+        raise NotImplementedError("mkTypeFieldRegGroup")
+    
     def mkTypeProcStmtScope(self):
         raise NotImplementedError("mkTypeProcStmtScope")
     
     def mkTypeProcStmtExpr(self, expr):
         raise NotImplementedError("mkTypeProcStmtExpr")
+    
+    def mkTypeProcStmtIfElse(self,
+                            cond,
+                            true_s,
+                            false_s):
+        raise NotImplementedError("mkTypeProcStmtIfElse")
     
 
     pass

@@ -55,11 +55,11 @@ class ActionDecoratorImpl(BaseDecoratorImpl):
         print("value: %s" % str(value))
         ti = typeworks.TypeInfo.get(value)
 
-        if callable(value):
-            print("Callable")
-            print("  Value: %s" % str(value()))
-        else:
-            print("Not callable")
+#        if callable(value):
+#            print("Callable")
+#            print("  Value: %s" % str(value()))
+#        else:
+#            print("Not callable")
 
         if issubclass(value, (InputOutputT,LockShareT)):
             print("Ref or Claim")

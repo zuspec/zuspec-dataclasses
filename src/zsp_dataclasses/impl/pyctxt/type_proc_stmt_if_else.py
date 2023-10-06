@@ -1,5 +1,5 @@
 #****************************************************************************
-#* core_lib.py
+#* type_proc_stmt_if_else.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,17 +19,32 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zsp_dataclasses.impl.context as ctxt_api
 
-from .impl.reg_c_meta import RegCMeta
-from .impl.reg_group_meta import RegGroupMeta
-from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+class TypeProcStmtIfElse(ctxt_api.TypeProcStmtIfElse):
 
-class reg_c(metaclass=RegCMeta):
-    pass
+    def __init__(self,
+                 cond,
+                 true_s,
+                 false_s):
+        self._cond = cond
+        self._true_s = true_s
+        self._false_s = false_s
 
-def reg_group_c(*args, **kwargs):
-    if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
-        return RegGroupDecoratorImpl(args, kwargs)(args[0])
-    else:
-        return RegGroupDecoratorImpl(args, kwargs)
+    def getCond(self):
+        return self._cond
+    
+    def setTrue(self, s):
+        self._true_s = s
 
+    def getTrue(self):
+        return self._true_s
+
+    def setFalse(self, s):
+        self._false_s = s
+
+    def getFalse(self):
+        return self._false_s
+
+    def accept(self, v):
+        v.visitTypeProcStmtIfElse(self)
