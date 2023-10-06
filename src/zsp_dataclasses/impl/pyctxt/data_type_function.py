@@ -26,9 +26,11 @@ class DataTypeFunction(object):
 
     def __init__(self,
                  name,
-                 rtype):
+                 rtype,
+                 flags):
         self._name = name
         self._rtype = rtype
+        self._flags = flags
         self._params = []
         self._body = None
         self._imp_specs = []
@@ -56,6 +58,17 @@ class DataTypeFunction(object):
     
     def getImportSpecs(self) -> List['DataTypeFunctionImport']:
         return self._imp_specs
+    
+    def getFlags(self):
+        return self._flags
+    
+    def hasFlags(self, f):
+        print("hasFlags: %s %s %d" % (
+            str(self._flags),
+            str(f),
+            (self._flags & f)
+        ))
+        return (self._flags & f) != 0
 
     def accept(self, v):
         v.visitDataTypeFunction(self)

@@ -4,6 +4,7 @@ import zsp_dataclasses.impl.context as ctxt_api
 import vsc_dataclasses.impl.context as vsc_ctxt
 import vsc_dataclasses.impl.pyctxt as vsc_pyctxt
 
+from .core_lib_factory import CoreLibFactory
 from .data_type_action import DataTypeAction
 from .data_type_component import DataTypeComponent
 from .data_type_activity_replicate import DataTypeActivityReplicate
@@ -13,6 +14,7 @@ from .data_type_function import DataTypeFunction
 from .data_type_function_import import DataTypeFunctionImport
 from .data_type_function_param_decl import DataTypeFunctionParamDecl
 from .type_exec import TypeExec
+from .type_expr_method_call_context import TypeExprMethodCallContext
 from .type_expr_method_call_static import TypeExprMethodCallStatic
 from .type_field_activity import TypeFieldActivity
 from .type_field_reg import TypeFieldReg
@@ -31,6 +33,8 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
         self._comp_t_m = {}
         self._data_t_func_m = {}
         self._data_t_func_l = []
+        CoreLibFactory(self).build()
+
 
     def findDataTypeAction(self, name) -> 'DataTypeAction':
         if name in self._action_t_m.keys():
@@ -77,14 +81,19 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
                            name : str,
                            rtype : vsc_ctxt.DataType,
                            own_rtype : bool,
-                           is_target : bool,
-                           is_solve : bool):
-        return DataTypeFunction(name, rtype)
+                           flags):
+        return DataTypeFunction(name, rtype, flags)
     
     def addDataTypeFunction(self, f):
         if f.name() not in self._data_t_func_m.keys():
             self._data_t_func_m[f.name()] = f
             self._data_t_func_l.append(f)
+
+    def findDataTypeFunction(self, name):
+        if name in self._data_t_func_m.keys():
+            return self._data_t_func_m[name]
+        else:
+            return None
 
     def getDataTypeFunctions(self):
         return self._data_t_func_l
@@ -112,18 +121,6 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
     def mkTypeFieldActivity(self, name, type : 'DataTypeActivity', owned):
         return TypeFieldActivity(name, type)
     
-    def mkTypeFieldPhy(self,
-        name,
-        dtype : 'DataType',
-        own_dtype : bool,
-        attr,
-        init : 'ModelVal') -> 'TypeFieldPhy':
-        print("mkTypeFieldPhy: %s" % name)
-        if name.endswith(".Entry"):
-            raise Exception("Creating action-named field")
-        else:
-            return super().mkTypeFieldPhy(name, dtype, own_dtype, attr, init)
-    
     def mkTypeFieldRef(self,
         name,
         dtype : 'DataType',
@@ -146,6 +143,12 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
                             owned):
         return TypeFieldRegGroup(name, type, owned)
     
+    def mkTypeExprMethodCallContext(self,
+                                target : DataTypeFunction,
+                                context,
+                                params : List[vsc_ctxt.TypeExpr]):
+        return TypeExprMethodCallContext(target, context, params)
+
     def mkTypeExprMethodCallStatic(self, 
                                    target: DataTypeFunction, 
                                    params: List[vsc_ctxt.TypeExpr]):

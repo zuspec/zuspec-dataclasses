@@ -23,11 +23,8 @@
 import zsp_dataclasses.impl.context as ctxt_api
 from vsc_dataclasses.impl.generators.vsc_data_model_cpp_gen import VscDataModelCppGen
 from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
-<<<<<<< HEAD
-from ..context import DataTypeAction, DataTypeComponent, DataTypeFunction, TypeExec, TypeExprMethodCallStatic, TypeFieldReg, TypeFieldRegGroup, TypeProcStmtExpr, TypeProcStmtIfElse, TypeProcStmtScope
-=======
-from ..context import DataTypeAction, DataTypeComponent, DataTypeFunction, TypeExec, TypeExprMethodCallStatic, TypeProcStmtExpr, TypeProcStmtScope
->>>>>>> refs/remotes/origin/main
+from ..context import DataTypeAction, DataTypeComponent, DataTypeFunction, TypeExec, TypeExprMethodCallContext, TypeExprMethodCallStatic, TypeFieldReg, TypeFieldRegGroup, TypeProcStmtExpr, TypeProcStmtIfElse, TypeProcStmtScope
+from ..context import DataTypeFunctionFlags
 from ..pyctxt.visitor_base import VisitorBase
 
 class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
@@ -47,6 +44,9 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             # First, declare all functions
             self._define_func = False
             for f in functions:
+                if f.hasFlags(DataTypeFunctionFlags.Core):
+                    continue
+
                 self.println("{")
                 self.inc_indent()
                 f.accept(self)
@@ -54,6 +54,9 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self.println("}")
             self._define_func = True
             for f in functions:
+                if f.hasFlags(DataTypeFunctionFlags.Core):
+                    continue
+
                 self.println("{")
                 self.inc_indent()
                 self.println("zsp::arl::dm::IDataTypeFunction *%s_t = %s->findDataTypeFunction(\"%s\");" % (
@@ -149,11 +152,16 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self._emit_type_mode += 1
                 i.getReturnType().accept(self)
                 self._emit_type_mode -= 1
-<<<<<<< HEAD
                 self.write(",\n")
-=======
             self.println("false") # own_rtype
->>>>>>> refs/remotes/origin/main
+
+            # TODO: Flags
+            flags = "zsp::arl::dm::DataTypeFunctionFlags::NoFlags"
+            for f in DataTypeFunctionFlags:
+                if i.hasFlags(f):
+                    flags += "|zsp::arl::dm::DataTYpeFunctionFlags::%s" % f.__name__
+            
+            self.println("%s" % flags)
             self.dec_indent()
             self.println(");")
             # Add parameter declarations
@@ -198,6 +206,26 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
         i.getBody().accept(self)
         self.dec_indent()
         self.println("));")
+
+    def visitTypeExprMethodCallContext(self, i: TypeExprMethodCallContext):
+        self.println("%s->mkTypeExprMethodCallContext(" % self._ctxt)
+        self.inc_indent()
+        self.println("%s->findDataTypeFunction(\"%s\")," % (
+            self._ctxt,
+            i.getTarget().name()))
+        self.push_comma(True)
+        i.getContext().accept(self)
+        self.pop_comma()
+        self.println("{")
+        self.inc_indent()
+        for ii,p in enumerate(i.getParameters()):
+            self.push_comma(ii+1 < len(i.getParameters()))
+            p.accept(self)
+            self.pop_comma()
+        self.dec_indent()
+        self.println("}")
+        self.dec_indent()
+        self.println(")%s" % self.comma())
 
     def visitTypeExprMethodCallStatic(self, i: TypeExprMethodCallStatic):
         self.println("%s->mkTypeExprMethodCallStatic(" % self._ctxt)

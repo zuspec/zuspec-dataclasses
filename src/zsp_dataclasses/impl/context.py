@@ -1,5 +1,5 @@
 
-from enum import IntEnum, auto
+from enum import IntEnum, IntFlag, auto
 from tokenize import Intnumber
 from typing import List
 import vsc_dataclasses as vsc
@@ -117,6 +117,12 @@ class DataTypeFunctionParamDecl(TypeProcStmtVarDecl):
     def getDirection(self) -> ParamDir:
         raise NotImplementedError("getDirection")
     
+class DataTypeFunctionFlags(IntFlag):
+    NoFlags = 0
+    Solve   = (1 << 0)
+    Target  = (1 << 1)
+    Core    = (1 << 2)
+    
 class DataTypeFunction(vsc_ctxt.DataType):
 
     def name(self):
@@ -142,6 +148,12 @@ class DataTypeFunction(vsc_ctxt.DataType):
     
     def getImportSpecs(self) -> List['DataTypeFunctionImport']:
         raise NotImplementedError("getImportSpecs")
+    
+    def getFlags(self) -> DataTypeFunctionFlags:
+        raise NotImplementedError("getFlags")
+
+    def hasFlags(self, f) -> bool:
+        raise NotImplementedError("hasFlags")
 
 class DataTypeFunctionImport(object):
 
@@ -198,6 +210,11 @@ class TypeExprMethodCallStatic(vsc_ctxt.TypeExpr):
     
     def getParameters(self) -> List[vsc_ctxt.TypeExpr]:
         raise NotImplementedError("getParameters")
+    
+class TypeExprMethodCallContext(TypeExprMethodCallStatic):
+
+    def getContext(self):
+        raise NotImplementedError("getContext")
 
 class TypeFieldActivity(vsc_ctxt.TypeField):
 
@@ -280,8 +297,7 @@ class Context(vsc.impl.Context):
                            name : str,
                            rtype : vsc_ctxt.DataType,
                            own_rtype : bool,
-                           is_target : bool,
-                           is_solve : bool):
+                           flags : DataTypeFunctionFlags):
         raise NotImplementedError("mkDataTypeFunction")
     
     def addDataTypeFunction(self, f):
@@ -311,6 +327,12 @@ class Context(vsc.impl.Context):
                    kind,
                    body):
         raise NotImplementedError("mkTypeExec")
+    
+    def mkTypeExprMethodCallContext(self,
+                                target : DataTypeFunction,
+                                context,
+                                params : List[vsc_ctxt.TypeExpr]):
+        raise NotImplementedError("mkTypeExprMethodCallContext")
 
     def mkTypeExprMethodCallStatic(self,
                                 target : DataTypeFunction,

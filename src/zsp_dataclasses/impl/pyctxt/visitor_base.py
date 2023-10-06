@@ -24,7 +24,7 @@ from vsc_dataclasses.impl.pyctxt.visitor_base import VisitorBase as VscVisitorBa
 from ..context import DataTypeAction, DataTypeActivity, DataTypeActivityScope
 from ..context import DataTypeActivityTraverse
 from ..context import DataTypeComponent, DataTypeArlStruct, DataTypeFunction, DataTypeFunctionParamDecl
-from ..context import TypeExprMethodCallStatic, TypeProcStmtExpr, TypeProcStmtVarDecl
+from ..context import TypeExprMethodCallStatic, TypeProcStmtExpr, TypeProcStmtVarDecl, TypeExprMethodCallContext
 from ..context import TypeExec, TypeProcStmtScope
 from ..context import TypeFieldReg, TypeFieldRegGroup, TypeProcStmtIfElse
 
@@ -70,6 +70,12 @@ class VisitorBase(VscVisitorBase):
 
     def visitTypeExec(self, i : TypeExec):
         i.getBody().accept(self)
+
+    def visitTypeExprMethodCallContext(self, i : TypeExprMethodCallContext):
+        i.getTarget().accept(self)
+        i.getContext().accept(self)
+        for p in i.getParameters():
+            p.accept(self)
 
     def visitTypeExprMethodCallStatic(self, i : TypeExprMethodCallStatic):
         i.getTarget().accept(self)

@@ -23,6 +23,7 @@ import typeworks
 from .input_output_t import InputOutputT
 from .typeinfo_proc_scope import TypeInfoProcScope
 from .type_utils import TypeUtils
+from .context import DataTypeFunctionFlags
 import zsp_dataclasses.impl.context as ctxt_api
 
 
@@ -46,12 +47,12 @@ class MethodProxyFn(typeworks.MethodProxy):
         if self._rtype is not None:
             rtype_dt = TypeUtils().val2TypeInfo(self._rtype)._lib_typeobj
 
+        
         self._libobj = ctxt.mkDataTypeFunction(
             typeworks.localname(self.T),
             rtype_dt,
             False,
-            False,
-            False)
+            DataTypeFunctionFlags.NoFlags)
         ctxt.addDataTypeFunction(self._libobj)
 
         dir = ctxt_api.ParamDir.In

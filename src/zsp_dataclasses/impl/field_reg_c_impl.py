@@ -19,6 +19,8 @@
 #*     Author: 
 #*
 #****************************************************************************
+import vsc_dataclasses.impl.context as vsc_ctxt
+from .ctor import Ctor
 
 class FieldRegCImpl(object):
 
@@ -29,7 +31,36 @@ class FieldRegCImpl(object):
         pass
 
     def read(self):
+        ctor = Ctor.inst()
+        reg_read = ctor.ctxt().findDataTypeFunction("pss::core::reg_read")
         print("READ: %s %d" % (self._name, self._idx))
+
+        ctor.proc_scope().addStatement(
+            ctor.ctxt().mkTypeProcStmtExpr(
+                ctor.ctxt().mkTypeExprMethodCallContext(
+                    reg_read,
+                    self.mkRef(),
+                    [])))
+
+    def write(self, value):
+        m = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_write")
+        pass
+
+    def read_val(self):
+        m = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_read_val")
+        pass
+
+    def write_val(self, value):
+        m = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_write_val")
+        pass
+
+    def mkRef(self):
+        ctor = Ctor.inst()
+
+        # TODO: must determine whether we're in a top-down or bottom-up scope
+        kind = vsc_ctxt.TypeExprFieldRefKind.TopDownScope
+        root_off = 0
+
         mi = self._modelinfo_p
 
         offset_l = [self._idx]
@@ -37,14 +68,12 @@ class FieldRegCImpl(object):
             print("MI: %s %d %s" % (str(mi), mi._idx, mi._name))
             offset_l.insert(0, mi._idx)
             mi = mi._parent
-        print("Offset: %s" % str(offset_l))
 
-    def write(self, value):
-        pass
 
-    def read_val(self):
-        pass
+        return ctor.ctxt().mkTypeExprFieldRef(
+            kind,
+            root_off,
+            offset_l
+        )
 
-    def write_val(self, value):
-        pass
 
