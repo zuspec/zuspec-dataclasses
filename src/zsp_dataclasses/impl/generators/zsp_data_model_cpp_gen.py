@@ -23,6 +23,7 @@
 import zsp_dataclasses.impl.context as ctxt_api
 from vsc_dataclasses.impl.generators.vsc_data_model_cpp_gen import VscDataModelCppGen
 from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
+from .collect_type_deps import CollectTypeDeps
 from ..context import DataTypeAction, DataTypeComponent, DataTypeFunction, TypeExec, TypeExprMethodCallContext, TypeExprMethodCallStatic, TypeFieldReg, TypeFieldRegGroup, TypeProcStmtExpr, TypeProcStmtIfElse, TypeProcStmtScope
 from ..context import DataTypeFunctionFlags
 from ..pyctxt.visitor_base import VisitorBase
@@ -90,12 +91,18 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self.dec_indent()
                 self.println("}")
 
+        types = CollectTypeDeps().collect(root_comp, root_action)
+
+        print("types: %s" % str(types))
+        for t in types:
+            t.accept(self)
+
         # Should result in RootComp and RootAction type handles
-        self.println("{")
-        self.inc_indent()
-        root_comp.accept(self)
-        self.dec_indent()
-        self.println("}")
+        # self.println("{")
+        # self.inc_indent()
+        # root_comp.accept(self)
+        # self.dec_indent()
+        # self.println("}")
         self.println("")
         self.println("zsp::arl::dm::IDataTypeComponent *%s_t = %s->findDataTypeComponent(\"%s\");" % (
             self.leaf_name(root_comp.name()),
@@ -116,10 +123,15 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self._ctxt,
                 i.name()))
         else:
+            self.println("{")
+            self.inc_indent()
             self.println("zsp::arl::dm::IDataTypeComponent *%s_t = %s->mkDataTypeComponent(\"%s\");" % (
                 self.leaf_name(i.name()),
                 self._ctxt,
                 i.name()))
+            self.println("%s->addDataTypeComponent(%s_t);" % (
+                self._ctxt, 
+                self.leaf_name(i.name())))
 
             self._type_s.append(i)
             for f in i.getFields():
@@ -131,9 +143,8 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 a.accept(self)
             self._type_s.pop()
 
-            self.println("%s->addDataTypeComponent(%s_t);" % (
-                self._ctxt, 
-                self.leaf_name(i.name())))
+            self.dec_indent()
+            self.println("}")
             
     def visitDataTypeFunction(self, i: DataTypeFunction):
         if self._define_func:
@@ -153,7 +164,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 i.getReturnType().accept(self)
                 self._emit_type_mode -= 1
                 self.write(",\n")
-            self.println("false") # own_rtype
+            self.println("false,") # own_rtype
 
             # TODO: Flags
             flags = "zsp::arl::dm::DataTypeFunctionFlags::NoFlags"
@@ -248,8 +259,26 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
         self.println("TODO: hit generic TypeField (%s)" % str(i))
 
     def visitTypeFieldRegGroup(self, i: TypeFieldRegGroup):
-        print("visitTypeFieldRegGroup")
-        return super().visitTypeFieldRegGroup(i)
+        self.println("{")
+        self.inc_indent()
+        self.println("zsp::arl::dm::ITypeFieldRegGroup *%s_f = %s->mkTypeFieldRegGroup(" % (
+            self.leaf_name(i.name()),
+            self._ctxt))
+        self.inc_indent()
+        self.println("\"%s\"," % i.name())
+        self.write(self.ind())
+        self._emit_type_mode += 1
+        i.getDataType().accept(self)
+        self._emit_type_mode -= 1
+        self.write(",\n")
+        self.println("false);")
+        self.dec_indent()
+#        self.println("%s_f->setOffset(%d);" % (self.leaf_name(i.name()), i.getOffset()))
+        self.println("%s_t->addField(%s_f);" % (
+            self.leaf_name(self._type_s[-1].name()),
+            self.leaf_name(i.name())))
+        self.dec_indent()
+        self.println("}")
 
     def visitTypeFieldRef(self, i : 'TypeFieldRef'):
         if i.name() != "comp":
@@ -258,7 +287,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
     def visitTypeFieldReg(self, i: TypeFieldReg):
         self.println("{")
         self.inc_indent()
-        self.println("zsp::arl::dm::TypeFieldReg *%s_f = %s->mkTypeFieldReg(" % (
+        self.println("zsp::arl::dm::ITypeFieldReg *%s_f = %s->mkTypeFieldReg(" % (
             self.leaf_name(i.name()),
             self._ctxt))
         self.inc_indent()
@@ -301,6 +330,10 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self.leaf_name(i.name()),
                 self._ctxt,
                 i.name()))
+            self.println("%s->addDataTypeAction(%s_t);" % (
+                self._ctxt,
+                self.leaf_name(i.name())
+            ))
             self._type_s.append(i)
             for f in i.getFields():
                 if f.name() != "comp":
@@ -312,16 +345,14 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 e.accept(self)
                 pass
             self._type_s.pop()
-            self.println("%s_t->setComponentType(%s_t);" % (
+            self.println("%s_t->setComponentType(%s->findDataTypeComponent(\"%s\"));" % (
                 self.leaf_name(i.name()),
-                self.leaf_name(self._type_s[-1].name())))
-            self.println("%s_t->addActionType(%s_t);" % (
-                self.leaf_name(self._type_s[-1].name()),
-                self.leaf_name(i.name())))
-            self.println("%s->addDataTypeAction(%s_t);" % (
                 self._ctxt,
-                self.leaf_name(i.name())
-            ))
+                self.leaf_name(i.getComponentType().name())))
+            self.println("%s->findDataTypeComponent(\"%s\")->addActionType(%s_t);" % (
+                self._ctxt,
+                self.leaf_name(i.getComponentType().name()),
+                self.leaf_name(i.name())))
             self.dec_indent()
             self.println("}")
 

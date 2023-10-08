@@ -36,5 +36,5 @@ class TypeFieldRegGroup(ctxt_api.TypeFieldRegGroup, TypeField):
         return self._offset
 
     def accept(self, v):
-        v.visitTypeFieldReg(self)
+        v.visitTypeFieldRegGroup(self)
 
