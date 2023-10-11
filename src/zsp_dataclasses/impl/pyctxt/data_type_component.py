@@ -3,9 +3,10 @@ import zsp_dataclasses.impl.context as ctxt_api
 import vsc_dataclasses.impl.context as vsc_ctxt
 import vsc_dataclasses.impl.pyctxt as vsc_pyctxt
 from typing import List
+from .data_type_arl_struct import DataTypeArlStruct
 from .model_field_component import ModelFieldComponent
 
-class DataTypeComponent(vsc_pyctxt.DataTypeStruct, ctxt_api.DataTypeComponent):
+class DataTypeComponent(ctxt_api.DataTypeComponent,DataTypeArlStruct):
     def __init__(self, name):
         super().__init__(name)
         self._action_types = []

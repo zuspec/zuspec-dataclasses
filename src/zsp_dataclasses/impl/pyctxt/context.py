@@ -20,6 +20,7 @@ from .type_field_activity import TypeFieldActivity
 from .type_field_reg import TypeFieldReg
 from .type_field_reg_group import TypeFieldRegGroup
 from .type_proc_stmt_var_decl import TypeProcStmtVarDecl
+from .type_proc_stmt_assign import TypeProcStmtAssign
 from .type_proc_stmt_expr import TypeProcStmtExpr
 from .type_proc_stmt_if_else import TypeProcStmtIfElse
 from .type_proc_stmt_scope import TypeProcStmtScope
@@ -153,6 +154,12 @@ class Context(vsc_pyctxt.Context,ctxt_api.Context):
                                    target: DataTypeFunction, 
                                    params: List[vsc_ctxt.TypeExpr]):
         return TypeExprMethodCallStatic(target, params)
+
+    def mkTypeProcStmtAssign(self,
+                             lhs,
+                             op,
+                             rhs):
+        return TypeProcStmtAssign(lhs, op, rhs)
 
     def mkTypeProcStmtExpr(self, expr):
         return TypeProcStmtExpr(expr)

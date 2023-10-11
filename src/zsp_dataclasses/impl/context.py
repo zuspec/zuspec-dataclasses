@@ -236,6 +236,26 @@ class TypeFieldRegGroup(vsc_ctxt.TypeField):
     def setOffset(self, off):
         raise NotImplementedError("setOffset")
 
+class TypeProcStmtAssignOp(IntEnum):
+    Eq = auto()
+    PlusEq = auto()
+    MinusEq = auto()
+    ShlEq = auto()
+    ShrEq = auto()
+    OrEq = auto()
+    AndEq = auto()
+
+class TypeProcStmtAssign(object):
+
+    def getLhs(self):
+        raise NotImplementedError("getLhs")
+
+    def op(self):
+        raise NotImplementedError("op")
+
+    def getRhs(self):
+        raise NotImplementedError("getRhs")
+
 class TypeProcStmtExpr(object):
 
     def getExpr() -> vsc_ctxt.TypeExpr:
@@ -353,6 +373,12 @@ class Context(vsc.impl.Context):
                     type,
                     owned):
         raise NotImplementedError("mkTypeFieldRegGroup")
+    
+    def mkTypeProcStmtAssign(self,
+                             lhs,
+                             op,
+                             rhs):
+        raise NotImplementedError("mkTypeProcStmtAssign")
     
     def mkTypeProcStmtScope(self):
         raise NotImplementedError("mkTypeProcStmtScope")

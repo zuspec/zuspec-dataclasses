@@ -156,11 +156,22 @@ class Ctor(object):
     
     def pop_proc_scope(self):
         from vsc_dataclasses.impl.ctor import Ctor
+        import vsc_dataclasses.impl.context as vsc_ctxt
+        import zsp_dataclasses.impl.context as ctxt_api
+
         vsc_ctor = Ctor.inst()
         ps = self._proc_scope_s.pop()
 
         for e in vsc_ctor.pop_exprs():
-            ps.addStatement(self._ctxt.mkTypeProcStmtExpr(e.model))
+            print("e.model: %s %s" % (str(e.model), isinstance(e.model, vsc_ctxt.TypeExprBin)))
+            if isinstance(e.model, vsc_ctxt.TypeExprBin) and e.model.op() == vsc_ctxt.BinOp.Eq:
+                ps.addStatement(self._ctxt.mkTypeProcStmtAssign(
+                    e.model.lhs(),
+                    ctxt_api.TypeProcStmtAssignOp.Eq,
+                    e.model.rhs()
+                ))
+            else:
+                ps.addStatement(self._ctxt.mkTypeProcStmtExpr(e.model))
         return ps
     
     def push_activity_scope_mi(self, s_mi):

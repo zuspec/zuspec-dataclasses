@@ -25,7 +25,7 @@ from vsc_dataclasses.impl.generators.vsc_data_model_cpp_gen import VscDataModelC
 from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
 from .collect_type_deps import CollectTypeDeps
 from ..context import DataTypeAction, DataTypeComponent, DataTypeFunction, TypeExec, TypeExprMethodCallContext, TypeExprMethodCallStatic, TypeFieldReg, TypeFieldRegGroup, TypeProcStmtExpr, TypeProcStmtIfElse, TypeProcStmtScope
-from ..context import DataTypeFunctionFlags
+from ..context import DataTypeFunctionFlags, TypeProcStmtAssign, TypeProcStmtAssignOp
 from ..pyctxt.visitor_base import VisitorBase
 
 class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
@@ -138,6 +138,8 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 f.accept(self)
             for c in i.getConstraints():
                 c.accept(self)
+            for e in i.getExecs():
+                e.accept(self)
 
             for a in i.getActionTypes():
                 a.accept(self)
@@ -177,7 +179,9 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             self.println(");")
             # Add parameter declarations
             for p in i.getParameters():
-                self.println("%s_t->addParameter(" % self._ctxt)
+                self.println("%s_t->addParameter(" % self.leaf_name(i.name()))
+                self.inc_indent()
+                self.println("%s->mkDataTypeFunctionParamDecl(" % self._ctxt)
                 self.inc_indent()
                 self.println("\"%s\"," % p.name())
                 self.println("zsp::arl::dm::ParamDir::In,")
@@ -186,7 +190,9 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 p.getDataType().accept(self)
                 self._emit_type_mode -= 1
                 self.write(",\n")
+                self.println("false,") # 'owned'
                 self.println("0") # Default value
+                self.dec_indent()
                 self.dec_indent()
                 self.println("));")
             self.println("%s->addDataTypeFunction(%s_t);" % (self._ctxt, i.name()))
@@ -204,6 +210,8 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
     def visitTypeExec(self, i: TypeExec):
         exec_kind_m = {
             ctxt_api.ExecKindT.Body : "zsp::arl::dm::ExecKindT::Body",
+            ctxt_api.ExecKindT.InitDown : "zsp::arl::dm::ExecKindT::InitDown",
+            ctxt_api.ExecKindT.InitUp   : "zsp::arl::dm::ExecKindT::InitUp",
             ctxt_api.ExecKindT.PreSolve : "zsp::arl::dm::ExecKindT::PreSolve",
             ctxt_api.ExecKindT.PostSolve : "zsp::arl::dm::ExecKindT::PostSolve",
         }
@@ -216,7 +224,9 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
         self.inc_indent()
         i.getBody().accept(self)
         self.dec_indent()
-        self.println("));")
+        self.println(")")
+        self.dec_indent()
+        self.println(");")
 
     def visitTypeExprMethodCallContext(self, i: TypeExprMethodCallContext):
         self.println("%s->mkTypeExprMethodCallContext(" % self._ctxt)
@@ -340,10 +350,10 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                     f.accept(self)
             for c in i.getConstraints():
                 c.accept(self)
+
             for e in i.getExecs():
-                print("Exec: %s" % str(e))
                 e.accept(self)
-                pass
+
             self._type_s.pop()
             self.println("%s_t->setComponentType(%s->findDataTypeComponent(\"%s\"));" % (
                 self.leaf_name(i.name()),
@@ -355,6 +365,25 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self.leaf_name(i.name())))
             self.dec_indent()
             self.println("}")
+
+    def visitTypeProcStmtAssign(self, i : TypeProcStmtAssign):
+        op_m = {
+            TypeProcStmtAssignOp.Eq : "zsp::arl::dm::TypeProcStmtAssignOp::Eq"
+        }
+        self.println("%s->mkTypeProcStmtAssign(" % self._ctxt)
+        self.inc_indent()
+        self.push_comma(True)
+        i.getLhs().accept(self)
+        self.pop_comma()
+
+        self.println("%s," % op_m[i.op()])
+
+        self.push_comma(False)
+        i.getRhs().accept(self)
+        self.pop_comma()
+
+        self.dec_indent()
+        self.println(")%s" % self.comma())
 
     def visitTypeProcStmtExpr(self, i: TypeProcStmtExpr):
         self.println("%s->mkTypeProcStmtExpr(" % self._ctxt)

@@ -27,6 +27,7 @@ from ..context import DataTypeComponent, DataTypeArlStruct, DataTypeFunction, Da
 from ..context import TypeExprMethodCallStatic, TypeProcStmtExpr, TypeProcStmtVarDecl, TypeExprMethodCallContext
 from ..context import TypeExec, TypeProcStmtScope
 from ..context import TypeFieldReg, TypeFieldRegGroup, TypeProcStmtIfElse
+from ..context import TypeProcStmtAssign
 
 class VisitorBase(VscVisitorBase):
 
@@ -87,6 +88,10 @@ class VisitorBase(VscVisitorBase):
 
     def visitTypeFieldRegGroup(self, i : TypeFieldRegGroup):
         self.visitTypeField(i)
+
+    def visitTypeProcStmtAssign(self, i : TypeProcStmtAssign):
+        i.getLhs().accept(self)
+        i.getRhs().accept(self)
     
     def visitTypeProcStmtExpr(self, i : TypeProcStmtExpr):
         i.getExpr().accept(self)
