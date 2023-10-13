@@ -45,8 +45,8 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             # First, declare all functions
             self._define_func = False
             for f in functions:
-                if f.hasFlags(DataTypeFunctionFlags.Core):
-                    continue
+#                if f.hasFlags(DataTypeFunctionFlags.Core):
+#                    continue
 
                 self.println("{")
                 self.inc_indent()
@@ -141,9 +141,9 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             for e in i.getExecs():
                 e.accept(self)
 
-            for a in i.getActionTypes():
-                a.accept(self)
-            self._type_s.pop()
+#            for a in i.getActionTypes():
+#                a.accept(self)
+#            self._type_s.pop()
 
             self.dec_indent()
             self.println("}")
@@ -154,7 +154,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 i.getBody().accept(self)
         else:
             self.println("zsp::arl::dm::IDataTypeFunction *%s_t = %s->mkDataTypeFunction(" % (
-                i.name(),
+                self.identifier(i.name()),
                 self._ctxt))
             self.inc_indent()
             self.println("\"%s\"," % i.name())
@@ -172,7 +172,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             flags = "zsp::arl::dm::DataTypeFunctionFlags::NoFlags"
             for f in DataTypeFunctionFlags:
                 if i.hasFlags(f):
-                    flags += "|zsp::arl::dm::DataTYpeFunctionFlags::%s" % f.__name__
+                    flags += "|zsp::arl::dm::DataTypeFunctionFlags::%s" % f.name
             
             self.println("%s" % flags)
             self.dec_indent()
@@ -195,7 +195,9 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self.dec_indent()
                 self.dec_indent()
                 self.println("));")
-            self.println("%s->addDataTypeFunction(%s_t);" % (self._ctxt, i.name()))
+            self.println("%s->addDataTypeFunction(%s_t);" % (
+                self._ctxt, 
+                self.identifier(i.name())))
 
     def visitTypeConstraint(self, i : 'TypeConstraint'):
         pass
@@ -419,4 +421,7 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
             self.pop_comma()
         self.dec_indent()
         self.println("})%s" % self.comma())
+
+    def identifier(self, name):
+        return name.replace(':', '_')
 

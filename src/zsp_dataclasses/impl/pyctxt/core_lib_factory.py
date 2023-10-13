@@ -41,4 +41,12 @@ class CoreLibFactory(object):
         reg_read.addImportSpec(
             self._ctxt.mkDataTypeFunctionImport("X", False, False))
         self._ctxt.addDataTypeFunction(reg_read)
+        reg_write = self._ctxt.mkDataTypeFunction(
+            "pss::core::reg_write",
+            None,
+            False,
+            DataTypeFunctionFlags.Core)
+        reg_write.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(reg_write)
 
