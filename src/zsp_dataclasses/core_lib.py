@@ -19,10 +19,22 @@
 #*     Author: 
 #*
 #****************************************************************************
-
+import sys
 from .impl.reg_c_meta import RegCMeta
 from .impl.reg_group_meta import RegGroupMeta
 from .impl.reg_group_decorator_impl import RegGroupDecoratorImpl
+
+def print(*args):
+    from .impl.ctor import Ctor
+    ctor = Ctor.inst()
+    print_f = ctor.ctxt().findDataTypeFunction("std_pkg::print")
+    sys.stdout.write("print_f: %s\n" % str(print_f))
+
+    ctor.proc_scope().addStatement(
+        ctor.ctxt().mkTypeProcStmtExpr(
+            ctor.ctxt().mkTypeExprMethodCallStatic(
+                print_f,
+                [])))
 
 class reg_c(metaclass=RegCMeta):
     pass

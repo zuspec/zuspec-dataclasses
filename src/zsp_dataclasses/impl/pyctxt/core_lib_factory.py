@@ -31,7 +31,19 @@ class CoreLibFactory(object):
     def build(self):
         self._buildRegFuncs()
         self._buildRegGroupFuncs()
+        self._buildIO()
         pass
+
+    def _buildIO(self):
+        print_f = self._ctxt.mkDataTypeFunction(
+            "std_pkg::print",
+            None,
+            False,
+            DataTypeFunctionFlags.Core)
+        print("Add std_pkg::print to library")
+        self._ctxt.addDataTypeFunction(print_f)
+        print_f.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
 
     def _buildRegGroupFuncs(self):
         set_handle = self._ctxt.mkDataTypeFunction(
