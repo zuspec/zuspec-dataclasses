@@ -33,7 +33,6 @@ class FieldRegCImpl(object):
     def read(self):
         ctor = Ctor.inst()
         reg_read = ctor.ctxt().findDataTypeFunction("pss::core::reg_read")
-        print("READ: %s %d" % (self._name, self._idx))
 
         ctor.proc_scope().addStatement(
             ctor.ctxt().mkTypeProcStmtExpr(
@@ -43,15 +42,34 @@ class FieldRegCImpl(object):
                     [])))
 
     def write(self, value):
-        m = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_write")
-        pass
+        ctor = Ctor.inst()
+        reg_write = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_write")
+        ctor.proc_scope().addStatement(
+            ctor.ctxt().mkTypeProcStmtExpr(
+                ctor.ctxt().mkTypeExprMethodCallContext(
+                    reg_write,
+                    self.mkRef(),
+                    [])))
 
     def read_val(self):
-        m = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_read_val")
-        pass
+        ctor = Ctor.inst()
+        reg_read_val = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_read_val")
+        ctor.proc_scope().addStatement(
+            ctor.ctxt().mkTypeProcStmtExpr(
+                ctor.ctxt().mkTypeExprMethodCallContext(
+                    reg_read_val,
+                    self.mkRef(),
+                    [])))
 
     def write_val(self, value):
-        m = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_write_val")
+        ctor = Ctor.inst()
+        reg_write_val = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_write_val")
+        ctor.proc_scope().addStatement(
+            ctor.ctxt().mkTypeProcStmtExpr(
+                ctor.ctxt().mkTypeExprMethodCallContext(
+                    reg_write_val,
+                    self.mkRef(),
+                    [])))
         pass
 
     def mkRef(self):

@@ -30,7 +30,18 @@ class CoreLibFactory(object):
 
     def build(self):
         self._buildRegFuncs()
+        self._buildRegGroupFuncs()
         pass
+
+    def _buildRegGroupFuncs(self):
+        set_handle = self._ctxt.mkDataTypeFunction(
+            "pss::core::reg_group::set_handle",
+            None,
+            False,
+            DataTypeFunctionFlags.Core)
+        self._ctxt.addDataTypeFunction(set_handle)
+        set_handle.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
 
     def _buildRegFuncs(self):
         reg_read = self._ctxt.mkDataTypeFunction(
@@ -41,6 +52,14 @@ class CoreLibFactory(object):
         reg_read.addImportSpec(
             self._ctxt.mkDataTypeFunctionImport("X", False, False))
         self._ctxt.addDataTypeFunction(reg_read)
+        reg_read_val = self._ctxt.mkDataTypeFunction(
+            "pss::core::reg_read_val",
+            self._ctxt.findDataTypeInt(False, 64),
+            False,
+            DataTypeFunctionFlags.Core)
+        reg_read_val.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(reg_read_val)
         reg_write = self._ctxt.mkDataTypeFunction(
             "pss::core::reg_write",
             None,
@@ -49,4 +68,12 @@ class CoreLibFactory(object):
         reg_write.addImportSpec(
             self._ctxt.mkDataTypeFunctionImport("X", False, False))
         self._ctxt.addDataTypeFunction(reg_write)
+        reg_write_val = self._ctxt.mkDataTypeFunction(
+            "pss::core::reg_write_val",
+            None,
+            False,
+            DataTypeFunctionFlags.Core)
+        reg_write_val.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(reg_write_val)
 

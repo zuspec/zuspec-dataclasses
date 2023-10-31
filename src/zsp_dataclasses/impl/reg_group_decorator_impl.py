@@ -20,8 +20,10 @@
 #*
 #****************************************************************************
 import typeworks
+import vsc_dataclasses.impl.context as vsc_ctxt
 from vsc_dataclasses.impl.typeinfo_field import TypeInfoField
 from .component_decorator_impl import ComponentDecoratorImpl
+from .component_impl import ComponentImpl
 from .reg_c import RegC
 from .type_info import TypeInfo
 from .typeinfo_component import TypeInfoComponent
@@ -77,5 +79,41 @@ class RegGroupDecoratorImpl(ComponentDecoratorImpl):
             # Delegate to Component decorator
             super().init_annotated_field(key, value, has_init, init)
 
+    @staticmethod
+    def _set_handle(self, h):
+        ctor = Ctor.inst()
+
+        # TODO: must determine whether we're in a top-down or bottom-up scope
+        kind = vsc_ctxt.TypeExprFieldRefKind.TopDownScope
+        root_off = 0
+
+        mi = self._modelinfo
+
+        offset_l = [mi.idx]
+        while mi is not None and mi.idx != -1:
+            print("MI: %s %d %s" % (str(mi), mi.idx, mi.name))
+            offset_l.insert(0, mi.idx)
+            mi = mi.parent
+
+
+        root = ctor.ctxt().mkTypeExprFieldRef(
+            kind,
+            root_off,
+            offset_l
+        )
+
+        set_handle = Ctor.inst().ctxt().findDataTypeFunction("pss::core::reg_group::set_handle")
+        ctor.proc_scope().addStatement(
+            ctor.ctxt().mkTypeProcStmtExpr(
+                ctor.ctxt().mkTypeExprMethodCallContext(
+                    set_handle,
+                    root,
+                    [])))
+        pass
+
+    def post_decorate(self, T, Tp):
+        component_ti = TypeInfoComponent.get(self.get_typeinfo())
+        super().post_decorate(T, Tp)
+        setattr(Tp, "set_handle", type(self)._set_handle)
 
 
