@@ -80,6 +80,14 @@ class CoreLibFactory(object):
         reg_write.addImportSpec(
             self._ctxt.mkDataTypeFunctionImport("X", False, False))
         self._ctxt.addDataTypeFunction(reg_write)
+        reg_write_masked = self._ctxt.mkDataTypeFunction(
+            "pss::core::reg_write_masked",
+            None,
+            False,
+            DataTypeFunctionFlags.Core)
+        reg_write_masked.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(reg_write_masked)
         reg_write_val = self._ctxt.mkDataTypeFunction(
             "pss::core::reg_write_val",
             None,
@@ -88,4 +96,78 @@ class CoreLibFactory(object):
         reg_write_val.addImportSpec(
             self._ctxt.mkDataTypeFunctionImport("X", False, False))
         self._ctxt.addDataTypeFunction(reg_write_val)
+        reg_write_val_masked = self._ctxt.mkDataTypeFunction(
+            "pss::core::reg_write_val_masked",
+            None,
+            False,
+            DataTypeFunctionFlags.Core)
+        reg_write_val_masked.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(reg_write_val_masked)
+
+        read8 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::read8",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        read8.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(read8)
+        read16 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::read16",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        read16.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(read16)
+        read32 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::read32",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        read32.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(read32)
+        read64 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::read64",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        read64.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(read64)
+
+        write8 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::write8",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        write8.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(write8)
+        write16 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::write16",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        write16.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(write16)
+        write32 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::write32",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        write32.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(write32)
+        write64 = self._ctxt.mkDataTypeFunction(
+            "reg_addr_pkg::write64",
+            None,
+            False,
+            DataTypeFunctionFlags.Target)
+        write64.addImportSpec(
+            self._ctxt.mkDataTypeFunctionImport("X", False, False))
+        self._ctxt.addDataTypeFunction(write64)
 

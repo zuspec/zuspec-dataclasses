@@ -20,6 +20,7 @@
 #*
 #****************************************************************************
 from vsc_dataclasses.impl.generators.collect_struct_deps import CollectStructDeps
+from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
 from zsp_dataclasses.impl.context import DataTypeAction, DataTypeComponent
 from ..pyctxt.visitor_base import VisitorBase
 
@@ -52,6 +53,17 @@ class CollectTypeDeps(VisitorBase,CollectStructDeps):
         self.pop_scope()
 
     def visitDataTypeComponent(self, i: DataTypeComponent):
+        if self.in_field():
+            self.addRef(i)
+        else:
+            self.addType(i)
+
+        self.push_scope(i)
+        for f in i.getFields():
+            f.accept(self)
+        self.pop_scope()
+
+    def visitDataTypeStruct(self, i: DataTypeStruct):
         if self.in_field():
             self.addRef(i)
         else:

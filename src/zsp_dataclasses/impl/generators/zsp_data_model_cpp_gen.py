@@ -61,11 +61,11 @@ class ZspDataModelCppGen(VscDataModelCppGen,VisitorBase):
                 self.println("{")
                 self.inc_indent()
                 self.println("zsp::arl::dm::IDataTypeFunction *%s_t = %s->findDataTypeFunction(\"%s\");" % (
-                    f.name(),
+                    self.identifier(f.name()),
                     self._ctxt,
                     f.name()))
                 if len(f.getImportSpecs()) > 0:
-                    self.println("%s_t->addImportSpec(" % (self.leaf_name(f.name())))
+                    self.println("%s_t->addImportSpec(" % ( self.identifier(f.name())))
                     self.inc_indent()
                     self.println("%s->mkDataTypeFunctionImport(\"%s\", false, false)" % (
                         self._ctxt,
