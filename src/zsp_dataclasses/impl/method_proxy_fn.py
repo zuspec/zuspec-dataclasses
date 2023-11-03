@@ -115,6 +115,7 @@ class MethodProxyFn(typeworks.MethodProxy):
             print("Function call in type mode")
             params = []
             for a in args:
+                print("a: %s" % str(a))
                 e = VscExpr.toExpr(a)
                 e = vsc_ctor.pop_expr(e)
                 print("Expr: %s" % str(e.model))

@@ -165,6 +165,7 @@ class Ctor(object):
         for e in vsc_ctor.pop_exprs():
             print("e.model: %s %s" % (str(e.model), isinstance(e.model, vsc_ctxt.TypeExprBin)))
             if isinstance(e.model, vsc_ctxt.TypeExprBin) and e.model.op() == vsc_ctxt.BinOp.Eq:
+                print("Add assign statement")
                 ps.addStatement(self._ctxt.mkTypeProcStmtAssign(
                     e.model.lhs(),
                     ctxt_api.TypeProcStmtAssignOp.Eq,

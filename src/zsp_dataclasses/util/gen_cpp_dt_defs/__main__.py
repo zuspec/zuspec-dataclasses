@@ -71,8 +71,10 @@ def main():
     for fn in fragment_m.keys():
         Ctor.init(Context())
 
+        print("--> Process Fragment %s" % fn)
         _globals = globals().copy()
         exec(fragment_m[fn].content, _globals)
+        print("<-- Process Fragment %s" % fn)
 
         Ctor.inst().elab()
 
