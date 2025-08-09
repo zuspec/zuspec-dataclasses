@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_exec.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,20 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
+from zuspec.impl.context import ExecKindT
 
-import zuspec as arl
-from .test_base import TestBase
+class TypeExec(ctxt_api.TypeExec):
 
-class TestLabel(TestBase):
+    def __init__(self, kind, body):
+        self._kind = kind
+        self._body = body
 
+    def getKind(self) -> ExecKindT:
+        return self._kind
+    
+    def getBody(self):
+        return self._body
 
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()
+    def accept(self, v):
+        v.visitTypeExec(self)

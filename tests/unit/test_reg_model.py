@@ -20,7 +20,7 @@
 #*
 #****************************************************************************
 from .test_base import TestBase
-import zsp_dataclasses as zdc
+import zuspec as zdc
 
 class TestRegModel(TestBase):
 

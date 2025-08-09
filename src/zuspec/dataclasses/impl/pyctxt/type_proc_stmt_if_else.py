@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_proc_stmt_if_else.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,32 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
 
-import zuspec as arl
-from .test_base import TestBase
+class TypeProcStmtIfElse(ctxt_api.TypeProcStmtIfElse):
 
-class TestLabel(TestBase):
+    def __init__(self,
+                 cond,
+                 true_s,
+                 false_s):
+        self._cond = cond
+        self._true_s = true_s
+        self._false_s = false_s
 
+    def getCond(self):
+        return self._cond
+    
+    def setTrue(self, s):
+        self._true_s = s
 
-    def test_smoke(self):
+    def getTrue(self):
+        return self._true_s
 
-        @arl.component
-        class pss_top(object):
+    def setFalse(self, s):
+        self._false_s = s
 
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
+    def getFalse(self):
+        return self._false_s
 
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()
+    def accept(self, v):
+        v.visitTypeProcStmtIfElse(self)

@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_expr_method_call_static.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,21 @@
 #*     Author: 
 #*
 #****************************************************************************
+from typing import List
+import zuspec.impl.context as ctxt
 
-import zuspec as arl
-from .test_base import TestBase
+class TypeExprMethodCallStatic(ctxt.TypeExprMethodCallStatic):
 
-class TestLabel(TestBase):
+    def __init__(self, target : 'DataTypeFunction', params):
+        self._target = target
+        self._params = params.copy()
+        pass
 
-
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()
+    def getTarget(self) -> 'DataTypeFunction':
+        return self._target
+    
+    def getParameters(self) -> List['vsc_ctxt.TypeExpr']:
+        return self._params
+    
+    def accept(self, v):
+        v.visitTypeExprMethodCallStatic(self)

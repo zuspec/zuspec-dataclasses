@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* data_type_arl_struct.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,24 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
+from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
 
-import zuspec as arl
-from .test_base import TestBase
+class DataTypeArlStruct(ctxt_api.DataTypeArlStruct, DataTypeStruct):
 
-class TestLabel(TestBase):
+    def __init__(self, name):
+        DataTypeStruct.__init__(self, name)
+        self._exec_l = []
+        pass
 
-
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()
+    def addExec(self, exec : 'TypeExec'):
+        self._exec_l.append(exec)
+    
+    def getExecs(self):
+        return self._exec_l
+    
+    def addFunction(self, f : 'DataTypeFunction'):
+        raise NotImplementedError("addFunction")
+    
+    def getFunctions(self):
+        raise NotImplementedError("getFunctions")

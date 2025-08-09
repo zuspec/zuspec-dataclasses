@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_field_activity.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,32 +20,18 @@
 #*
 #****************************************************************************
 
-import zuspec as arl
-from .test_base import TestBase
+import zuspec.impl.context as ctxt_api
+from vsc_dataclasses.impl.pyctxt.type_field_phy import TypeFieldPhy
 
-class TestLabel(TestBase):
+class TypeFieldActivity(ctxt_api.TypeFieldActivity,TypeFieldPhy):
+
+    def __init__(self,
+        name,
+        type : ctxt_api.DataTypeActivity):
+        TypeFieldPhy.__init__(self, name, type, False, None)
+
+    def mkActivity(self, ctxt: ctxt_api.ModelBuildContext):
+        return self.getDataType().mkActivity(ctxt, self)
 
 
-    def test_smoke(self):
 
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

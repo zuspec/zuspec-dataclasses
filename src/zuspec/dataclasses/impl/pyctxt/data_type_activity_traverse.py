@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* data_type_activity_traverse.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,32 +20,24 @@
 #*
 #****************************************************************************
 
-import zuspec as arl
-from .test_base import TestBase
+import zuspec.impl.context as ctxt_api
+import vsc_dataclasses.impl.context as vsc_ctxt
 
-class TestLabel(TestBase):
+class DataTypeActivityTraverse(ctxt_api.DataTypeActivityTraverse):
 
+    def __init__(self, target, with_c):
+        self._target = target
+        self._with_c = with_c
 
-    def test_smoke(self):
+    def getTarget(self) -> vsc_ctxt.TypeExprFieldRef:
+        return self._target
 
-        @arl.component
-        class pss_top(object):
+    def getWithC(self) -> 'vsc_ctxt.TypeConstraint':
+        return self._with_c
 
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
+    def setWithC(self, c : 'vsc_ctxt.TypeConstraint'):
+        self._with_c = c
 
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
+    def accept(self, v):
+        v.visitDataTypeActivityTraverse(self)
 
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

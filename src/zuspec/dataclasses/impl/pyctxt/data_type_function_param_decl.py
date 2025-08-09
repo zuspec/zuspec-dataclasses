@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* data_type_function_param_decl.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,18 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
+from .type_proc_stmt_var_decl import TypeProcStmtVarDecl
 
-import zuspec as arl
-from .test_base import TestBase
+class DataTypeFunctionParamDecl(TypeProcStmtVarDecl):
 
-class TestLabel(TestBase):
+    def __init__(self, name, dir, type, init):
+        super().__init__(name, type, init)
+        self._dir = dir
 
+    def getDirection(self) -> ctxt_api.ParamDir:
+        return self._dir
+    
+    def accept(self, v):
+        v.visitDataTypeFunctionParamDecl(self)
 
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

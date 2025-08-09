@@ -20,7 +20,7 @@
 #*
 #****************************************************************************
 
-import zsp_dataclasses as arl
+import zuspec as arl
 from .test_base import TestBase
 
 class TestReplicate(TestBase):

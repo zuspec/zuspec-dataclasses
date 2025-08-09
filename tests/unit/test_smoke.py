@@ -1,6 +1,6 @@
 
 from .test_base import TestBase
-import zsp_dataclasses as arl
+import zuspec as arl
 
 class TestSmoke(TestBase):
 

@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_field_reg_group.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,22 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
+import vsc_dataclasses.impl.context as vsc_api
+from vsc_dataclasses.impl.pyctxt.type_field import TypeField
 
-import zuspec as arl
-from .test_base import TestBase
+class TypeFieldRegGroup(ctxt_api.TypeFieldRegGroup, TypeField):
 
-class TestLabel(TestBase):
+    def __init__(self, name, type, owned):
+        TypeField.__init__(self, name, type, vsc_api.TypeFieldAttr.NoAttr)
+        self._offset = -1
 
+    def setOffset(self, off):
+        self._offset = off
 
-    def test_smoke(self):
+    def getOffset(self):
+        return self._offset
 
-        @arl.component
-        class pss_top(object):
+    def accept(self, v):
+        v.visitTypeFieldRegGroup(self)
 
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

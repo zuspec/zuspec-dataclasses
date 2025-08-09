@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* data_type_activity_replicate.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,32 +20,18 @@
 #*
 #****************************************************************************
 
-import zuspec as arl
-from .test_base import TestBase
+import zuspec.impl.context as ctxt_api
+from .data_type_activity_scope import DataTypeActivityScope
 
-class TestLabel(TestBase):
+class DataTypeActivityReplicate(ctxt_api.DataTypeActivityReplicate,DataTypeActivityScope):
 
+    def __init__(self, count):
+        DataTypeActivityScope.__init__(self)
+        self._count = count
 
-    def test_smoke(self):
+    def getCount(self) -> 'TypeExpr':
+        return self._count
+    
+    def accept(self, v):
+        v.visitDataTypeActivityReplicate(self)
 
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

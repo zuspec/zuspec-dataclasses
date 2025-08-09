@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* model_field_component.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,32 +20,15 @@
 #*
 #****************************************************************************
 
-import zuspec as arl
-from .test_base import TestBase
+import zuspec.impl.context as ctxt_api
+from vsc_dataclasses.impl.pyctxt.model_field import ModelField
 
-class TestLabel(TestBase):
+class ModelFieldComponent(ctxt_api.ModelFieldComponent,ModelField):
 
+    def __init__(self, name, dt):
+        ModelField.__init__(self, name, dt)
 
-    def test_smoke(self):
+    def initCompTree(self):
+        print("TODO: initCompTree")
+        pass
 
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* data_type_function_import.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,18 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt
 
-import zuspec as arl
-from .test_base import TestBase
+class DataTypeFunctionImport(ctxt.DataTypeFunctionImport):
 
-class TestLabel(TestBase):
+    def __init__(self, lang, is_target, is_solve):
+        self._lang = lang
+        self._is_target = is_target
+        self._is_solve = is_solve
 
+    def isTarget(self) -> bool:
+        return self._is_target
+    
+    def isSolve(self) -> bool:
+        return self._is_solve
 
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

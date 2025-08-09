@@ -19,8 +19,8 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
-from zsp_dataclasses.impl.generators.zsp_data_model_cpp_gen import ZspDataModelCppGen
+import zuspec as zdc
+from zuspec.impl.generators.zsp_data_model_cpp_gen import ZspDataModelCppGen
 from .test_base import TestBase
 
 class TestCppGen(TestBase):

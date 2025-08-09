@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_proc_stmt_expr.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,32 +20,15 @@
 #*
 #****************************************************************************
 
-import zuspec as arl
-from .test_base import TestBase
+import zuspec.impl.context as ctxt_api
 
-class TestLabel(TestBase):
+class TypeProcStmtExpr(ctxt_api.TypeProcStmtExpr):
 
+    def __init__(self, expr):
+        self._expr = expr
 
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()
+    def getExpr(self):
+        return self._expr
+    
+    def accept(self, v):
+        v.visitTypeProcStmtExpr(self)

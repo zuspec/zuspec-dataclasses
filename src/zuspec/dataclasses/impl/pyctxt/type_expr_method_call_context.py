@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_expr_method_call_context.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,18 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
+from .type_expr_method_call_static import TypeExprMethodCallStatic
 
-import zuspec as arl
-from .test_base import TestBase
+class TypeExprMethodCallContext(ctxt_api.TypeExprMethodCallContext,TypeExprMethodCallStatic):
 
-class TestLabel(TestBase):
+    def __init__(self, target, context, params):
+        TypeExprMethodCallStatic.__init__(self, target, params)
+        self._context = context
 
+    def getContext(self):
+        return self._context
+    
+    def accept(self, v):
+        v.visitTypeExprMethodCallContext(self)
 
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

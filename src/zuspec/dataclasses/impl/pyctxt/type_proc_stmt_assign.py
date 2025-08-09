@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_proc_stmt_assign.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,24 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
 
-import zuspec as arl
-from .test_base import TestBase
+class TypeProcStmtAssign(ctxt_api.TypeProcStmtAssign):
 
-class TestLabel(TestBase):
+    def __init__(self, lhs, op, rhs):
+        self._lhs = lhs
+        self._op = op
+        self._rhs = rhs
 
+    def getLhs(self):
+        return self._lhs
 
-    def test_smoke(self):
+    def op(self):
+        return self._op
 
-        @arl.component
-        class pss_top(object):
+    def getRhs(self):
+        return self._rhs
+    
+    def accept(self, v):
+        v.visitTypeProcStmtAssign(self)
 
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

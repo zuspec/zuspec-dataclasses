@@ -9,6 +9,10 @@ package:
         url: https://github.com/vsc-tools/pyvsc-dataclasses.git
       - name: pytypeworks
         url: https://github.com/mballance/pytypeworks.git
+      - name: zuspec-arl-dm
+        url: https://github.com/zuspec/zuspec-arl-dm.git
+      - name: pytest
+        src: pypi
 
     - name: default
       deps:

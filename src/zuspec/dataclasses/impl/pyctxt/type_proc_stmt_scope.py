@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* type_proc_stmt_scope.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -19,33 +19,27 @@
 #*     Author: 
 #*
 #****************************************************************************
+import zuspec.impl.context as ctxt_api
 
-import zuspec as arl
-from .test_base import TestBase
+class TypeProcStmtScope(ctxt_api.TypeProcStmtScope):
 
-class TestLabel(TestBase):
+    def __init__(self):
+        self._statements = []
+        self._variables = []
+
+    def addStatement(self, s):
+        self._statements.append(s)
+    
+    def addVariable(self, v):
+        self._variables.append(v)
+
+    def getStatements(self):
+        return self._statements
+
+    def getVariables(self):
+        return self._variables
+    
+    def accept(self, v):
+        v.visitTypeProcStmtScope(self)
 
 
-    def test_smoke(self):
-
-        @arl.component
-        class pss_top(object):
-
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
-
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
-
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

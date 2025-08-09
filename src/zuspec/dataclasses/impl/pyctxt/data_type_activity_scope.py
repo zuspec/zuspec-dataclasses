@@ -1,5 +1,5 @@
 #****************************************************************************
-#* test_label.py
+#* data_type_activity_scope.py
 #*
 #* Copyright 2022 Matthew Ballance and Contributors
 #*
@@ -20,32 +20,24 @@
 #*
 #****************************************************************************
 
-import zuspec as arl
-from .test_base import TestBase
+import zuspec.impl.context as ctxt_api
+from vsc_dataclasses.impl.pyctxt.data_type_struct import DataTypeStruct
 
-class TestLabel(TestBase):
+class DataTypeActivityScope(ctxt_api.DataTypeActivityScope,DataTypeStruct):
 
+    def __init__(self):
+        DataTypeStruct.__init__(self, "")
+        self.activities = []
 
-    def test_smoke(self):
+    def getActivities(self):
+        return self.activities
 
-        @arl.component
-        class pss_top(object):
+    def addActivity(self, a):
+        self.activities.append(a)
 
-            @arl.action
-            class A(object):
-#                v : arl.rand_uint8_t
-                pass
+    def addActivityField(self, a):
+        self.activities.append(a)
 
-        
-            @arl.action
-            class Entry(object):
-#                @arl.constraint
-#                def a_c(self):
-#                    self.a.v < 10
+    def accept(self, v):
+        v.visitDataTypeActivityScope(self)
 
-                @arl.activity
-                def activity(self):
-
-                    arl.do(label="a")[pss_top.A]
-
-        top = pss_top()

@@ -19,7 +19,7 @@
 #*     Author: 
 #*
 #****************************************************************************
-import zsp_dataclasses as zdc
+import zuspec as zdc
 from .test_base import TestBase
 
 class TestFunction(TestBase):
@@ -59,5 +59,5 @@ class TestFunction(TestBase):
                     print("exec body")
                     my_function(1, 2)
 
-        from zsp_dataclasses.impl.ctor import Ctor
+        from zuspec.impl.ctor import Ctor
         Ctor.inst().elab()
