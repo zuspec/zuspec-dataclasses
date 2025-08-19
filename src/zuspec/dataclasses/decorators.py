@@ -4,6 +4,7 @@ Created on Mar 19, 2022
 @author: mballance
 '''
 import dataclasses as dc
+from typing import Dict
 # from vsc_dataclasses.decorators import *
 # from .impl.action_decorator_impl import ActionDecoratorImpl
 # from .impl.exec_decorator_impl import ExecDecoratorImpl
@@ -18,12 +19,52 @@ import dataclasses as dc
 # from .impl.component_decorator_impl import ComponentDecoratorImpl
 # from .impl.activity_decorator_impl import ActivityDecoratorImpl
 # from .impl.type_kind_e import TypeKindE
+from .annotation import Annotation, AnnotationSync
+from .ports import Input, Output
+from .clock import Clock
 
 def dataclass(cls, **kwargs):
     return dc.dataclass(cls, **kwargs)
 
+class Field:
+    __slots__ = dc.Field.__slots__ + ('bind',)
+
+    def __init__(self, *args, **kwargs):
+        pass
+    
+
 def field(*args, **kwargs):
-    return dc.field(*args, **kwargs)
+    return Field(*args, **kwargs)
+
+def input(*args, **kwargs) -> Input:
+    return dc.field(default_factory=Input)
+
+def output(*args, **kwargs) -> Output:
+    return dc.field(default_factory=Output)
+
+def clock(*args, **kwargs) -> Clock:
+    return dc.field(default_factory=Clock)
+
+def reset(*args, **kwargs):
+    from .reset import Reset
+    return dc.field(default_factory=Reset)
+
+def export(*args, bind=None, **kwargs):
+    return Field(*args, **kwargs)
+
+def process(T):
+    return T
+
+def sync(*args, clock=None, reset=None):
+    # TODO: handle two forms
+    if len(args) == 0:
+        def __call__(T):
+            Annotation.apply(T, AnnotationSync(clock=clock, reset=reset))
+            return T
+        return __call__
+    else:
+        Annotation.apply(args[0], AnnotationSync(clock=clock, reset=reset))
+        return args[0]
 
 # def action(*args, **kwargs): 
 #     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):

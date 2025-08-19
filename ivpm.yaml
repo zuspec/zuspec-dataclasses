@@ -5,12 +5,12 @@ package:
     dep-sets:
     - name: default-dev
       deps:
-      - name: pyvsc-dataclasses
-        url: https://github.com/vsc-tools/pyvsc-dataclasses.git
-      - name: pytypeworks
-        url: https://github.com/mballance/pytypeworks.git
-      - name: zuspec-arl-dm
-        url: https://github.com/zuspec/zuspec-arl-dm.git
+        #      - name: pyvsc-dataclasses
+        #        url: https://github.com/vsc-tools/pyvsc-dataclasses.git
+          #      - name: pytypeworks
+          #        url: https://github.com/mballance/pytypeworks.git
+          #      - name: zuspec-arl-dm
+          #        url: https://github.com/zuspec/zuspec-arl-dm.git
       - name: pytest
         src: pypi
 
