@@ -3,39 +3,7 @@ from typing import ClassVar, Dict, Generic, Type
 from abc import abstractmethod
 
 
-class PortMeta(type):
-
-    def __new__(cls, name, bases, attrs):
-        return super().__new__(cls, name, bases, attrs)
-    
-    def __init__(self, name, bases, attrs):
-        super().__init__(name, bases, attrs)
-        self.type_m : Dict = {}
-    
-    def __getitem__(self, T):
-        print("__getitem__: %s" % T)
-        if T in self.type_m.keys():
-            return self.type_m[T]
-        else:
-            def new(cls):
-                print("Port.__new__: %s %s" % (cls, cls.Tp))
-                return super().__new__(cls)
-            def init(self):
-                print("Port.__init__: %s %s" % (self, self.Tp))
-                self.imp = None
-            def call(self):
-                print("__call__")
-
-            t = type(T.__name__, (Port,), {
-#                "__new__": new,
-                "__init__": init,
-                "__call__": call
-            })
-            setattr(t, "Tp", T)
-            self.type_m[T] = t
-            return t
-
-class Port[T](metaclass=PortMeta):
+class Port[T]():
 
     @abstractmethod
     def __call__(self) -> T:

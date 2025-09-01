@@ -1,33 +1,42 @@
+import abc
+from typing import Dict, Optional, Type
 from .decorators import dataclass
 
 @dataclass
-class Struct(object):
+class StructPacked(object):
+    """
+    StructPacked types are fixed-size data structures. 
+    Fields may only be of a fixed size. 
 
-    # def __new__(cls, *args, **kwargs):
-    #     cls_p = None
-    #     print("cls: %s %s" % (str(cls), getattr(cls, "__xform__", False)))
-
-    #     if not getattr(cls, "__xform__", False):
-    #         # Determine whether to replace
-    #         cls_p = TypeTransformerDefault.inst().transform(cls)
-    #         print("cls_p: %s ; xform: %s" % (cls_p, getattr(cls_p, "__xform__", False)))
-
-    #     if cls_p is not None:
-    #         # The default transformer wants to replace the class
-    #         print("Constructing override class %s" % cls)
-    #         print("--> cls_p")
-    #         s = cls_p.__new__(cls_p, *args, **kwargs)
-    #         print("<-- cls_p")
-    #     else:
-    #         print("Constructing base class %s" % cls)
-    #         s = super().__new__(cls, *args, **kwargs)
-    #     print("-- return %d" % id(s))
-    #     return s
-
+    Valid sub-regions
+    - constraint
+    - pre_solve / post_solve
+    """
     pass
 
-# @dataclass
-# class StructP(object):
+@dataclass
+class Struct(object):
+    """
+    Struct types are data structures that may contain
+    variable-size fields. 
 
-#     def __post_init__(self):
-#         print("StructP.__post_init__")
+    Valid sub-regions
+    - constraint
+    - pre_solve / post_solve
+    - method
+    """
+
+    # @abc.abstractmethod
+    # def bind[T](self, t : T):
+    #             t : Type[T], 
+    #             init : Optional[Dict]=None,
+    #             bind : Optional[Dict]=None) -> T:
+    #     """
+    #     Public API
+    #     Applies service Creates a new instance of the specified class.
+    #     - Resolves service claims relative to the context
+    #       object and any bind specifications.
+    #     """
+    #     pass
+
+    pass

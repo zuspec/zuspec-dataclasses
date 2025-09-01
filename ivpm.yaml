@@ -13,6 +13,10 @@ package:
           #        url: https://github.com/zuspec/zuspec-arl-dm.git
       - name: pytest
         src: pypi
+      - name: mypy
+        src: pypi
+      - name: sphinx
+        src: pypi
 
     - name: default
       deps:

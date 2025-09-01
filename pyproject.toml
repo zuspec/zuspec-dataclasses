@@ -1,0 +1,8 @@
+
+[project]
+name = "zuspec-dataclasses"
+version = "0.0.1"
+
+
+[tool.mypy]
+mypy_path = "src"

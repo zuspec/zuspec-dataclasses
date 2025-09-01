@@ -1,7 +1,7 @@
 
 
 # from .activity_stmts import *
-from .decorators import dataclass, field, export, process, input, output, sync
+from .decorators import dataclass, field, export, process, input, output, sync, const
 # from .claims_refs import *
 # from .shared_stmts import *
 # from .types import *
