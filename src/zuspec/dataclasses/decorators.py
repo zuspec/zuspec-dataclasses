@@ -5,7 +5,7 @@ Created on Mar 19, 2022
 '''
 import dataclasses
 import dataclasses as dc
-from typing import Dict
+from typing import Any, Callable, Dict, Self, TypeVar
 # from vsc_dataclasses.decorators import *
 # from .impl.action_decorator_impl import ActionDecoratorImpl
 # from .impl.exec_decorator_impl import ExecDecoratorImpl
@@ -93,14 +93,30 @@ def always(instr : BitLiteral):
 
 a = bit(20)[3:4] 
 
-def field(rand=False):
-    """
-    Marks a plain data field
-    - rand -- Marks the field as being randomizable
-    - 
-    """
-    # TODO: 
-    return dc.field()
+SelfT = TypeVar('SelfT')
+
+class bind[T](object):
+    def __init__(self, c : Callable[[T],Dict[Any,Any]]):
+        self._c = c
+    def __call__(self, s) -> Dict[Any,Any]:
+        return self._c(s)
+    
+#a = bind2(lambda s:{s.}, selfT=Self)
+
+def field(rand=False, bind : Callable[[object],Dict[Any,Any]] = None):
+    pass
+    
+    # @staticmethod
+    # def __call__(rand=False, bind : Callable[[T],Dict[Any,Any]] = None):
+    #     pass
+
+    # """
+    # Marks a plain data field
+    # - rand -- Marks the field as being randomizable
+    # - 
+    # """
+    # # TODO: 
+    # return dc.field()
 
 def input(*args, **kwargs):
     return dataclasses.field(default_factory=Input)

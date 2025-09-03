@@ -3,7 +3,10 @@ Class Fields
 ############
 
 Zuspec follows the Python `dataclasses` model for declaring classes and
-class fields. 
+class fields. The field type annotation specifies the user-visible type
+of the field. The initializer (eg field()) captures semantics of the field,
+such as the direction of an input/output port or whether the field is
+considered to be a post-initialization constant.
 
 .. code-block:: python3
 
