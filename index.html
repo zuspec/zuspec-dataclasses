@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Zuspec Language &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Zuspec Language Overview" href="intro.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="zuspec-language">
+<h1>Zuspec Language<a class="headerlink" href="#zuspec-language" title="Link to this heading">¶</a></h1>
+<p>Zuspec is a Python-embedded multi-abstraction language for modeling
+hardware - from the transfer-function level down to RTL.</p>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="intro.html#interaction-with-tools">Interaction with Tools</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="datatypes.html">Data Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="fields.html#convenience">Convenience</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="struct.html#built-in-methods">Built-in Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="struct.html#supported-exec-methods">Supported Exec Methods</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="components.html#built-in-methods">Built-in Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="components.html#supported-exec-methods">Supported Exec Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="components.html#supported-special-purpose-methods">Supported Special-Purpose Methods</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="actions.html#built-in-methods">Built-in Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="actions.html#supported-decorated-methods">Supported Decorated Methods</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="constraints.html#constraint-blocks">Constraint Blocks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="constraints.html#constraint-functions">Constraint Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="constraints.html#constraint-statements">Constraint Statements</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="dependencies.html">Dependencies</a></li>
+<li class="toctree-l1"><a class="reference internal" href="profiles.html">Profiles</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="profiles.html#rtl">RTL</a></li>
+</ul>
+</li>
+</ul>
+</div>
+<section id="python-to-verilog-transformation">
+<h2>Python to Verilog Transformation<a class="headerlink" href="#python-to-verilog-transformation" title="Link to this heading">¶</a></h2>
+<p># Python to Verilog Transformation</p>
+<p>Below is a conceptual diagram showing how a Python class description is transformed into a Verilog description:</p>
+<p><code class="docutils literal notranslate"><span class="pre">`</span>
+<span class="pre">+---------------------+</span>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">+-------------------+</span>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">+----------------------+</span>
+<span class="pre">|</span> <span class="pre">Python</span> <span class="pre">Class</span>&#160;&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">|</span>&#160; <span class="pre">===&gt;</span>&#160;&#160; <span class="pre">|</span>&#160;&#160; <span class="pre">Machinery</span>&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">|</span>&#160; <span class="pre">===&gt;</span>&#160;&#160; <span class="pre">|</span> <span class="pre">Verilog</span> <span class="pre">Description</span>&#160; <span class="pre">|</span>
+<span class="pre">|</span> <span class="pre">(e.g.</span> <span class="pre">MyClass)</span>&#160;&#160;&#160;&#160;&#160; <span class="pre">|</span>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">|</span> <span class="pre">(Conversion</span> <span class="pre">Tool)</span> <span class="pre">|</span>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">|</span> <span class="pre">(e.g.</span> <span class="pre">module</span> <span class="pre">MyClass)|</span>
+<span class="pre">+---------------------+</span>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">+-------------------+</span>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; <span class="pre">+----------------------+</span>
+<span class="pre">`</span></code></p>
+<ul class="simple">
+<li><p>The <strong>Python Class</strong> represents the user-defined hardware model in Python.</p></li>
+<li><p>The <strong>Machinery</strong> is the conversion tool or framework that processes the Python class.</p></li>
+<li><p>The <strong>Verilog Description</strong> is the generated hardware module in Verilog.</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="datatypes.html">Data Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dependencies.html">Dependencies</a></li>
+<li class="toctree-l1"><a class="reference internal" href="profiles.html">Profiles</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+      <li>Next: <a href="intro.html" title="next chapter">Zuspec Language Overview</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

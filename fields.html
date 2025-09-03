@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Class Fields &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Struct Types" href="struct.html" />
+    <link rel="prev" title="Data Types" href="datatypes.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="class-fields">
+<h1>Class Fields<a class="headerlink" href="#class-fields" title="Link to this heading">¶</a></h1>
+<p>Zuspec follows the Python <cite>dataclasses</cite> model for declaring classes and
+class fields. The field type annotation specifies the user-visible type
+of the field. The initializer (eg field()) captures semantics of the field,
+such as the direction of an input/output port or whether the field is
+considered to be a post-initialization constant.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyS</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Struct</span><span class="p">):</span>
+    <span class="n">W</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">const</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">a</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">rand</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+    <span class="n">b</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>The example above shows several aspects of declaring fields within a
+Zuspec datatype.</p>
+<ul class="simple">
+<li><p><strong>W</strong> - Constant that will be configured during initialization</p></li>
+<li><p><strong>a</strong> - Random field with a built-in constraint limiting it to 0..9</p></li>
+<li><p><strong>b</strong> - Random field specified with the <cite>rand</cite> convenience field specifier</p></li>
+<li><p>default is reset value</p></li>
+<li><p>rand  - Marks whether this field is randomizable</p></li>
+<li><p>const - Marks whether this field is const</p></li>
+<li><p>domain - Iterable, or Callable that produces an iterable, of the field domain</p></li>
+<li><p>bind</p></li>
+<li><p>init - dict of initialization values to apply. Elements may be lambda expressions</p></li>
+<li><p>claims</p></li>
+<li><p>provides</p></li>
+<li><p>export - makes the container a dependency provider of this field</p></li>
+<li><p>depends - Type to use in dependency binding</p></li>
+<li><p>mirror - Marks a bundle field as being a mirror of the specified type</p></li>
+</ul>
+<p>ClassVar</p>
+<section id="convenience">
+<h2>Convenience<a class="headerlink" href="#convenience" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>rand</p></li>
+<li><p>const</p></li>
+<li><p>output - claim==True if a Service provides==True if
+- Pool[T] if in an action context ; implicit bind via comp dependency
+- T otherwise ; explicit bind</p></li>
+<li><p>input</p></li>
+<li><p>port
+- Is a dependency on T ; explicit bind</p></li>
+<li><p>export
+- Is a T provider ; explicit bind</p></li>
+<li></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="datatypes.html">Data Types</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Class Fields</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#convenience">Convenience</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dependencies.html">Dependencies</a></li>
+<li class="toctree-l1"><a class="reference internal" href="profiles.html">Profiles</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="datatypes.html" title="previous chapter">Data Types</a></li>
+      <li>Next: <a href="struct.html" title="next chapter">Struct Types</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/fields.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

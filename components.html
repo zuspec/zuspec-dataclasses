@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Components &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Actions" href="actions.html" />
+    <link rel="prev" title="Struct Types" href="struct.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="components">
+<h1>Components<a class="headerlink" href="#components" title="Link to this heading">¶</a></h1>
+<p>Components provide the structural aspect of a Zuspec model. Depending
+on their application, Zuspec components have close similiarities to
+SystemVerilog <cite>module</cite> and SystemC <cite>component</cite>.</p>
+<p>components</p>
+<section id="built-in-methods">
+<h2>Built-in Methods<a class="headerlink" href="#built-in-methods" title="Link to this heading">¶</a></h2>
+</section>
+<section id="supported-exec-methods">
+<h2>Supported Exec Methods<a class="headerlink" href="#supported-exec-methods" title="Link to this heading">¶</a></h2>
+<section id="comb">
+<h3>comb<a class="headerlink" href="#comb" title="Link to this heading">¶</a></h3>
+<p>A <cite>&#64;comb</cite> async exec method is evaluated whenever one of
+the variables references changes. The <cite>&#64;comb</cite> exec is
+exclusively used with RTL descriptions</p>
+</section>
+<section id="process">
+<h3>process<a class="headerlink" href="#process" title="Link to this heading">¶</a></h3>
+<p>The <cite>&#64;process</cite> exec method is evaluated when evaluation of
+the containing component begins. A <cite>&#64;process</cite> exec method is
+an independent thread of control in the model.</p>
+</section>
+<section id="sync">
+<h3>sync<a class="headerlink" href="#sync" title="Link to this heading">¶</a></h3>
+<p>A <cite>&#64;sync</cite> async exec method is evaluated when its associated
+timebase is evaluated (eg at a clock edge). All assignments
+to outputs are considered nonblocking.
+The <cite>&#64;sync</cite> exec is exclusively used with RTL descriptions</p>
+</section>
+</section>
+<section id="supported-special-purpose-methods">
+<h2>Supported Special-Purpose Methods<a class="headerlink" href="#supported-special-purpose-methods" title="Link to this heading">¶</a></h2>
+<section id="activity">
+<h3>activity<a class="headerlink" href="#activity" title="Link to this heading">¶</a></h3>
+<p><cite>&#64;activity</cite> decorated async methods may be declared on a component.
+The body of the method adheres to activity semantics.</p>
+</section>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="datatypes.html">Data Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Components</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#built-in-methods">Built-in Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-exec-methods">Supported Exec Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-special-purpose-methods">Supported Special-Purpose Methods</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dependencies.html">Dependencies</a></li>
+<li class="toctree-l1"><a class="reference internal" href="profiles.html">Profiles</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="struct.html" title="previous chapter">Struct Types</a></li>
+      <li>Next: <a href="actions.html" title="next chapter">Actions</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/components.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
