@@ -1,5 +1,6 @@
-
-# Zuspec Language Overview
+##########################
+Zuspec Language Overview
+##########################
 
 Zuspec is a language focused on modeling digital hardware
 designs at multiple levels of abstraction -- from an 
@@ -13,35 +14,38 @@ to specified portions of the description.
 
 Let's look at an example:
 
-```python3
-# Counter example
-import zuspec.dataclasses as zdc
+.. code-block:: python3
 
-@zdc.dataclass
-class Counter(zdc.Component):
-    clock : zdc.Bit = zdc.input()
-    reset : zdc.Bit = zdc.input()
-    count : zdc.Bit[32] = zdc.output()
+    # Counter example
+    import zuspec.dataclasses as zdc
 
-    @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
-    def _inc(self):
-        if self.reset:
-            self.count = 0
-        else:
-            self.count += 1
-```
+    @zdc.dataclass
+    class Counter(zdc.Component):
+        clock : zdc.Bit = zdc.input()
+        reset : zdc.Bit = zdc.input()
+        count : zdc.Bit[32] = zdc.output()
+
+        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
+        def _inc(self):
+            if self.reset:
+                self.count = 0
+            else:
+                self.count += 1
+
 
 Note that we follow the Python `dataclasses` pattern
 
-- **Component** - Components are structural elements, equivalent to 
+* **Component** - Components are structural elements, equivalent to 
 Verilog modules and SystemC or PSS components.
-- **Signal Ports** - 
-- **Sync** - Marks a method as being activated on a clock or 
+* **Signal Ports** - 
+* **Sync** - Marks a method as being activated on a clock or 
 reset edge. The semantics of code in the method are behavioral.
 However, output variables only change at clock edge (ie Verilog 
 non-blocking assignment).
 
-# Interaction with Tools
+**********************
+Interaction with Tools
+**********************
 
 Zuspec defines a language, which means that tools must have a way to
 operate on a Zuspec description. The `zuspec.dataclasses.api` 

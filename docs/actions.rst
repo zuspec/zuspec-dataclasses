@@ -7,6 +7,7 @@ modeling test behavior. In most cases, Actions are associated with a
 component.
 
 .. code-block:: python3
+
     import zuspec.dataclasses as zdc
 
     class MyC(zdc.Component):

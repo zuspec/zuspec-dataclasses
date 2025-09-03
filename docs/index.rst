@@ -14,8 +14,14 @@ hardware - from the transfer-function level down to RTL.
    :caption: Contents:
 
    intro
-   types
+   datatypes
+   fields
+   struct
+   components
+   actions
    constraints
+   dependencies
+   profiles
 
 Python to Verilog Transformation
 --------------------------------
