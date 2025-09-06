@@ -5,6 +5,41 @@ Data Types
 Zuspec datatypes include Python data types (int, str, list, dict, set, tuple),
 as well as types derived from Zuspec base classes.
 
+********************
+Zuspec Integer Types
+********************
+
+Zuspec defines two numeric types: `Bit` and `Int`. `Bit` is unsigned,  and
+has a default width of 1. `Int` is signed, and has a default width of 32.
+
+The width and default value of a class member of type `Bit` or `Int` is
+customized using the `field` method. For example:
+
+.. code-block:: python3
+
+    import zuspec.dataclasses as zdc
+
+    class MyC(zdc.Component):
+        int_64b : zdc.Int = zdc.field(width=64)
+        bit_48b : zdc.Bit = zdc.field(width=48)
+
+    
+The width and default value of local variables of type `Bit` or `Int` is
+customized by subscripting the assigning a `Bit` or `Int` class instance to the variable.
+For example:
+
+.. code-block:: python3
+
+    import zuspec.dataclasses as zdc
+
+    class MyC(zdc.Component):
+
+        async def do_something(self, v : )
+        int_64b : zdc.Int = zdc.field(width=64)
+        bit_48b : zdc.Bit = zdc.field(width=48)
+
+
+
 Zuspec class 
 
 - maximize benefits of a dynamically-typed language

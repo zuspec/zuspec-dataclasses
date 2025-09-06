@@ -37,6 +37,31 @@
 <h1>Data Types<a class="headerlink" href="#data-types" title="Link to this heading">¶</a></h1>
 <p>Zuspec datatypes include Python data types (int, str, list, dict, set, tuple),
 as well as types derived from Zuspec base classes.</p>
+<section id="zuspec-integer-types">
+<h2>Zuspec Integer Types<a class="headerlink" href="#zuspec-integer-types" title="Link to this heading">¶</a></h2>
+<p>Zuspec defines two numeric types: <cite>Bit</cite> and <cite>Int</cite>. <cite>Bit</cite> is unsigned,  and
+has a default width of 1. <cite>Int</cite> is signed, and has a default width of 32.</p>
+<p>The width and default value of a class member of type <cite>Bit</cite> or <cite>Int</cite> is
+customized using the <cite>field</cite> method. For example:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyC</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">int_64b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="n">bit_48b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="mi">48</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The width and default value of local variables of type <cite>Bit</cite> or <cite>Int</cite> is
+customized by subscripting the assigning a <cite>Bit</cite> or <cite>Int</cite> class instance to the variable.
+For example:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyC</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">do_something</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span> <span class="p">:</span> <span class="p">)</span>
+    <span class="n">int_64b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="n">bit_48b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="mi">48</span><span class="p">)</span>
+</pre></div>
+</div>
 <p>Zuspec class</p>
 <ul class="simple">
 <li><p>maximize benefits of a dynamically-typed language</p></li>
@@ -58,6 +83,7 @@ as well as types derived from Zuspec base classes.</p>
 public-constant values are different.</p>
 <p>If __post_init__ is defined, then the type must be elaborated
 to determine the specific type.</p>
+</section>
 </section>
 
 
@@ -89,7 +115,10 @@ to determine the specific type.</p>
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Data Types</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Data Types</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#zuspec-integer-types">Zuspec Integer Types</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
 <li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a></li>
 <li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
