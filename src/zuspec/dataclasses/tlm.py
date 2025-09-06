@@ -10,3 +10,9 @@ class IPut[T]():
 class IGet[T]():
     get : Callable[[], Awaitable[T]] = dc.field()
 
+@dc.dataclass
+class IReqRsp[ReqT,RspT]():
+    put : Callable[[Type[ReqT]], Awaitable] = dc.field()
+    get : Callable[[], Awaitable[RspT]] = dc.field()
+
+

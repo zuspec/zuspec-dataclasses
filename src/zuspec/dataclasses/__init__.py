@@ -9,7 +9,7 @@ from .tlm import *
 # from .core_lib import *
 # from vsc_dataclasses.expr import *
 
-from .bit import Bit
+from .bit import Bit, uint64_t
 from .component import Component
 from .struct import Struct
 from .ports import Input, Output, Port

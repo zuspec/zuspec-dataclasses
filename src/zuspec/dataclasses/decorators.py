@@ -5,7 +5,7 @@ Created on Mar 19, 2022
 '''
 import dataclasses
 import dataclasses as dc
-from typing import Any, Callable, Dict, Self, TypeVar
+from typing import Any, Callable, Dict, Self, TypeVar, Generic, Type
 # from vsc_dataclasses.decorators import *
 # from .impl.action_decorator_impl import ActionDecoratorImpl
 # from .impl.exec_decorator_impl import ExecDecoratorImpl
@@ -23,6 +23,8 @@ from typing import Any, Callable, Dict, Self, TypeVar
 from .annotation import Annotation, AnnotationSync
 from .ports import Input, Output
 from .clock import Clock
+from .component import Component
+from .timebase import TimeBase
 
 def dataclass(cls, **kwargs):
     return dc.dataclass(cls, **kwargs)
@@ -94,8 +96,9 @@ def always(instr : BitLiteral):
 a = bit(20)[3:4] 
 
 SelfT = TypeVar('SelfT')
+T = TypeVar('T')
 
-class bind[T](object):
+class bind(Generic[T]):
     def __init__(self, c : Callable[[T],Dict[Any,Any]]):
         self._c = c
     def __call__(self, s) -> Dict[Any,Any]:
@@ -103,7 +106,13 @@ class bind[T](object):
     
 #a = bind2(lambda s:{s.}, selfT=Self)
 
-def field(rand=False, bind : Callable[[object],Dict[Any,Any]] = None):
+from typing import Optional
+
+def field(
+        rand=False, 
+        width=-1,
+        bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
+        **kwargs):
     pass
     
     # @staticmethod
@@ -146,16 +155,39 @@ def reg(offset=0):
 def const(**kwargs):
     return dc.field()
 
-def sync(*args, clock=None, reset=None):
-    # TODO: handle two forms
-    if len(args) == 0:
-        def __call__(T):
-            Annotation.apply(T, AnnotationSync(clock=clock, reset=reset))
-            return T
-        return __call__
-    else:
-        Annotation.apply(args[0], AnnotationSync(clock=clock, reset=reset))
-        return args[0]
+SyncHostT = TypeVar('SyncHostT', bound=Component)
+SyncMethodT = TypeVar('SyncMethodT', bound=Callable[[SyncHostT],Any])
+
+@dc.dataclass
+class Sync(object):
+    method : Callable[[Component],Any] = dc.field()
+    timebase : TimeBase = dc.field()
+
+ComponentT = TypeVar('ComponentT', bound=Component)
+
+def sync(t : Callable[[ComponentT],Any]) -> Sync:
+    """
+    Sync marks a method that has a dependency on a timebase.
+    The method is automatically evaluated by the timebase at 
+    each timestep (eg clock period) of the timebase. The 
+    timebase will automatically assign the reset value 
+    to variables assigned within the decorated method when 
+    the timebase is reset.
+    A sync-decorated method may not be directly called.
+    """
+    # # TODO: handle two forms
+    # if len(args) == 0:
+    #     def __call__(T):
+    #         Annotation.apply(T, AnnotationSync(clock=clock, reset=reset))
+    #         return T
+    #     return __call__
+    # else:
+    #     Annotation.apply(args[0], AnnotationSync(clock=clock, reset=reset))
+    #     return args[0]
+    ret = Sync(t)
+    return ret
+#    return Sync(t)
+
 
 # def action(*args, **kwargs): 
 #     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
