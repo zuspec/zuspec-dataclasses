@@ -11,10 +11,5 @@ class Component(Struct):
     - The 'init_up' method is invoked
     """
 
-    def init_down(self): pass
+    def build(self): pass
 
-    def init_up(self): pass
-
-    async def run(self): pass
-
-    pass
