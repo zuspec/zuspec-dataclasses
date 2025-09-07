@@ -1,5 +1,5 @@
 import abc
-from .component import Component
+from typing import TYPE_CHECKING
 from .decorators import dataclass, input
 from .bit import Bit
 
@@ -15,13 +15,18 @@ class TimeBase(object):
         pass
 
     @abc.abstractmethod
+    async def wait_next(self, count : int = 1):
+        """Waits for 'count' timebase events (eg clocks)"""
+        pass
+
+    @abc.abstractmethod
     def wait_ev(self, amt : float, units):
         """Scales the time to the timebase and returns an event"""
         pass
 
     pass
 
-class TimeBaseSignal(TimeBase,Component):
-    clock : Bit = input()
-    reset : Bit = input()
+#class TimeBaseSignal(TimeBase,Component):
+#    clock : Bit = input()
+#    reset : Bit = input()
 

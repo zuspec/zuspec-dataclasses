@@ -5,7 +5,7 @@ Created on Mar 19, 2022
 '''
 import dataclasses
 import dataclasses as dc
-from typing import Any, Callable, Dict, Self, TypeVar
+from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING
 # from vsc_dataclasses.decorators import *
 # from .impl.action_decorator_impl import ActionDecoratorImpl
 # from .impl.exec_decorator_impl import ExecDecoratorImpl
@@ -24,8 +24,25 @@ from .annotation import Annotation, AnnotationSync
 from .ports import Input, Output
 from .clock import Clock
 
+if TYPE_CHECKING:
+    from .api.type_processor import TypeProcessor
+
 def dataclass(cls, **kwargs):
-    return dc.dataclass(cls, **kwargs)
+    cls_t = dc.dataclass(cls, **kwargs)
+
+    setattr(cls_t, "__base_init__", getattr(cls_t, "__init__"))
+    def local_init(self, tp : 'TypeProcessor', *args, **kwargs):
+        """Only called during type processing"""
+        return tp.init(self, *args, **kwargs)
+    setattr(cls_t, "__init__", local_init)
+
+    if not hasattr(cls_t, "__base_new__"):
+        setattr(cls_t, "__base_new__", getattr(cls_t, "__new__"))
+        def local_new(c, tp : 'TypeProcessor', *args, **kwargs):
+            """Always called during user-object construction"""
+            return tp.new(c, *args, **kwargs)
+        setattr(cls_t, "__new__", local_new)
+    return cls_t
 
 def bundle():
     return dc.field()
@@ -95,7 +112,7 @@ a = bit(20)[3:4]
 
 SelfT = TypeVar('SelfT')
 
-class bind[T](object):
+class bind[T]:
     def __init__(self, c : Callable[[T],Dict[Any,Any]]):
         self._c = c
     def __call__(self, s) -> Dict[Any,Any]:
@@ -103,7 +120,10 @@ class bind[T](object):
     
 #a = bind2(lambda s:{s.}, selfT=Self)
 
-def field(rand=False, bind : Callable[[object],Dict[Any,Any]] = None):
+def field(
+        rand=False, 
+        bind : Callable[[object],Dict[Any,Any]] = None,
+        default : Optional[Any] = None):
     pass
     
     # @staticmethod
