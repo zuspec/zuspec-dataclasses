@@ -122,9 +122,25 @@ class bind[T]:
 
 def field(
         rand=False, 
-        bind : Callable[[object],Dict[Any,Any]] = None,
+        bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
+        default_factory : Optional[Any] = None,
         default : Optional[Any] = None):
-    pass
+    args = {}
+    metadata = None
+    if default_factory is not None:
+        args["default_factory"] = default_factory
+
+    if bind is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["bind"] = bind
+
+    # *Always* specify a default to avoid becoming a required field
+    args["default"] = default
+
+    if metadata is not None:
+        print("metadata: %s" % metadata)
+        args["metadata"] = metadata
+    return dc.field(**args)
     
     # @staticmethod
     # def __call__(rand=False, bind : Callable[[T],Dict[Any,Any]] = None):

@@ -10,6 +10,7 @@ from .tlm import *
 # from vsc_dataclasses.expr import *
 
 from .bit import Bit
+from .action import Action
 from .component import Component
 from .struct import Struct
 from .ports import Input, Output, Port

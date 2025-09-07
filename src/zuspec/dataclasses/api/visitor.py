@@ -49,40 +49,66 @@ class Visitor(object):
 
     def _dispatchField(self, f : dc.Field):
         if f.default_factory not in (None, dc.MISSING):
-            print("default_factory=%s" % f.default_factory)
-            # if issubclass(f.default_factory, input):
-            #     self.visitFieldInput(f)
-            # elif issubclass(f.default_factory, Output):
-            #     self.visitOutputField(f)
+            if issubclass(f.default_factory, Input):
+                self.visitFieldInOut(f, False)
+            elif issubclass(f.default_factory, Output):
+                self.visitFieldInOut(f, True)
+            else:
+                raise Exception()
             pass
-        else:
-            # Plain-data field
+        elif f.type in (str, int, float):
             self.visitFieldData(f)
+        else:
+            self.visitFieldClass(f)
 
-            # if f.type == int:
-            #     self.visitIntField(f)
-            # elif f.type == str:
-            #     self.visitStrField(f)
-            # elif callable(f.type):
-            #     if issubclass(f.type, Bit):
-            #         visitBitField(f)
-            #     print("class")
-            # else:
-            #     print("Error: unhandled: %s" % str(f.type))
+    def _visitFunctions(self, t):
+        for e in dir(t):
+            if not e.startswith("__") and callable(getattr(t, e)):
+                print("Function: %s" % e)
+                self.visitFunction(getattr(t, e))
+
+    def visitFunction(self, f):
+        pass
 
     def _visitDataType(self, t):
+
         if t == int:
             self.visitDataTypeInt()
+        elif type(t) is type:
+            zsp_base_t = (
+                (Component, self.visitDataTypeComponent),
+            )
+
+            v = None
+            for tt,vv in zsp_base_t:
+                print("t: %s tt: %s vv: %s" % (t, tt, vv))
+                if issubclass(t, tt):
+                    v = vv
+                    break
+            
+            v(t)
         else:
             raise Exception("Unknown type %s" % str(t))
+        pass
+
+    def visitDataTypeComponent(self, t):
         pass
 
     def visitDataTypeInt(self):
         pass
 
-    def visitFieldData(self, f : dc.Field):
-        self._visitDataType(f.type)
+    def visitField(self, f : dc.Field):
         pass
+
+    def visitFieldClass(self, f : dc.Field):
+        self.visitField(f)
+
+    def visitFieldInOut(self, f : dc.Field, is_out : bool):
+        self.visitField(f)
+
+    def visitFieldData(self, f : dc.Field):
+        self.visitField(f)
+        self._visitDataType(f.type)
 
     def visitStructType(self, t : Struct):
         self._visitFields(t)
