@@ -1,4 +1,5 @@
 import dataclasses as dc
+from dataclasses import Field, MISSING
 from typing import Callable, ClassVar, Dict, Type
 from ..annotation import Annotation
 from ..bit import Bit
@@ -8,6 +9,30 @@ from ..struct import Struct
 import inspect
 import ast
 import textwrap
+
+class _BindPathMock:
+    def __init__(self, typ, path=None):
+        self._typ = typ
+        self._path = path or []
+
+    def __getattribute__(self, name):
+        if name in ("_typ", "_path", "__class__"):
+            return object.__getattribute__(self, name)
+        # Validate field exists
+        fields = {f.name for f in dc.fields(self._typ)}
+        if name not in fields:
+            raise AttributeError(f"Invalid field '{name}' in path {'.'.join(self._path + [name])}")
+        # Get field type
+        field_type = next(f.type for f in dc.fields(self._typ) if f.name == name)
+        # Return new mock for nested access
+        return _BindPathMock(field_type, self._path + [name])
+
+    def __call__(self):
+        # For supporting callables if needed
+        return self
+
+    def __repr__(self):
+        return f"_BindPathMock({self._typ}, {self._path})"
 
 @dc.dataclass
 class Visitor(object):
@@ -40,6 +65,33 @@ class Visitor(object):
         t_cls = t if isinstance(t, type) else type(t)
         self.visitStructType(t_cls)
         pass
+
+    def _elabBinds(self, bind_lambda, root_type):
+        # Instantiate mock for root
+        root_mock = _BindPathMock(root_type, ["s"])
+        # Evaluate lambda to get mapping
+        mapping = bind_lambda(root_mock)
+        result = {}
+        for k, v in mapping.items():
+            # Extract path from mock objects
+            k_path = getattr(k, "_path", None)
+            v_path = getattr(v, "_path", None)
+            if k_path is None or v_path is None:
+                raise ValueError("Bind keys/values must be _BindPathMock instances")
+            # Get terminal Field for key
+            k_typ = root_type
+            for name in k_path[1:]:  # skip 's'
+                field = next(f for f in dc.fields(k_typ) if f.name == name)
+                k_typ = field.type
+            k_field = field
+            # Get terminal Field for value
+            v_typ = root_type
+            for name in v_path[1:]:
+                field = next(f for f in dc.fields(v_typ) if f.name == name)
+                v_typ = field.type
+            v_field = field
+            result[(k_field, tuple(k_path))] = (v_field, tuple(v_path))
+        return result
 
     def _visitFields(self, t : Struct):
         print("--> visitFields")
