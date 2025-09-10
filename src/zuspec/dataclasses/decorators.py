@@ -6,6 +6,7 @@ Created on Mar 19, 2022
 import dataclasses
 import dataclasses as dc
 from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING
+from .exec import Exec, ExecKind
 # from vsc_dataclasses.decorators import *
 # from .impl.action_decorator_impl import ActionDecoratorImpl
 # from .impl.exec_decorator_impl import ExecDecoratorImpl
@@ -173,7 +174,7 @@ def export(*args, bind=None, **kwargs):
     return dc.field(*args, **kwargs)
 
 def process(T):
-    return T
+    return Exec(T, ExecKind.Proc)
 
 def reg(offset=0):
     return dc.field()
@@ -182,16 +183,17 @@ def reg(offset=0):
 def const(**kwargs):
     return dc.field()
 
-def sync(*args, clock=None, reset=None):
-    # TODO: handle two forms
-    if len(args) == 0:
-        def __call__(T):
-            Annotation.apply(T, AnnotationSync(clock=clock, reset=reset))
-            return T
-        return __call__
-    else:
-        Annotation.apply(args[0], AnnotationSync(clock=clock, reset=reset))
-        return args[0]
+def sync(T, bind : Optional[Callable] = None):
+    return Exec(method=T, kind=ExecKind.Sync, bind=bind)
+    # # TODO: handle two forms
+    # if len(args) == 0:
+    #     def __call__(T):
+    #         Annotation.apply(T, AnnotationSync(clock=clock, reset=reset))
+    #         return T
+    #     return __call__
+    # else:
+    #     Annotation.apply(args[0], AnnotationSync(clock=clock, reset=reset))
+    #     return args[0]
 
 # def action(*args, **kwargs): 
 #     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):

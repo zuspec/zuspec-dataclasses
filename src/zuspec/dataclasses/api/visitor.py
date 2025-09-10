@@ -1,9 +1,10 @@
 import dataclasses as dc
 from dataclasses import Field, MISSING
-from typing import Callable, ClassVar, Dict, Type
+from typing import Callable, ClassVar, Dict, Type, List, Tuple
 from ..annotation import Annotation
 from ..bit import Bit
 from ..component import Component
+from ..exec import Exec, ExecKind
 from ..ports import Input, Output
 from ..struct import Struct
 import inspect
@@ -113,6 +114,12 @@ class Visitor(object):
         else:
             self.visitFieldClass(f)
 
+    def _visitExecs(self, t):
+        for n in dir(t):
+            o = getattr(t, n)
+            if callable(o) and isinstance(o, Exec):
+                self.visitExec(o)
+
     def _visitFunctions(self, t):
         for e in dir(t):
             if not e.startswith("__") and callable(getattr(t, e)):
@@ -167,20 +174,71 @@ class Visitor(object):
         
         for f in dir(t):
             o = getattr(t, f)
-            if callable(o) and hasattr(o, Annotation.NAME):
-                # Extract source code of the method
-                try:
-                    src = inspect.getsource(o)
-                    src = textwrap.dedent(src)
-                    tree = ast.parse(src)
-                    for stmt in tree.body[0].body:  # tree.body[0] is the FunctionDef
-                        self.visit_statement(stmt)
-                except Exception as e:
-                    print(f"Could not process method {f}: {e}")
-#                self.visitExec(f, o)
-#                print("Found")
+#             if callable(o) and hasattr(o, Annotation.NAME):
+#                 # Extract source code of the method
+#                 try:
+#                     src = inspect.getsource(o)
+#                     src = textwrap.dedent(src)
+#                     tree = ast.parse(src)
+#                     for stmt in tree.body[0].body:  # tree.body[0] is the FunctionDef
+#                         self.visit_statement(stmt)
+#                 except Exception as e:
+#                     print(f"Could not process method {f}: {e}")
+# #                self.visitExec(f, o)
+# #                print("Found")
 
-    def visitExec(self, name, m):
+    def _findFieldRefs(self, t : Struct, method) -> List[Tuple[bool,dc.Field,Tuple[str]]]:
+        """
+        Processes the body of a Python method to identify class members
+        referenced inside. 
+        Returns: List of [<is_write>,[path]]
+        """
+        import inspect, ast, textwrap
+
+        src = inspect.getsource(method)
+        src = textwrap.dedent(src)
+        tree = ast.parse(src)
+        refs = []
+
+        # Map field names to Field objects
+        field_map = {f.name: f for f in dc.fields(t)}
+
+        class FieldRefVisitor(ast.NodeVisitor):
+            def __init__(self):
+                self.refs = []
+
+            def visit_Assign(self, node):
+                # Left-hand side: writes
+                for target in node.targets:
+                    if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "self":
+                        field = target.attr
+                        if field in field_map:
+                            self.refs.append((True, field_map[field], ("self", field)))
+                # Right-hand side: reads
+                self.visit(node.value)
+
+            def visit_Attribute(self, node):
+                if isinstance(node.value, ast.Name) and node.value.id == "self":
+                    field = node.attr
+                    if field in field_map:
+                        self.refs.append((False, field_map[field], ("self", field)))
+                self.generic_visit(node)
+
+        visitor = FieldRefVisitor()
+        for stmt in tree.body[0].body:
+            visitor.visit(stmt)
+
+        # Remove duplicate refs (e.g., multiple reads/writes)
+        unique_refs = []
+        seen = set()
+        for ref in visitor.refs:
+            key = (ref[0], ref[1].name, ref[2])
+            if key not in seen:
+                unique_refs.append(ref)
+                seen.add(key)
+        return unique_refs
+
+    def visitExec(self, e : Exec):
         pass
 
     def visitOutputField(self, f : dc.Field):
