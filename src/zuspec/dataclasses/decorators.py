@@ -1,9 +1,3 @@
-'''
-Created on Mar 19, 2022
-
-@author: mballance
-'''
-import dataclasses
 #****************************************************************************
 # Copyright 2019-2025 Matthew Ballance and contributors
 #
@@ -19,9 +13,11 @@ import dataclasses
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #****************************************************************************
+import dataclasses
 import dataclasses as dc
-from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING
-from .exec import Exec, ExecKind
+import inspect
+import typing
+from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union
 # from vsc_dataclasses.decorators import *
 # from .impl.action_decorator_impl import ActionDecoratorImpl
 # from .impl.exec_decorator_impl import ExecDecoratorImpl
@@ -38,12 +34,26 @@ from .exec import Exec, ExecKind
 # from .impl.type_kind_e import TypeKindE
 from .annotation import Annotation, AnnotationSync
 from .ports import Input, Output
-from .clock import Clock
+
+'''
+Created on Mar 19, 2022
+
+@author: mballance
+'''
 
 if TYPE_CHECKING:
     from .api.type_processor import TypeProcessor
 
 def dataclass(cls, **kwargs):
+    # TODO: Add type annotations to decorated methods
+    cls_annotations = cls.__annotations__
+
+    for name, value in cls.__dict__.items():
+#        print("Name: %s ; Value: %s" % (name, value))
+        if isinstance(value, dc.Field) and not name in cls_annotations:
+            print("TODO: annotate field")
+            cls_annotations[name] = int
+
     cls_t = dc.dataclass(cls, **kwargs)
 
     setattr(cls_t, "__base_init__", getattr(cls_t, "__init__"))
@@ -58,6 +68,8 @@ def dataclass(cls, **kwargs):
             """Always called during user-object construction"""
             return tp.new(c, *args, **kwargs)
         setattr(cls_t, "__new__", local_new)
+
+
     return cls_t
 
 def bundle():
@@ -139,6 +151,7 @@ class bind[T]:
 def field(
         rand=False, 
         bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
+        init : Optional[Union[Dict[str,Any], Callable[[object],Dict[Any,Any]]]] = None,
         default_factory : Optional[Any] = None,
         default : Optional[Any] = None):
     args = {}
@@ -151,7 +164,8 @@ def field(
         metadata["bind"] = bind
 
     # *Always* specify a default to avoid becoming a required field
-    args["default"] = default
+    if "default_factory" not in args.keys():
+        args["default"] = default
 
     if metadata is not None:
         print("metadata: %s" % metadata)
@@ -189,6 +203,7 @@ def export(*args, bind=None, **kwargs):
     return dc.field(*args, **kwargs)
 
 def process(T):
+    from .exec import Exec, ExecKind
     return Exec(T, ExecKind.Proc)
 
 def reg(offset=0):
@@ -198,8 +213,12 @@ def reg(offset=0):
 def const(**kwargs):
     return dc.field()
 
-def sync(T, bind : Optional[Callable] = None):
-    return Exec(method=T, kind=ExecKind.Sync, bind=bind)
+def sync(timebase : Optional[Callable] = None):
+    def __call__(T):
+        from .exec import Exec, ExecKind
+#        return field(default_factory=Exec)
+        return Exec(method=T, kind=ExecKind.Sync, timebase=timebase)
+    return __call__
     # # TODO: handle two forms
     # if len(args) == 0:
     #     def __call__(T):

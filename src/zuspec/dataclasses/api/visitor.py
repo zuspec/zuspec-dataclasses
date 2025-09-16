@@ -14,6 +14,7 @@
 # limitations under the License.
 #****************************************************************************
 import dataclasses as dc
+import logging
 from dataclasses import Field, MISSING
 from typing import Callable, ClassVar, Dict, Type, List, Tuple
 from ..annotation import Annotation
@@ -54,6 +55,7 @@ class _BindPathMock:
 class Visitor(object):
     _type_m : Dict[Type,Callable] = dc.field(default_factory=dict)
     _field_factory_m : Dict[Type,Callable] = dc.field(default_factory=dict)
+    _log : ClassVar = logging.getLogger("Visitor")
 
     def __post_init__(self):
         self._type_m = {
@@ -121,12 +123,18 @@ class Visitor(object):
                 self.visitFieldInOut(f, False)
             elif issubclass(f.default_factory, Output):
                 self.visitFieldInOut(f, True)
+            elif issubclass(f.default_factory, Exec):
+                self.visitExec(f)
             else:
-                raise Exception()
+                raise Exception("Unknown factory %s" % f.default_factory)
             pass
         elif f.type in (str, int, float):
             self.visitFieldData(f)
+        elif issubclass(f.type, Component):
+            print("visitFieldClass: Component %s" % f, flush=True)
+            self.visitFieldClass(f)
         else:
+            print("visitFieldClass: %s" % f, flush=True)
             self.visitFieldClass(f)
 
     def _visitExecs(self, t):

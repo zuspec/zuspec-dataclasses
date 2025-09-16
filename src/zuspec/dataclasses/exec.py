@@ -17,6 +17,7 @@
 import dataclasses as dc
 import enum
 from typing import Callable, Optional
+from .decorators import dataclass, field
 
 class ExecKind(enum.Enum):
     Sync = enum.auto()
@@ -26,4 +27,5 @@ class ExecKind(enum.Enum):
 class Exec(object):
     method : Callable = dc.field()
     kind : ExecKind = dc.field()
-    bind : Optional[Callable] = dc.field(default=None)
+    timebase : Optional[Callable] = field(default=None)
+    t : Optional[Callable] = field(default=None)

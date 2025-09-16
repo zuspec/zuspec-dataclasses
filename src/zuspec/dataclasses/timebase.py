@@ -15,11 +15,12 @@
 #****************************************************************************
 import abc
 from typing import TYPE_CHECKING
-from .decorators import dataclass, input
+from .decorators import dataclass
 from .bit import Bit
+from .component import Component
 
 @dataclass
-class TimeBase(object):
+class TimeBase(Component):
     """
     TimeBase exposes the notion of design time
     """
@@ -38,7 +39,14 @@ class TimeBase(object):
     def wait_ev(self, amt : float, units):
         """Scales the time to the timebase and returns an event"""
         pass
+    pass
 
+@dataclass
+class TimebaseSync(TimeBase):
+    pass
+
+@dataclass
+class ClockReset(TimeBase):
     pass
 
 #class TimeBaseSignal(TimeBase,Component):

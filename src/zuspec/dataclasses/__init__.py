@@ -29,5 +29,6 @@ from .action import Action
 from .component import Component
 from .struct import Struct
 from .ports import Input, Output, Port
+from .timebase import TimebaseSync
 
 from asyncio import Event
