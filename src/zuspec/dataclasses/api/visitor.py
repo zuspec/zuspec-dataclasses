@@ -20,7 +20,7 @@ from typing import Callable, ClassVar, Dict, Type, List, Tuple
 from ..annotation import Annotation
 from ..bit import Bit
 from ..component import Component
-from ..exec import Exec, ExecKind
+from ..exec import Exec, ExecKind, ExecSync
 from ..ports import Input, Output
 from ..struct import Struct
 import inspect
@@ -84,6 +84,22 @@ class Visitor(object):
         self.visitStructType(t_cls)
         pass
 
+    def _elabBindPath(self, path_lambda, root_type):
+        """
+        Processes a lambda expression returning a single property path.
+        Returns: (field_obj, path_tuple)
+        """
+        root_mock = _BindPathMock(root_type, ["s"])
+        result_mock = path_lambda(root_mock)
+        path = getattr(result_mock, "_path", None)
+        if path is None:
+            raise ValueError("Lambda must return a _BindPathMock instance")
+        typ = root_type
+        for name in path[1:]:  # skip 's'
+            field = next(f for f in dc.fields(typ) if f.name == name)
+            typ = field.type
+        return (field, tuple(path))
+
     def _elabBinds(self, bind_lambda, root_type):
         # Instantiate mock for root
         root_mock = _BindPathMock(root_type, ["s"])
@@ -140,7 +156,10 @@ class Visitor(object):
     def _visitExecs(self, t):
         for n in dir(t):
             o = getattr(t, n)
-            if callable(o) and isinstance(o, Exec):
+            print("%s: %s" % (n, callable(o)))
+            if isinstance(o, ExecSync):
+                self.visitExecSync(o)
+            elif isinstance(o, Exec):
                 self.visitExec(o)
 
     def _visitFunctions(self, t):
@@ -263,6 +282,9 @@ class Visitor(object):
 
     def visitExec(self, e : Exec):
         pass
+
+    def visitExecSync(self, e : ExecSync):
+        self.visitExec(e)
 
     def visitOutputField(self, f : dc.Field):
         self.visitField(f)

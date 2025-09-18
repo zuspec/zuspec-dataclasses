@@ -213,11 +213,11 @@ def reg(offset=0):
 def const(**kwargs):
     return dc.field()
 
-def sync(timebase : Optional[Callable] = None):
+def sync(clock : Callable, reset : Callable):
     def __call__(T):
-        from .exec import Exec, ExecKind
+        from .exec import ExecSync, ExecKind
 #        return field(default_factory=Exec)
-        return Exec(method=T, kind=ExecKind.Sync, timebase=timebase)
+        return ExecSync(method=T, kind=ExecKind.Sync, clock=clock, reset=reset)
     return __call__
     # # TODO: handle two forms
     # if len(args) == 0:

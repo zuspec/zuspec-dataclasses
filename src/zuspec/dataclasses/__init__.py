@@ -26,7 +26,9 @@ from .tlm import *
 
 from .bit import Bit
 from .action import Action
+from .clock_reset import ClockReset
 from .component import Component
+from .exec import ExecSync, Exec
 from .struct import Struct
 from .ports import Input, Output, Port
 from .timebase import TimebaseSync

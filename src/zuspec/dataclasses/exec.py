@@ -29,3 +29,8 @@ class Exec(object):
     kind : ExecKind = dc.field()
     timebase : Optional[Callable] = field(default=None)
     t : Optional[Callable] = field(default=None)
+
+@dc.dataclass
+class ExecSync(Exec):
+    clock : Optional[Callable] = field(default=None)
+    reset : Optional[Callable] = field(default=None)
