@@ -16,7 +16,7 @@
 # limitations under the License.
 #****************************************************************************
 # from .activity_stmts import *
-from .decorators import dataclass, field, export, process, input, output, sync, const, port, export, bind
+from .decorators import dataclass, field, export, extern, process, input, output, sync, const, port, export, bind
 from .tlm import *
 # from .claims_refs import *
 # from .shared_stmts import *
@@ -29,7 +29,7 @@ from .action import Action
 from .clock_reset import ClockReset
 from .component import Component
 from .exec import ExecSync, Exec
-from .struct import Struct
+from .struct import Struct, ZuspecTypeBase
 from .ports import Input, Output, Port
 from .timebase import TimebaseSync
 

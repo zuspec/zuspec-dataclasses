@@ -22,7 +22,7 @@ from ..bit import Bit
 from ..component import Component
 from ..exec import Exec, ExecKind, ExecSync
 from ..ports import Input, Output
-from ..struct import Struct
+from ..struct import Extern, Struct
 import inspect
 import ast
 import textwrap
@@ -141,6 +141,8 @@ class Visitor(object):
                 self.visitFieldInOut(f, True)
             elif issubclass(f.default_factory, Exec):
                 self.visitExec(f)
+            elif issubclass(f.default_factory, Extern):
+                self.visitFieldExtern(f)
             else:
                 raise Exception("Unknown factory %s" % f.default_factory)
             pass
@@ -285,6 +287,9 @@ class Visitor(object):
 
     def visitExecSync(self, e : ExecSync):
         self.visitExec(e)
+
+    def visitFieldExtern(self, f : dc.Field):
+        pass
 
     def visitOutputField(self, f : dc.Field):
         self.visitField(f)

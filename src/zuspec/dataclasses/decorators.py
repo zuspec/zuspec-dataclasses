@@ -202,6 +202,22 @@ def port():
 def export(*args, bind=None, **kwargs):
     return dc.field(*args, **kwargs)
 
+def extern(
+    typename,
+    bind,
+    files=None,
+    params=None):
+    """
+    Denotes an instance of an external module
+    """
+    from .struct import Extern
+    return dc.field(default_factory=Extern,
+                    metadata=dict(
+                        typename=typename,
+                        bind=bind,
+                        files=files,
+                        params=params))
+
 def process(T):
     from .exec import Exec, ExecKind
     return Exec(T, ExecKind.Proc)

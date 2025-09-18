@@ -3,10 +3,9 @@ Components
 ##########
 
 Components provide the structural aspect of a Zuspec model. Depending
-on their application, Zuspec components have close similiarities to 
-SystemVerilog `module` and SystemC `component`.
+on their application, Zuspec components have close similarities to 
+SystemVerilog `module`, SystemC `component`, and PSS `component` types.
 
-components 
 
 ****************
 Built-in Methods
@@ -16,24 +15,26 @@ Built-in Methods
 Supported Exec Methods
 **********************
 
+Exec methods are evaluated automatically based on events in the
+model. User code may not invoke these methods directly.
 
 comb
 ****
-A `@comb` async exec method is evaluated whenever one of 
+A `@comb` exec method is evaluated whenever one of 
 the variables references changes. The `@comb` exec is 
 exclusively used with RTL descriptions
 
 process
 *******
-The `@process` exec method is evaluated when evaluation of 
+The `@process` async exec method is evaluated when evaluation of 
 the containing component begins. A `@process` exec method is
 an independent thread of control in the model.
 
 sync
 ****
-A `@sync` async exec method is evaluated when its associated
-timebase is evaluated (eg at a clock edge). All assignments
-to outputs are considered nonblocking.
+A `@sync` exec method is evaluated on the active transition of 
+its associated clock or reset. All assignments
+to outputs are considered nonblocking.  
 The `@sync` exec is exclusively used with RTL descriptions
 
 *********************************

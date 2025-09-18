@@ -3,7 +3,11 @@ from typing import Dict, Optional, Type
 from .decorators import dataclass
 
 @dataclass
-class StructPacked(object):
+class ZuspecTypeBase(object):
+    pass
+
+@dataclass
+class StructPacked(ZuspecTypeBase):
     """
     StructPacked types are fixed-size data structures. 
     Fields may only be of a fixed size. 
@@ -15,7 +19,7 @@ class StructPacked(object):
     pass
 
 @dataclass
-class Struct(object):
+class Struct(ZuspecTypeBase):
     """
     Struct types are data structures that may contain
     variable-size fields. 
@@ -25,6 +29,7 @@ class Struct(object):
     - pre_solve / post_solve
     - method
     """
+
 
     # @abc.abstractmethod
     # def bind[T](self, t : T):
@@ -40,3 +45,5 @@ class Struct(object):
     #     pass
 
     pass
+
+class Extern(ZuspecTypeBase): pass
