@@ -7,6 +7,11 @@ processing tools will enforce. Explicit tagging of content with its
 intended profile allows tools to independently check that the content
 conforms to the restrictions of its target profile.
 
-***
-RTL
-***
+*****************
+Synthesizable RTL
+*****************
+
+**************
+Behavioral RTL
+**************
+
