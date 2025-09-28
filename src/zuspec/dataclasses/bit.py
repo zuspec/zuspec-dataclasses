@@ -15,12 +15,13 @@ class BitMeta(type):
             return self.type_m[W]
         else:
             t = type("bit[%d]" % W, (Bit,), {
-                "T" : W
+                "W" : W
             })
             self.type_m[W] = t
             return t
 
-
 class Bit(metaclass=BitMeta):
-    T : int = 1
-    pass
+    W : int = 1
+
+class Bits(metaclass=BitMeta):
+    W : int = -1

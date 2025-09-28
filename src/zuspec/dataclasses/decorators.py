@@ -156,6 +156,26 @@ def field(
         default : Optional[Any] = None):
     args = {}
     metadata = None
+
+#     # Obtain the location of this call
+#     import inspect
+#     frame = inspect.currentframe()
+#     print("--> ")
+#     while frame is not None:
+#         modname = frame.f_globals["__name__"]
+
+#         print("modname: %s" % modname)
+#         if not modname.startswith("zuspec.dataclasses") and not modname.startswith("importlib"):
+#             break
+# #            pass
+# #            frame = frame.f_back
+#         else:
+#             frame = frame.f_back
+#     print("<-- ")
+
+#     if frame is not None:
+#         print("Location: %s:%d" % (frame.f_code.co_filename, frame.f_lineno))
+
     if default_factory is not None:
         args["default_factory"] = default_factory
 
@@ -185,6 +205,7 @@ def field(
     # return dc.field()
 
 def input(*args, **kwargs):
+
     return dataclasses.field(default_factory=Input)
 
 def output(*args, **kwargs):
