@@ -14,13 +14,12 @@
 # limitations under the License.
 #****************************************************************************
 import abc
-from typing import TYPE_CHECKING
-from .decorators import dataclass
-from .bit import Bit
-from .component import Component
+from typing import Protocol, TYPE_CHECKING
+from ..decorators import dataclass
+from ..bit import Bit
+from ..component import Component
 
-@dataclass
-class TimeBase(Component):
+class TimeBase(Protocol):
     """
     TimeBase exposes the notion of design time
     """
@@ -28,27 +27,19 @@ class TimeBase(Component):
     @abc.abstractmethod
     async def wait(self, amt : float, units):
         """Scales the time to the timebase and waits"""
-        pass
+        ...
 
-    @abc.abstractmethod
-    async def wait_next(self, count : int = 1):
-        """Waits for 'count' timebase events (eg clocks)"""
-        pass
 
     @abc.abstractmethod
     def wait_ev(self, amt : float, units):
         """Scales the time to the timebase and returns an event"""
-        pass
-    pass
+        ...
 
 @dataclass
 class TimebaseSync(TimeBase):
-    pass
 
-@dataclass
-class ClockReset(TimeBase):
-    pass
+    @abc.abstractmethod
+    async def wait_next(self, count : int = 1):
+        """Waits for 'count' timebase events (eg clocks)"""
+        ...
 
-#class TimeBaseSignal(TimeBase,Component):
-#    clock : Bit = input()
-#    reset : Bit = input()

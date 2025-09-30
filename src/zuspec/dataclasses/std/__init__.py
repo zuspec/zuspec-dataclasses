@@ -15,3 +15,4 @@
 #****************************************************************************
 
 from .clock_reset import ClockReset
+from .timebase import TimeBase, TimebaseSync

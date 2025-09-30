@@ -24,6 +24,8 @@ from .tlm import *
 # from .core_lib import *
 # from vsc_dataclasses.expr import *
 
+from . import std
+
 from .bit import Bit
 from .action import Action
 from .std.clock_reset import ClockReset
@@ -31,6 +33,5 @@ from .component import Component
 from .exec import ExecSync, Exec
 from .struct import Struct, ZuspecTypeBase
 from .ports import Input, Output, Port
-from .timebase import TimebaseSync
 
 from asyncio import Event
