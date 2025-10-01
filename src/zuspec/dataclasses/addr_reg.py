@@ -15,7 +15,7 @@
 #****************************************************************************
 import abc
 import zuspec.dataclasses as zdc
-from typing import Annotated, TypeVar, Type, Union
+from typing import Annotated, Dict, TypeVar, Type, Union
 from .struct import StructPacked
 
 class AddrTrait(zdc.Struct): pass
@@ -67,9 +67,26 @@ class Reg[RegT](object):
     @abc.abstractmethod
     def write(self, data : Type[RegT]): pass
 
+    def write_fields(self, fields : Dict[object,int]): pass
+
 class RegGroup(object):
     @abc.abstractmethod
     def get_handle(self): pass
 
     @abc.abstractmethod
     def set_handle(self, h): pass
+
+class At(object):
+    a : zdc.Bit[15] = zdc.field()
+    b : zdc.Bit[15] = zdc.field()
+
+#    def __int__(self) -> int:
+#        pass
+
+# r : Reg[At] = 5
+# r.read() == 20
+# r.write()
+# r.write_fields({At.a : 5})
+# def reg(offset=)
+
+# def reg_array(offset=0, offset_of=lambda i: )
