@@ -30,14 +30,28 @@ class Component(Struct):
     - The 'init_down' method is invoked in a depth-first manner
     - The 'init_up' method is invoked
     """
-#    timebase : 'TimeBase' = field()
-
-    def build(self): pass
+#    def build(self): pass
 
     @abc.abstractmethod
     async def wait(self, amt : float, units):
+        """
+        Uses the default timebase to suspend execution of the
+        calling coroutine for the specified time.
+        """
         pass
 
     @abc.abstractmethod
     async def wait_next(self, count : int = 1):
+        """
+        Uses the default timebase to suspend execution of the
+        calling coroutine for the specified number of domain
+        evaluation events (eg clock cycles).
+        """
         pass
+
+@dataclass
+class ComponentExtern(Component):
+    """
+    Extern components are used to interface with existing descriptions,
+    such as existing Verilog RTL.
+    """

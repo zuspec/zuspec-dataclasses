@@ -15,6 +15,7 @@
 #****************************************************************************
 import dataclasses
 import dataclasses as dc
+import enum
 import inspect
 import typing
 from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union
@@ -202,6 +203,17 @@ def port():
 def export(*args, bind=None, **kwargs):
     return dc.field(*args, **kwargs)
 
+class ExecKind(enum.Enum):
+    Sync = enum.auto()
+    Proc = enum.auto()
+
+@dc.dataclass
+class Exec(object):
+    method : Callable = dc.field()
+    kind : ExecKind = dc.field()
+    timebase : Optional[Callable] = field(default=None)
+    t : Optional[Callable] = field(default=None)
+
 def extern(
     typename,
     bind,
@@ -226,24 +238,23 @@ def reg(offset=0):
     return dc.field()
     pass
 
-def const(**kwargs):
+def const(default=None):
     return dc.field()
 
+@dc.dataclass
+class ExecSync(Exec):
+    clock : Optional[Callable] = field(default=None)
+    reset : Optional[Callable] = field(default=None)
+
 def sync(clock : Callable, reset : Callable):
+    """
+    Marks a synchronous-evaluation region, which is evaluated on 
+    the active edge of either the clock or reset.
+    Assignments are delayed/nonblocking.
+    """
     def __call__(T):
-        from .exec import ExecSync, ExecKind
-#        return field(default_factory=Exec)
         return ExecSync(method=T, kind=ExecKind.Sync, clock=clock, reset=reset)
     return __call__
-    # # TODO: handle two forms
-    # if len(args) == 0:
-    #     def __call__(T):
-    #         Annotation.apply(T, AnnotationSync(clock=clock, reset=reset))
-    #         return T
-    #     return __call__
-    # else:
-    #     Annotation.apply(args[0], AnnotationSync(clock=clock, reset=reset))
-    #     return args[0]
 
 # def action(*args, **kwargs): 
 #     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
