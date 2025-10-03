@@ -54,8 +54,3 @@ class Port[T]():
 #         a = self.dat_o().get()
 #         self.dat_o().put(5)
 
-class Input(object):
-    pass
-
-class Output(object):
-    pass

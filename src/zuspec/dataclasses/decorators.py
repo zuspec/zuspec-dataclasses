@@ -12,6 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Created on Mar 19, 2022
+# @author: mballance
 #****************************************************************************
 import dataclasses
 import dataclasses as dc
@@ -19,28 +22,8 @@ import enum
 import inspect
 import typing
 from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union
-# from vsc_dataclasses.decorators import *
-# from .impl.action_decorator_impl import ActionDecoratorImpl
-# from .impl.exec_decorator_impl import ExecDecoratorImpl
-# from .impl.exec_kind_e import ExecKindE
-# from .impl.extend_kind_e import ExtendKindE
-# from .impl.extend_decorator_impl import ExtendDecoratorImpl
-# from .impl.extend_action_decorator_impl import ExtendActionDecoratorImpl
-# from .impl.extend_component_decorator_impl import ExtendComponentDecoratorImpl
-# from .impl.fn_decorator_impl import FnDecoratorImpl
-# from .impl.struct_decorator_impl import StructDecoratorImpl
-# from .impl.struct_kind_e import StructKindE
-# from .impl.component_decorator_impl import ComponentDecoratorImpl
-# from .impl.activity_decorator_impl import ActivityDecoratorImpl
-# from .impl.type_kind_e import TypeKindE
 from .annotation import Annotation, AnnotationSync
-from .ports import Input, Output
 
-'''
-Created on Mar 19, 2022
-
-@author: mballance
-'''
 
 if TYPE_CHECKING:
     from .api.type_processor import TypeProcessor
@@ -205,11 +188,26 @@ def field(
     # # TODO: 
     # return dc.field()
 
-def input(*args, **kwargs):
+class Input(object): pass
 
+class Output(object): pass
+
+def input(*args, **kwargs):
+    """
+    Marks an input field. Input fields declared on a 
+    top-level component are `bound` to an implicit output. Those
+    on non-top-level components must explicitly be `bound` to an 
+    output. An input field sees the value of the output field 
+    to which it is bound with no delay
+    """
     return dataclasses.field(default_factory=Input)
 
 def output(*args, **kwargs):
+    """
+    Marks an output field. Input fields that are bound to
+    an output field always see its current output value 
+    with no delay.
+    """
     return dc.field(default_factory=Output)
 
 def lock(*args, **kwargs):
@@ -225,6 +223,7 @@ def export(*args, bind=None, **kwargs):
     return dc.field(*args, **kwargs)
 
 class ExecKind(enum.Enum):
+    Comb = enum.auto()
     Sync = enum.auto()
     Proc = enum.auto()
 
@@ -252,7 +251,10 @@ def extern(
                         params=params))
 
 def process(T):
-    from .exec import Exec, ExecKind
+    """
+    Marks an always-running process. The specified
+    method must be `async` and take no arguments
+    """
     return Exec(T, ExecKind.Proc)
 
 def reg(offset=0):
@@ -271,11 +273,22 @@ def sync(clock : Callable, reset : Callable):
     """
     Marks a synchronous-evaluation region, which is evaluated on 
     the active edge of either the clock or reset.
-    Assignments are delayed/nonblocking.
+    Assignments are delayed/nonblocking, which means that only
+    the last assignment to a variable takes effect.
     """
     def __call__(T):
         return ExecSync(method=T, kind=ExecKind.Sync, clock=clock, reset=reset)
     return __call__
+
+def comb(latch : bool=False):
+    """
+    Marks a combinational evaluation region that is evaluated 
+    whenever one of the variables read by the method changes.
+    """
+    def __call__(T):
+        return Exec(method=T, kind=ExecKind.Comb, )
+    return __call__
+
 
 # def action(*args, **kwargs): 
 #     if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):

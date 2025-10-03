@@ -37,8 +37,6 @@ Zuspec datatype.
 * depends - Type to use in dependency binding
 * mirror - Marks a bundle field as being a mirror of the specified type
 
-ClassVar
-
 ***********
 Convenience
 ***********
