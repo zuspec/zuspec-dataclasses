@@ -1,33 +1,60 @@
-'''
-Created on Mar 19, 2022
-
-@author: mballance
-'''
+#****************************************************************************
+# Copyright 2019-2025 Matthew Ballance and contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Created on Mar 19, 2022
+# @author: mballance
+#****************************************************************************
 import dataclasses
 import dataclasses as dc
-from typing import Any, Callable, Dict, Self, TypeVar, Generic, Type
-# from vsc_dataclasses.decorators import *
-# from .impl.action_decorator_impl import ActionDecoratorImpl
-# from .impl.exec_decorator_impl import ExecDecoratorImpl
-# from .impl.exec_kind_e import ExecKindE
-# from .impl.extend_kind_e import ExtendKindE
-# from .impl.extend_decorator_impl import ExtendDecoratorImpl
-# from .impl.extend_action_decorator_impl import ExtendActionDecoratorImpl
-# from .impl.extend_component_decorator_impl import ExtendComponentDecoratorImpl
-# from .impl.fn_decorator_impl import FnDecoratorImpl
-# from .impl.struct_decorator_impl import StructDecoratorImpl
-# from .impl.struct_kind_e import StructKindE
-# from .impl.component_decorator_impl import ComponentDecoratorImpl
-# from .impl.activity_decorator_impl import ActivityDecoratorImpl
-# from .impl.type_kind_e import TypeKindE
+import enum
+import inspect
+import typing
+from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union
 from .annotation import Annotation, AnnotationSync
-from .ports import Input, Output
-from .clock import Clock
-from .component import Component
-from .timebase import TimeBase
+
+
+if TYPE_CHECKING:
+    from .api.type_processor import TypeProcessor
 
 def dataclass(cls, **kwargs):
-    return dc.dataclass(cls, **kwargs)
+    # TODO: Add type annotations to decorated methods
+    cls_annotations = cls.__annotations__
+
+    for name, value in cls.__dict__.items():
+#        print("Name: %s ; Value: %s" % (name, value))
+        if isinstance(value, dc.Field) and not name in cls_annotations:
+            print("TODO: annotate field")
+            cls_annotations[name] = int
+
+    cls_t = dc.dataclass(cls, **kwargs)
+
+    setattr(cls_t, "__base_init__", getattr(cls_t, "__init__"))
+    def local_init(self, tp : 'TypeProcessor', *args, **kwargs):
+        """Only called during type processing"""
+        return tp.init(self, *args, **kwargs)
+    setattr(cls_t, "__init__", local_init)
+
+    if not hasattr(cls_t, "__base_new__"):
+        setattr(cls_t, "__base_new__", getattr(cls_t, "__new__"))
+        def local_new(c, tp : 'TypeProcessor', *args, **kwargs):
+            """Always called during user-object construction"""
+            return tp.new(c, *args, **kwargs)
+        setattr(cls_t, "__new__", local_new)
+
+
+    return cls_t
 
 def bundle():
     return dc.field()
@@ -98,7 +125,7 @@ a = bit(20)[3:4]
 SelfT = TypeVar('SelfT')
 T = TypeVar('T')
 
-class bind(Generic[T]):
+class bind[T]:
     def __init__(self, c : Callable[[T],Dict[Any,Any]]):
         self._c = c
     def __call__(self, s) -> Dict[Any,Any]:
@@ -106,14 +133,49 @@ class bind(Generic[T]):
     
 #a = bind2(lambda s:{s.}, selfT=Self)
 
-from typing import Optional
-
 def field(
         rand=False, 
-        width=-1,
         bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
-        **kwargs):
-    pass
+        init : Optional[Union[Dict[str,Any], Callable[[object],Dict[Any,Any]]]] = None,
+        default_factory : Optional[Any] = None,
+        default : Optional[Any] = None):
+    args = {}
+    metadata = None
+
+#     # Obtain the location of this call
+#     import inspect
+#     frame = inspect.currentframe()
+#     print("--> ")
+#     while frame is not None:
+#         modname = frame.f_globals["__name__"]
+
+#         print("modname: %s" % modname)
+#         if not modname.startswith("zuspec.dataclasses") and not modname.startswith("importlib"):
+#             break
+# #            pass
+# #            frame = frame.f_back
+#         else:
+#             frame = frame.f_back
+#     print("<-- ")
+
+#     if frame is not None:
+#         print("Location: %s:%d" % (frame.f_code.co_filename, frame.f_lineno))
+
+    if default_factory is not None:
+        args["default_factory"] = default_factory
+
+    if bind is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["bind"] = bind
+
+    # *Always* specify a default to avoid becoming a required field
+    if "default_factory" not in args.keys():
+        args["default"] = default
+
+    if metadata is not None:
+        print("metadata: %s" % metadata)
+        args["metadata"] = metadata
+    return dc.field(**args)
     
     # @staticmethod
     # def __call__(rand=False, bind : Callable[[T],Dict[Any,Any]] = None):
@@ -127,10 +189,26 @@ def field(
     # # TODO: 
     # return dc.field()
 
+class Input(object): pass
+
+class Output(object): pass
+
 def input(*args, **kwargs):
+    """
+    Marks an input field. Input fields declared on a 
+    top-level component are `bound` to an implicit output. Those
+    on non-top-level components must explicitly be `bound` to an 
+    output. An input field sees the value of the output field 
+    to which it is bound with no delay
+    """
     return dataclasses.field(default_factory=Input)
 
 def output(*args, **kwargs):
+    """
+    Marks an output field. Input fields that are bound to
+    an output field always see its current output value 
+    with no delay.
+    """
     return dc.field(default_factory=Output)
 
 def lock(*args, **kwargs):
@@ -145,48 +223,72 @@ def port():
 def export(*args, bind=None, **kwargs):
     return dc.field(*args, **kwargs)
 
+class ExecKind(enum.Enum):
+    Comb = enum.auto()
+    Sync = enum.auto()
+    Proc = enum.auto()
+
+@dc.dataclass
+class Exec(object):
+    method : Callable = dc.field()
+    kind : ExecKind = dc.field()
+    timebase : Optional[Callable] = field(default=None)
+    t : Optional[Callable] = field(default=None)
+
+def extern(
+    typename,
+    bind,
+    files=None,
+    params=None):
+    """
+    Denotes an instance of an external module
+    """
+    from .struct import Extern
+    return dc.field(default_factory=Extern,
+                    metadata=dict(
+                        typename=typename,
+                        bind=bind,
+                        files=files,
+                        params=params))
+
 def process(T):
-    return T
+    """
+    Marks an always-running process. The specified
+    method must be `async` and take no arguments
+    """
+    return Exec(T, ExecKind.Proc)
 
 def reg(offset=0):
     return dc.field()
     pass
 
-def const(**kwargs):
+def const(default=None):
     return dc.field()
 
-SyncHostT = TypeVar('SyncHostT', bound=Component)
-SyncMethodT = TypeVar('SyncMethodT', bound=Callable[[SyncHostT],Any])
-
 @dc.dataclass
-class Sync(object):
-    method : Callable[[Component],Any] = dc.field()
-    timebase : TimeBase = dc.field()
+class ExecSync(Exec):
+    clock : Optional[Callable] = field(default=None)
+    reset : Optional[Callable] = field(default=None)
 
-ComponentT = TypeVar('ComponentT', bound=Component)
+def sync(clock : Callable, reset : Callable):
+    """
+    Marks a synchronous-evaluation region, which is evaluated on 
+    the active edge of either the clock or reset.
+    Assignments are delayed/nonblocking, which means that only
+    the last assignment to a variable takes effect.
+    """
+    def __call__(T):
+        return ExecSync(method=T, kind=ExecKind.Sync, clock=clock, reset=reset)
+    return __call__
 
-def sync(t : Callable[[ComponentT],Any]) -> Sync:
+def comb(latch : bool=False):
     """
-    Sync marks a method that has a dependency on a timebase.
-    The method is automatically evaluated by the timebase at 
-    each timestep (eg clock period) of the timebase. The 
-    timebase will automatically assign the reset value 
-    to variables assigned within the decorated method when 
-    the timebase is reset.
-    A sync-decorated method may not be directly called.
+    Marks a combinational evaluation region that is evaluated 
+    whenever one of the variables read by the method changes.
     """
-    # # TODO: handle two forms
-    # if len(args) == 0:
-    #     def __call__(T):
-    #         Annotation.apply(T, AnnotationSync(clock=clock, reset=reset))
-    #         return T
-    #     return __call__
-    # else:
-    #     Annotation.apply(args[0], AnnotationSync(clock=clock, reset=reset))
-    #     return args[0]
-    ret = Sync(t)
-    return ret
-#    return Sync(t)
+    def __call__(T):
+        return Exec(method=T, kind=ExecKind.Comb, )
+    return __call__
 
 
 # def action(*args, **kwargs): 

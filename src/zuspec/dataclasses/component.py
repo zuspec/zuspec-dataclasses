@@ -1,5 +1,25 @@
-from .decorators import dataclass
+#****************************************************************************
+# Copyright 2019-2025 Matthew Ballance and contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#****************************************************************************
+import abc
+from typing import TYPE_CHECKING
+from .decorators import dataclass, field
 from .struct import Struct
+
+if TYPE_CHECKING:
+    from .std.timebase import TimeBase
 
 @dataclass
 class Component(Struct):
@@ -15,6 +35,28 @@ class Component(Struct):
     - constraint
     - activity
     """
+#    def build(self): pass
 
-    def build(self): pass
+    @abc.abstractmethod
+    async def wait(self, amt : float, units):
+        """
+        Uses the default timebase to suspend execution of the
+        calling coroutine for the specified time.
+        """
+        pass
 
+    @abc.abstractmethod
+    async def wait_next(self, count : int = 1):
+        """
+        Uses the default timebase to suspend execution of the
+        calling coroutine for the specified number of domain
+        evaluation events (eg clock cycles).
+        """
+        pass
+
+@dataclass
+class ComponentExtern(Component):
+    """
+    Extern components are used to interface with existing descriptions,
+    such as existing Verilog RTL.
+    """
