@@ -156,13 +156,16 @@ class Visitor(object):
             self.visitFieldClass(f)
 
     def _visitExecs(self, t):
+        exec_t = (
+            (ExecSync, self.visitExecSync),
+            (Exec, self.visitExec)
+        )
         for n in dir(t):
             o = getattr(t, n)
-            print("%s: %s" % (n, callable(o)))
-            if isinstance(o, ExecSync):
-                self.visitExecSync(o)
-            elif isinstance(o, Exec):
-                self.visitExec(o)
+            for et, em in exec_t:
+                if isinstance(o, et):
+                    em(o)
+                    break
 
     def _visitFunctions(self, t):
         for e in dir(t):
@@ -215,6 +218,7 @@ class Visitor(object):
 
     def visitStructType(self, t : Struct):
         self._visitFields(t)
+        self._visitExecs(t)
         
         for f in dir(t):
             o = getattr(t, f)

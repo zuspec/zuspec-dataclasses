@@ -14,41 +14,22 @@
 # limitations under the License.
 #****************************************************************************
 import abc
-from typing import TYPE_CHECKING
-from .decorators import dataclass
-from .bit import Bit
-from .component import Component
+from ..component import Component
+from ..decorators import dataclass, field, output
+from ..bit import Bit
 
 @dataclass
-class TimeBase(Component):
-    """
-    TimeBase exposes the notion of design time
-    """
+class ClockReset(Component):
+    period : int = field(default=10)
+    clock : Bit = output()
+    reset : Bit = output()
 
     @abc.abstractmethod
-    async def wait(self, amt : float, units):
-        """Scales the time to the timebase and waits"""
-        pass
+    def assert_reset(self): pass
 
     @abc.abstractmethod
-    async def wait_next(self, count : int = 1):
-        """Waits for 'count' timebase events (eg clocks)"""
-        pass
+    def release_reset(self): pass
 
     @abc.abstractmethod
-    def wait_ev(self, amt : float, units):
-        """Scales the time to the timebase and returns an event"""
+    async def next(self, count : int = 1):
         pass
-    pass
-
-@dataclass
-class TimebaseSync(TimeBase):
-    pass
-
-@dataclass
-class ClockReset(TimeBase):
-    pass
-
-#class TimeBaseSignal(TimeBase,Component):
-#    clock : Bit = input()
-#    reset : Bit = input()

@@ -1,5 +1,3 @@
-
-
 #****************************************************************************
 # Copyright 2019-2025 Matthew Ballance and contributors
 #
@@ -15,23 +13,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #****************************************************************************
-# from .activity_stmts import *
-from .decorators import dataclass, field, export, extern, process, input, output, sync, const, port, export, bind
-from .tlm import *
-# from .claims_refs import *
-# from .shared_stmts import *
-# from .types import *
-# from .core_lib import *
-# from vsc_dataclasses.expr import *
+import abc
+from typing import Protocol, TYPE_CHECKING
+from ..decorators import dataclass
+from ..bit import Bit
+from ..component import Component
 
-from . import std
+class TimeBase(Protocol):
+    """
+    TimeBase exposes the notion of design time
+    """
 
-from .bit import Bit
-from .action import Action
-from .std.clock_reset import ClockReset
-from .component import Component
-from .exec import ExecSync, Exec
-from .struct import Struct, ZuspecTypeBase
-from .ports import Input, Output, Port
+    @abc.abstractmethod
+    async def wait(self, amt : float, units):
+        """Scales the time to the timebase and waits"""
+        ...
 
-from asyncio import Event
+
+    @abc.abstractmethod
+    def wait_ev(self, amt : float, units):
+        """Scales the time to the timebase and returns an event"""
+        ...
+
+@dataclass
+class TimebaseSync(TimeBase):
+
+    @abc.abstractmethod
+    async def wait_next(self, count : int = 1):
+        """Waits for 'count' timebase events (eg clocks)"""
+        ...
+

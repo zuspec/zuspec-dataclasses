@@ -19,7 +19,7 @@ from .decorators import dataclass, field
 from .struct import Struct
 
 if TYPE_CHECKING:
-    from .timebase import TimeBase
+    from .std.timebase import TimeBase
 
 @dataclass
 class Component(Struct):
