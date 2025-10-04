@@ -1,3 +1,18 @@
+#****************************************************************************
+# Copyright 2019-2025 Matthew Ballance and contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#****************************************************************************
 import asyncio
 import zuspec.dataclasses as zdc
 from typing import Self
@@ -154,6 +169,10 @@ def test_analysis3():
 
     print("Count: %d" % impl.monitor.count)
 
+
+
+
+
 def test_analysis4():
     @zdc.dataclass
     class MyC(zdc.Component):
@@ -167,7 +186,7 @@ def test_analysis4():
             if self.reset:
                 self.count = 0
             else:
-                self.count += 1
+                self.count -= 1
                 self.count += 1
 
     @zdc.dataclass
@@ -203,8 +222,9 @@ def test_analysis4():
             s.monitor.count : s.counter.count
         }))
 
-    tb = TimebaseRoot()
-    impl = BuildImpl(tb).build(Top)
+    tb = zdc.std.TimeBase()
+    f = zdc.api.FactoryExec()
+    impl = f.build(Top)
 
     def clock(count=1):
         nonlocal tb, impl

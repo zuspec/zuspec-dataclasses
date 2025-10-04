@@ -274,8 +274,23 @@ def sync(clock : Callable, reset : Callable):
     """
     Marks a synchronous-evaluation region, which is evaluated on 
     the active edge of either the clock or reset.
-    Assignments are delayed/nonblocking, which means that only
-    the last assignment to a variable takes effect.
+
+    The semantics of a `sync` method differ from native Python.
+    Assignments are delayed/nonblocking: they only take effect after
+    evaluation of the method completes. If a variable is assigned multiple times
+    within a sync method, only the last assignment to that variable in the method
+    is applied for that cycle. Earlier assignments are ignored. Augmented
+    assignments (eg +=) are treated the same as regular assignments.
+
+    @zdc.sync
+    def _update(self):
+      self.val1 = self.val1 + 1
+      self.val1 = self.val1 + 1
+      self.val2 += 1
+      self.val2 += 1
+
+    In the example above, both val1 and val2 will only be increased by one
+    each time _update is evaluated.
     """
     def __call__(T):
         return ExecSync(method=T, kind=ExecKind.Sync, clock=clock, reset=reset)

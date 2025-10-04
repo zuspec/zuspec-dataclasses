@@ -29,12 +29,6 @@ class TimeBase(Protocol):
         """Scales the time to the timebase and waits"""
         ...
 
-
-    @abc.abstractmethod
-    def wait_ev(self, amt : float, units):
-        """Scales the time to the timebase and returns an event"""
-        ...
-
 @dataclass
 class TimebaseSync(TimeBase):
 

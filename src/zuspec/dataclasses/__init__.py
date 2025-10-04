@@ -1,5 +1,3 @@
-
-
 #****************************************************************************
 # Copyright 2019-2025 Matthew Ballance and contributors
 #
@@ -24,6 +22,7 @@ from .tlm import *
 # from .core_lib import *
 # from vsc_dataclasses.expr import *
 
+from . import api
 from . import std
 
 from .bit import Bit
