@@ -20,3 +20,4 @@ help:
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 %: Makefile
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+	if test -f $(PROJ_DIR)/llms.txt; then cp $(PROJ_DIR)/llms.txt $(BUILDDIR)/$@; fi
