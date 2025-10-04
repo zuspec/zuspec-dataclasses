@@ -11,6 +11,7 @@ jobs:
         version_dir: 'src/zuspec/dataclasses'
         build_universal: true
         build_docs: true
+        build_llms_txt: true
 
     secrets:
         PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
