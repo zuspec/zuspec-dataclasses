@@ -12,7 +12,7 @@ jobs:
         build_universal: true
         build_docs: true
         build_llms_txt: true
-        llms_pat: ${{ secrets.LLMS_PAT }}
+        llms_pat: "${{ secrets.LLMS_PAT }}"
 
     secrets:
         PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
