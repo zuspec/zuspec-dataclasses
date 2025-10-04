@@ -6,3 +6,6 @@ version = "0.0.1"
 
 [tool.mypy]
 mypy_path = "src"
+
+[tool.setuptools.package-data]
+zuspec.dataclasses = ["llms.txt"]
