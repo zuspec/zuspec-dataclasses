@@ -36,32 +36,61 @@
   <section id="components">
 <h1>Components<a class="headerlink" href="#components" title="Link to this heading">¶</a></h1>
 <p>Components provide the structural aspect of a Zuspec model. Depending
-on their application, Zuspec components have close similiarities to
-SystemVerilog <cite>module</cite> and SystemC <cite>component</cite>.</p>
-<p>components</p>
+on their application, Zuspec components have close similarities to
+SystemVerilog <cite>module</cite>, SystemC <cite>component</cite>, and PSS <cite>component</cite> types.</p>
 <section id="built-in-methods">
 <h2>Built-in Methods<a class="headerlink" href="#built-in-methods" title="Link to this heading">¶</a></h2>
 </section>
 <section id="supported-exec-methods">
 <h2>Supported Exec Methods<a class="headerlink" href="#supported-exec-methods" title="Link to this heading">¶</a></h2>
+<p>Exec methods are evaluated automatically based on events in the
+model. User code may not invoke these methods directly.</p>
 <section id="comb">
 <h3>comb<a class="headerlink" href="#comb" title="Link to this heading">¶</a></h3>
-<p>A <cite>&#64;comb</cite> async exec method is evaluated whenever one of
+<p>A <cite>&#64;comb</cite> exec method is evaluated whenever one of
 the variables references changes. The <cite>&#64;comb</cite> exec is
 exclusively used with RTL descriptions</p>
 </section>
 <section id="process">
 <h3>process<a class="headerlink" href="#process" title="Link to this heading">¶</a></h3>
-<p>The <cite>&#64;process</cite> exec method is evaluated when evaluation of
+<p>The <cite>&#64;process</cite> async exec method is evaluated when evaluation of
 the containing component begins. A <cite>&#64;process</cite> exec method is
 an independent thread of control in the model.</p>
 </section>
 <section id="sync">
 <h3>sync<a class="headerlink" href="#sync" title="Link to this heading">¶</a></h3>
-<p>A <cite>&#64;sync</cite> async exec method is evaluated when its associated
-timebase is evaluated (eg at a clock edge). All assignments
+<p>A <cite>&#64;sync</cite> exec method is evaluated on the active transition of
+its associated clock or reset. All assignments
 to outputs are considered nonblocking.
 The <cite>&#64;sync</cite> exec is exclusively used with RTL descriptions</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+  <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+  <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+  <span class="n">count</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+
+  <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span><span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span><span class="n">s</span><span class="o">.</span><span class="n">reset</span><span class="p">)</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">inc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+</pre></div>
+</div>
+<p>The synchronous counter above produces the value ‘0’ on the
+<cite>count</cite> output while reset is active. While reset is not active,
+the <cite>count</cite> output increments by one on each active clock edge.
+Assignments are delayed, so only the last increment statement takes
+effect. The expected output is as follows:</p>
+<p>reset | clock | count
+——<a href="#id1"><span class="problematic" id="id2">|-------|</span></a>——
+1     | 1     | 0
+0     | 1     | 1
+0     | 1     | 2
+0     | 1     | 3
+0     | 1     | …</p>
 </section>
 </section>
 <section id="supported-special-purpose-methods">
