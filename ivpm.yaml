@@ -19,6 +19,8 @@ package:
         src: pypi
       - name: litellm
         src: pypi
+      - name: packaging
+        src: pypi
 
     - name: default
       deps:
