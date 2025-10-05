@@ -15,7 +15,6 @@
 #****************************************************************************
 import pytest
 import zuspec.dataclasses as zdc
-import zuspec.dataclasses.api as api
 from typing import Awaitable, Callable, Self
 
 def test_producer_consumer():

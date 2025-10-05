@@ -17,6 +17,8 @@ package:
         src: pypi
       - name: sphinx
         src: pypi
+      - name: litellm
+        src: pypi
 
     - name: default
       deps:

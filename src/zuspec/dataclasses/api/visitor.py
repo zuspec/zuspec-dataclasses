@@ -18,11 +18,6 @@ import logging
 from dataclasses import Field, MISSING
 from typing import Callable, ClassVar, Dict, Type, List, Tuple
 from ..annotation import Annotation
-from ..bit import Bit
-from ..component import Component
-from ..exec import Exec, ExecKind, ExecSync
-from ..ports import Input, Output
-from ..struct import Extern, Struct
 import inspect
 import ast
 import textwrap
