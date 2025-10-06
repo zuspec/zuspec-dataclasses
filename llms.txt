@@ -1,83 +1,73 @@
-# Zuspec Language - LLM Reference Guide
+# Zuspec Dataclasses - LLM Instructions
 
 ## Overview
 
-Zuspec is a Python-embedded multi-abstraction language for modeling digital hardware designs from abstract behavioral models down to register transfer level (RTL). It follows Python dataclasses patterns while applying special semantic rules to hardware descriptions.
+Zuspec is a Python-embedded multi-abstraction language for modeling digital hardware designs at multiple levels of abstraction, from abstract behavioral models down to register transfer level (RTL). It follows the Python `dataclasses` pattern and applies special semantic rules to create hardware descriptions.
 
 ## Core Concepts
 
-### Import Statement
+### 1. Import Convention
 ```python
 import zuspec.dataclasses as zdc
 ```
 
-### Decorators and Core Classes
+### 2. Base Types
+
+#### TypeBase
+All Zuspec types derive from TypeBase.
+
+#### Bit Type
+- Unsigned integer type with configurable width
+- Default width: 1 bit
+- Usage: `zdc.Bit` or `zdc.Bit[W]` where W is the width
+- Example: `count : zdc.Bit[32]` creates a 32-bit unsigned field
+- Values are automatically masked to the specified width
+
+#### Int Type
+- Signed integer type with configurable width
+- Default width: 32 bits
+- Usage: `zdc.Int` or `zdc.Int[W]` where W is the width
+- Example: `value : zdc.Int[64]` creates a 64-bit signed field
+
+#### Struct
+Data structures that may contain variable-size fields. Supports:
+- Random fields (for randomization)
+- Constraint methods
+- Regular methods
+
+#### StructPacked
+Fixed-size data structures where all fields must be of fixed size.
+
+#### Component
+Structural elements equivalent to Verilog modules or SystemC components. Components:
+- Can have input/output ports
+- Support synchronous and combinational logic
+- Can contain subcomponents
+- Have a defined lifecycle (construction, init_down, init_up)
+
+#### Action
+Dynamic behavioral elements typically used for modeling test behavior. Actions are associated with a component type using generics: `class MyAction(zdc.Action[MyComponent])`.
+
+### 3. Decorators
 
 #### @zdc.dataclass
-Marks a class as a Zuspec type. Use this decorator on all Zuspec classes (Component, Struct, Action, etc.).
-
-#### Base Type Classes
-- **zdc.Component**: Structural elements equivalent to Verilog modules or SystemC components
-- **zdc.Struct**: Data structures that may contain variable-size fields
-- **zdc.StructPacked**: Fixed-size data structures with support for bit fields
-- **zdc.Action[CompT]**: Dynamic behavioral elements, typically for test behavior
-- **zdc.Bundle**: Collections of ports, exports, inputs, outputs, or bundles
-
-## Data Types
-
-### Numeric Types
-- **zdc.Bit**: Unsigned bit type with default width of 1. Use `zdc.Bit[N]` for N-bit width.
-- **zdc.Int**: Signed integer type with default width of 32. Use `zdc.Int[N]` for N-bit width.
+Marks a class as a Zuspec dataclass. Must be used on all Component, Struct, and Action types.
 
 Example:
 ```python
 @zdc.dataclass
-class MyC(zdc.Component):
-    count : zdc.Bit[16] = zdc.output()
-    value : zdc.Int[32] = zdc.field()
+class MyComponent(zdc.Component):
+    ...
 ```
 
-### Field Declarations
+#### @zdc.sync(clock, reset)
+Marks a method as synchronous - evaluated on the active edge of clock or reset.
 
-#### zdc.field()
-General purpose field declaration with options:
-- `rand=True`: Marks field as randomizable
-- `bind=`: Specifies binding relationships (see Binding section)
-- `init=`: Dict or lambda for initialization values
-- `default=`: Default value
-- `default_factory=`: Factory for default values
-
-#### Port/Signal Declarations
-- **zdc.input()**: Declares an input port/signal
-- **zdc.output()**: Declares an output port/signal
-- **zdc.port()**: Declares a port (for TLM interfaces)
-- **zdc.export()**: Declares an export (provides service)
-
-#### Other Field Types
-- **zdc.const()**: Post-initialization constant
-- **zdc.extern()**: Instance of external module (e.g., existing Verilog RTL)
-- **zdc.lock()**: Lock resource field
-- **zdc.share()**: Share resource field
-
-## Components
-
-Components provide the structural aspect of a Zuspec model. They can contain fields, sub-components, and executable methods.
-
-### Basic Component Example
-```python
-@zdc.dataclass
-class Counter(zdc.Component):
-    clock : zdc.Bit = zdc.input()
-    reset : zdc.Bit = zdc.input()
-    count : zdc.Bit[32] = zdc.output()
-```
-
-### Executable Methods
-
-#### @zdc.sync(clock=..., reset=...)
-Marks a synchronous evaluation region evaluated on the active edge of clock or reset.
-
-**Important**: Assignments in sync methods are delayed/nonblocking. Only the last assignment to a variable takes effect per cycle.
+**Critical Semantic Rule**: Assignments in sync methods are NONBLOCKING/DELAYED:
+- Assignments only take effect AFTER the entire method completes
+- Multiple assignments to the same variable in one evaluation: only the LAST assignment takes effect
+- Augmented assignments (+=, -=, etc.) are treated the same as regular assignments
+- Reading a variable returns its value at the START of the method evaluation
 
 Example:
 ```python
@@ -86,169 +76,110 @@ def _inc(self):
     if self.reset:
         self.count = 0
     else:
-        self.count += 1  # Only this increment takes effect
-        self.count += 1  # This is ignored - count only increases by 1
+        self.count += 1  # First increment
+        self.count += 1  # Only this final value takes effect
+# Result: count increments by 1, not 2
 ```
 
 #### @zdc.comb(latch=False)
-Marks a combinational evaluation region evaluated whenever referenced variables change. Used exclusively for RTL descriptions.
+Marks a combinational evaluation region evaluated whenever input variables change. Used for RTL descriptions.
 
 #### @zdc.process
-Marks an always-running async process. The method must be `async` and take no arguments. Creates an independent thread of control.
+Marks an always-running async process. The method must be `async` and takes no arguments.
+
+#### @zdc.constraint
+Marks a constraint method. All statements are treated as concurrent boolean constraints (not procedural).
+
+### 4. Field Types
+
+#### input()
+Marks an input port on a component. Inputs see the bound output value with no delay.
 
 Example:
 ```python
-@zdc.process
-async def run(self):
-    for i in range(20):
-        await self.do_something(i)
+clock : zdc.Bit = zdc.input()
 ```
 
-## Binding
+#### output()
+Marks an output port on a component.
 
-Binding connects ports, inputs, outputs, and dependencies between components.
+Example:
+```python
+count : zdc.Bit[32] = zdc.output()
+```
 
-### Using zdc.bind
-The `zdc.bind[T]` helper ensures type-safe binding specifications:
+#### field(...)
+Generic field declaration with options:
+- `rand=True`: Makes the field randomizable
+- `bind=...`: Specifies binding for subcomponents
+- `init=dict(...)`: Initialization parameters
+- `default=...`: Default value
+- `default_factory=...`: Factory for default value
 
+#### const(default=None)
+Marks a field as a post-initialization constant.
+
+#### port()
+Marks a dependency port that must be bound.
+
+#### export(...)
+Marks a service provider field.
+
+### 5. Binding
+
+Use `zdc.bind[T](lambda s: {...})` to specify port bindings for subcomponents:
+
+Example:
 ```python
 @zdc.dataclass
 class Top(zdc.Component):
     clock : zdc.Bit = zdc.input()
-    reset : zdc.Bit = zdc.input()
-    
     counter : Counter = zdc.field(bind=zdc.bind[Self](lambda s: {
         s.counter.clock : s.clock,
         s.counter.reset : s.reset
     }))
-    
-    monitor : Monitor = zdc.field(bind=zdc.bind[Self](lambda s: {
-        s.monitor.clock : s.clock,
-        s.monitor.reset : s.reset,
-        s.monitor.count : s.counter.count
-    }))
 ```
 
-The lambda receives the parent component (`s`) and returns a dictionary mapping target fields to source fields.
+The bind lambda returns a dictionary mapping subcomponent ports to parent signals.
 
-## Actions
+### 6. Constraints
 
-Actions are dynamic behavioral elements frequently used for modeling test behavior. They are typically associated with a component type.
+Constraint methods are declarative - all statements are concurrent boolean expressions:
 
 ```python
-@zdc.dataclass
-class MyC(zdc.Component):
-    a : int = 5
-
-@zdc.dataclass
-class MyA(zdc.Action[MyC]):
-    async def activity(self):
-        # Access component through self.comp
-        print("comp.a=%d" % self.comp.a)
+@zdc.constraint
+def my_constraint(self):
+    self.a > 0 and self.a < 10
+    self.b in range(0, 9)
+    self.a < self.b
 ```
 
-### Action Methods
-- **activity()**: Async method providing action implementation with activity semantics
-- **body()**: Async method providing action implementation
-- **post_solve()**: Called after randomization
+Supported constructs:
+- Boolean expressions
+- `in` operator with ranges, lists, tuples
+- if/else conditionals
+- for loops
+- match statements
 
-## Constraints
+### 7. Dependencies
 
-Constraints relate values of random variables using declarative specifications.
+Zuspec implements dependency injection for services like clocks, resets, and custom services. Components can:
+- Require services (dependencies)
+- Provide services to subcomponents
+- Automatically resolve service bindings in the component hierarchy
 
-### Constraint Blocks
-```python
-@zdc.dataclass
-class MyS(zdc.Struct):
-    a : int = zdc.field(rand=True)
-    b : int = zdc.field(rand=True)
+### 8. Type Elaboration
 
-    @zdc.constraint
-    def ab_c(self):
-        self.a > 0 and self.a < 10
-        self.b in range(0,9)
-        self.a < self.b
-```
+Types are elaborated based on:
+- Base type
+- Const parameter values
+- Post-init configuration
 
-All statements in a constraint method are treated as boolean constraints that must hold concurrently.
-
-### Constraint Operators
-- Comparison: `<`, `>`, `<=`, `>=`, `==`, `!=`
-- Logical: `and`, `or`, `not`
-- **in** operator: `self.a in range(10)` constrains a to 0..9
-- Supports `range()`, generators, lists, tuples
-
-## TLM (Transaction Level Modeling)
-
-Zuspec provides interfaces for transaction-level communication:
-
-```python
-@zdc.dataclass
-class Producer(zdc.Component):
-    dat_o : Callable[[int],Awaitable] = zdc.port()
-    dat_i : Callable[[int],Awaitable] = zdc.export(bind=zdc.bind[Self](lambda s:s.recv))
-
-    async def recv(self, dat):
-        # Handle received data
-        pass
-
-    @zdc.process
-    async def run(self):
-        for i in range(20):
-            await self.dat_o(i)
-```
-
-## Dependencies
-
-Dependencies provide dependency-injection pattern for modeling. Components can specify required services, which are provided by the containing environment.
-
-Example with Timebase dependency:
-```python
-@zdc.dataclass
-class SubC1(zdc.Component):
-    count : zdc.Bit[32] = zdc.output()
-
-    @zdc.sync
-    def _inc(self):
-        self.count += 1
-
-@zdc.dataclass
-class Upper(zdc.Component):
-    clock : zdc.Bit = zdc.input()
-    reset : zdc.Bit = zdc.input()
-
-    _timebase : zdc.TimebaseClockReset = zdc.field(
-        init=dict(clock=lambda s:s.clock, reset=lambda s:s.reset))
-
-    _c1_1 : SubC1 = zdc.field()  # Automatically inherits timebase
-    _c1_2 : SubC1 = zdc.field()  # Automatically inherits timebase
-```
-
-## Key Semantic Rules
-
-### Synchronous Methods (@zdc.sync)
-1. Assignments are delayed/nonblocking - they only take effect after method completes
-2. Multiple assignments to the same variable: only the last one takes effect
-3. Augmented assignments (+=, -=, etc.) are treated as delayed assignments
-4. Use for RTL modeling with clock-based updates
-
-### Assignment Semantics Example
-```python
-@zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
-def _update(self):
-    self.val1 = self.val1 + 1
-    self.val1 = self.val1 + 1  # Only this takes effect
-    self.val2 += 1
-    self.val2 += 1  # Only this takes effect
-# Result: both val1 and val2 increase by 1, not 2
-```
-
-### Type Elaboration
-Components with `__post_init__` or const parameters are tracked as distinct types when parameter values differ.
+Two instances of the same base class with different const parameters are distinct types.
 
 ## Common Patterns
 
-### Simple Counter
+### Counter Example
 ```python
 @zdc.dataclass
 class Counter(zdc.Component):
@@ -264,59 +195,63 @@ class Counter(zdc.Component):
             self.count += 1
 ```
 
-### Hierarchical Component with Binding
+### Hierarchical Design with Binding
 ```python
+@zdc.dataclass
+class SubModule(zdc.Component):
+    clk : zdc.Bit = zdc.input()
+    data : zdc.Bit[8] = zdc.output()
+
 @zdc.dataclass
 class Top(zdc.Component):
     clock : zdc.Bit = zdc.input()
-    reset : zdc.Bit = zdc.input()
-    
-    sub1 : SubModule = zdc.field(bind=zdc.bind[Self](lambda s: {
-        s.sub1.clock : s.clock,
-        s.sub1.reset : s.reset
+    sub : SubModule = zdc.field(bind=zdc.bind[Self](lambda s: {
+        s.sub.clk : s.clock
     }))
 ```
 
-### Randomizable Struct
+### Action with Component Association
 ```python
 @zdc.dataclass
-class Transaction(zdc.Struct):
-    addr : int = zdc.field(rand=True)
-    data : int = zdc.field(rand=True)
-    
-    @zdc.constraint
-    def addr_range_c(self):
-        self.addr in range(0, 1024)
-        self.data >= 0 and self.data < 256
+class MyComponent(zdc.Component):
+    value : int = 5
+
+@zdc.dataclass
+class MyAction(zdc.Action[MyComponent]):
+    async def body(self):
+        print("comp.value=%d" % self.comp.value)
 ```
 
-## Processing Tools API
+## Analysis Guidelines for LLMs
 
-The `zuspec.dataclasses.api` package provides a visitor interface for tools to iterate over Zuspec model features. This allows backend tools to generate implementations (e.g., Verilog RTL, SystemC models, testbenches).
+When analyzing Zuspec code:
 
-## Best Practices
+1. **Sync Method Semantics**: Always remember assignments are delayed until method completion. Only the last assignment to each variable takes effect.
 
-1. Use `@zdc.dataclass` on all Zuspec class definitions
-2. Use type hints for all fields
-3. Use `lambda s:s.field` pattern for accessing parent component in bindings
-4. Remember sync method assignments are delayed - only last assignment counts
-5. Use `zdc.bind[Self]` for type-safe binding specifications
-6. Mark randomizable fields with `rand=True`
-7. Use constraints to specify relationships between random variables
-8. Use dependencies for implicit service provision (like timebase, clock/reset)
+2. **Signal Propagation**: In hierarchical designs, track signal connections through bind specifications.
+
+3. **Clock Edge Timing**: Sync methods execute on clock edges. Track the sequence of clock cycles to determine output values.
+
+4. **Reset Behavior**: Check if reset is synchronous or asynchronous and handle accordingly.
+
+5. **Initial Values**: Outputs are typically 0/undefined until explicitly set.
+
+6. **Component Hierarchy**: Build a mental model of the component tree and signal flow.
+
+7. **Constraint Solving**: Treat all constraint statements as concurrent, not sequential.
+
+## API for Tools
+
+The `zuspec.dataclasses.api` package provides a visitor interface for processing tools to iterate over Zuspec model features and generate implementations (e.g., Verilog RTL, SystemC, test generation).
 
 ## Profiles
 
-Zuspec supports model profiles to specify capability sets and restrictions:
+Models can be tagged with profiles that specify capability sets:
 - Synthesizable RTL
 - Behavioral RTL
 - Behavioral HVL
 - Portable TLM
 - Python simulation
+- Formal verification
 
-Tools enforce profile restrictions on tagged content.
-
-## License
-
-Copyright 2019-2025 Matthew Ballance and contributors
-Licensed under Apache License 2.0
+Tools enforce profile restrictions and verify conformance.
