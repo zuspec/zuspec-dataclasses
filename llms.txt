@@ -1,0 +1,344 @@
+# Zuspec Dataclasses - LLM Usage Guide
+
+## Overview
+
+Zuspec Dataclasses is a Python-embedded multi-abstraction language for modeling hardware designs from transfer-function level down to register transfer level (RTL). It provides decorators and types to capture hardware model semantics at various abstraction levels.
+
+## Core Concepts
+
+### Language Philosophy
+- Python-embedded: Uses Python syntax with special semantic rules
+- Multi-abstraction: Supports modeling from behavioral level to RTL
+- Structural and behavioral: Components provide structure, Actions provide behavior
+- Tool-agnostic: Provides APIs for tools to process Zuspec descriptions
+
+## Installation
+
+```python
+import zuspec.dataclasses as zdc
+```
+
+## Key Types
+
+### Numeric Types
+
+**Bit** - Unsigned integer type with configurable width (default: 1-bit)
+```python
+# Default 1-bit
+signal : zdc.Bit = zdc.input()
+
+# Parameterized width using subscript
+count : zdc.Bit[32] = zdc.output()
+
+# Using field() for width specification
+int_64b : zdc.Bit = zdc.field(width=64)
+```
+
+**Int** - Signed integer type with configurable width (default: 32-bit)
+```python
+value : zdc.Int = zdc.field(width=64)
+```
+
+### Structural Types
+
+**Component** - Structural element similar to Verilog modules or SystemC components
+```python
+@zdc.dataclass
+class Counter(zdc.Component):
+    clock : zdc.Bit = zdc.input()
+    reset : zdc.Bit = zdc.input()
+    count : zdc.Bit[32] = zdc.output()
+```
+
+**ComponentExtern** - Interface to existing external descriptions (e.g., Verilog RTL)
+
+**Bundle** - Collects multiple ports, exports, inputs, outputs together
+- Bundle fields: created with field()
+- Bundle-mirror fields: created with mirror()
+- Bundle-monitor fields: created with monitor()
+
+**Struct** - Data structures that may contain variable-size fields
+- Supports constraints, pre_solve/post_solve methods
+
+**StructPacked** - Fixed-size data structures with fixed-size fields only
+
+### Behavioral Types
+
+**Action[CompT]** - Dynamic behavioral elements for test/verification scenarios
+```python
+@zdc.dataclass
+class MyAction(zdc.Action[MyComponent]):
+    def post_solve(self):
+        # Access component via self.comp
+        print("comp.value=%d" % self.comp.value)
+```
+
+## Decorators
+
+### @dataclass
+Main decorator for Zuspec types, wraps Python dataclasses with Zuspec semantics
+```python
+@zdc.dataclass
+class MyComponent(zdc.Component):
+    # fields here
+    pass
+```
+
+### Field Decorators
+
+**input()** - Marks an input port
+```python
+clock : zdc.Bit = zdc.input()
+```
+
+**output()** - Marks an output port
+```python
+count : zdc.Bit[32] = zdc.output()
+```
+
+**port()** - Marks a general port field
+```python
+dat_o : Callable[[int],Awaitable] = zdc.port()
+```
+
+**export()** - Marks an exported interface, can be bound
+```python
+dat_i : Callable[[int],Awaitable] = zdc.export(bind=zdc.bind[Self](lambda s:s.recv))
+```
+
+**field()** - General field declaration with options
+```python
+# With parameters
+my_field : MyType = zdc.field(
+    rand=False,           # Mark as randomizable
+    bind=lambda s: {},    # Binding specification
+    init=dict(p1=20),     # Initialization parameters
+    default=None          # Default value
+)
+```
+
+**const()** - Marks a constant parameter field
+```python
+param : int = zdc.const()
+```
+
+**extern()** - Denotes an external module instance
+```python
+ext_mod = zdc.extern(
+    typename="ModuleName",
+    bind=binding_dict,
+    files=["file.v"],
+    params=params_dict
+)
+```
+
+### Execution Method Decorators
+
+**@sync(clock, reset)** - Synchronous execution on clock/reset edge
+```python
+@zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
+def _inc(self):
+    if self.reset:
+        self.count = 0
+    else:
+        self.count += 1
+```
+
+**Important**: Assignments in sync methods are delayed/non-blocking:
+- Only the last assignment to a variable takes effect
+- Multiple assignments to the same variable: only final one matters
+- Augmented assignments (+=) treated as regular assignments
+
+**@comb(latch=False)** - Combinational logic, evaluated on input changes
+```python
+@zdc.comb()
+def _logic(self):
+    self.out = self.in1 & self.in2
+```
+
+**@process** - Always-running process (async method, no arguments)
+```python
+@zdc.process
+async def run(self):
+    while True:
+        await self.wait(10)
+```
+
+**@activity** - Activity method on components/actions (async)
+```python
+@zdc.activity
+async def my_activity(self):
+    # Activity semantics
+    pass
+```
+
+**@constraint** - Marks a constraint method
+```python
+@zdc.constraint
+def my_constraint(self):
+    # Constraint code
+    pass
+```
+
+## Binding and Connections
+
+**bind** helper class for type-safe bindings:
+```python
+@zdc.dataclass
+class Top(zdc.Component):
+    sub : SubComp = zdc.field(bind=zdc.bind[Self](lambda s: {
+        "port1": s.my_port,
+        "port2": s.other_port
+    }))
+```
+
+## Common Patterns
+
+### Counter Example (RTL)
+```python
+@zdc.dataclass
+class Counter(zdc.Component):
+    clock : zdc.Bit = zdc.input()
+    reset : zdc.Bit = zdc.input()
+    count : zdc.Bit[32] = zdc.output()
+
+    @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
+    def _inc(self):
+        if self.reset:
+            self.count = 0
+        else:
+            self.count += 1
+```
+
+### Producer-Consumer (TLM)
+```python
+@zdc.dataclass
+class Producer(zdc.Component):
+    dat_o : Callable[[int],Awaitable] = zdc.port()
+    dat_i : Callable[[int],Awaitable] = zdc.export(bind=zdc.bind[Self](lambda s:s.recv))
+    
+    async def recv(self, dat):
+        # Handle received data
+        pass
+
+    @zdc.process
+    async def run(self):
+        for i in range(20):
+            await self.dat_o(i)
+```
+
+### Action with Component
+```python
+@zdc.dataclass
+class MyComponent(zdc.Component):
+    value : int = 5
+
+@zdc.dataclass
+class MyAction(zdc.Action[MyComponent]):
+    def post_solve(self):
+        # Access component via self.comp
+        print("comp.value=%d" % self.comp.comp.value)
+    
+    async def activity(self):
+        # Activity implementation
+        pass
+```
+
+## Component Lifecycle
+
+Components have a specific lifecycle:
+1. Root component and component-type fields are constructed
+2. `init_down` method invoked depth-first
+3. `init_up` method invoked
+
+## Built-in Component Methods
+
+**wait(amt, units=0)** - Suspend execution using default timebase
+```python
+async def my_process(self):
+    await self.wait(10)  # Wait 10 time units
+```
+
+## API for Tool Developers
+
+The `zuspec.dataclasses.api` package provides:
+- **TypeProcessor** - Process and transform Zuspec types
+- **Visitor** - Iterate over key features of a Zuspec model
+
+Import API:
+```python
+from zuspec.dataclasses.api import TypeProcessor, Visitor
+```
+
+## Type Elaboration
+
+Types with const parameters create distinct types:
+```python
+@zdc.dataclass
+class C1(zdc.Component):
+    p1 : int = zdc.const()
+    p2 : int = zdc.const()
+
+@zdc.dataclass
+class T(zdc.Component):
+    c1_1 : C1 = zdc.field(init=dict(p1=20, p2=30))
+    c1_2 : C1 = zdc.field(init=dict(p1=10, p2=20))
+```
+
+c1_1 and c1_2 are tracked as distinct types due to different const values.
+
+## Standard Library
+
+**std** package provides common constructs:
+- `clock_reset` - Clock and reset handling
+- `timebase` - Time management
+
+Import:
+```python
+from zuspec.dataclasses import std
+```
+
+## Important Semantic Notes
+
+1. **Sync method assignments**: Delayed/non-blocking, only last assignment matters
+2. **Input/Output binding**: Top-level inputs bound implicitly, others need explicit binding
+3. **Type system**: Dynamically typed Python with static semantic rules on decorated portions
+4. **Actions**: Must be evaluated in scope providing required component services
+
+## Profiles
+
+Zuspec supports different feature profiles:
+- Synthesizable RTL
+- Behavioral RTL
+- Behavioral HVL
+- Portable TLM
+- Portable Test
+- Python execution
+- Static/Formal verification
+
+## Best Practices
+
+1. Use `@zdc.dataclass` decorator on all Zuspec types
+2. Specify widths explicitly for Bit/Int types using subscripts or field(width=)
+3. Use lambda functions for clock/reset in @sync decorators
+4. Remember sync assignments are non-blocking
+5. Use bind helper class for type-safe bindings
+6. Actions should be associated with specific component types using generics
+7. Use appropriate execution decorators (@sync, @comb, @process) based on semantics
+
+## Common Issues
+
+- Forgetting that sync assignments are delayed (only last one takes effect)
+- Not specifying bit widths when needed
+- Incorrect binding syntax (use zdc.bind[Self] helper)
+- Trying to call exec methods (@sync, @process, @comb) directly (they're auto-invoked)
+
+## Resources
+
+- Main package: `zuspec.dataclasses`
+- API package: `zuspec.dataclasses.api`
+- Standard library: `zuspec.dataclasses.std`
+
+## License
+
+Apache License 2.0 (Copyright 2019-2025 Matthew Ballance and contributors)
