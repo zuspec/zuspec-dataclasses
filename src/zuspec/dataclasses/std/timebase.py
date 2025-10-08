@@ -16,8 +16,7 @@
 import abc
 from typing import Protocol, TYPE_CHECKING
 from ..decorators import dataclass
-from ..bit import Bit
-from ..component import Component
+from ..types import Bit, Component
 
 class TimeBase(Protocol):
     """

@@ -14,9 +14,8 @@
 # limitations under the License.
 #****************************************************************************
 import abc
-from ..component import Component
+from ..types import Bit, Component
 from ..decorators import dataclass, field, output
-from ..bit import Bit
 
 @dataclass
 class ClockReset(Component):

@@ -11,4 +11,4 @@ build-backend = "setuptools.build_meta"
 mypy_path = "src"
 
 [tool.setuptools.package-data]
-"zuspec.dataclasses" = "llms.txt"
+"zuspec.dataclasses" = ["llms.txt"]
