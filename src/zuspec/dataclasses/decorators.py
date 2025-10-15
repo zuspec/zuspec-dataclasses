@@ -204,12 +204,14 @@ def extern(
                         files=files,
                         params=params))
 
+class ExecProc(Exec): pass
+
 def process(T):
     """
     Marks an always-running process. The specified
     method must be `async` and take no arguments
     """
-    return Exec(T, ExecKind.Proc)
+    return ExecProc(T)
 
 def reg(offset=0):
     return dc.field()

@@ -22,7 +22,7 @@ def test_producer_consumer():
     @zdc.dataclass
     class Producer(zdc.Component):
         dat_o : Callable[[int],Awaitable] = zdc.port()
-        dat_i : Callable[[int],Awaitable] = zdc.export(bind=zdc.bind[Self](lambda s:s.recv))
+        dat_i : Callable[[int],Awaitable] = zdc.export(bind=zdc.bind[Self,Callable](lambda s:s.recv))
         _recv_ev : zdc.Event = zdc.field(default_factory=zdc.Event)
 
         async def recv(self, dat):
@@ -39,7 +39,7 @@ def test_producer_consumer():
     @zdc.dataclass
     class Consumer(zdc.Component):
         dat_o : Callable[[int],Awaitable] = zdc.port()
-        dat_i : Callable[[int],Awaitable] = zdc.export(bind=zdc.bind[Self](lambda s:s.recv))
+        dat_i : Callable[[int],Awaitable] = zdc.export(bind=zdc.bind[Self,Callable](lambda s:s.recv))
 
         async def recv(self, dat):
             await self.dat_o(dat)
@@ -47,9 +47,9 @@ def test_producer_consumer():
 
     @zdc.dataclass
     class Top(zdc.Component):
-        p : Producer = zdc.field(bind=zdc.bind[Self](lambda s: {
+        p : Producer = zdc.field(bind=zdc.bind[Self,Producer](lambda s: {
             s.p.dat_i : s.c.dat_o
         }))
-        c : Consumer = zdc.field(bind=zdc.bind[Self](lambda s: {
+        c : Consumer = zdc.field(bind=zdc.bind[Self,Consumer](lambda s: {
             s.c.dat_i : s.p.dat_o
         }))
