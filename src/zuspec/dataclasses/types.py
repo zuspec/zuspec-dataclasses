@@ -14,7 +14,7 @@
 # limitations under the License.
 #****************************************************************************
 import abc
-from typing import Dict, Generic, TypeVar, Literal, Type
+from typing import Dict, Generic, Optional, TypeVar, Literal, Type
 from .decorators import dataclass, field
 
 @dataclass
@@ -167,6 +167,8 @@ class Component(Struct):
     - activity
     """
 
+    def __bind__(self) -> Optional[Dict]: ...
+
     @abc.abstractmethod
     async def wait(self, amt : float, units : int = 0):
         """
@@ -198,3 +200,5 @@ class Action[CompT](Struct):
     - activity
     """
     comp : Type[CompT] = field()
+
+

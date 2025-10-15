@@ -25,7 +25,7 @@ Zuspec datatype.
 * **a** - Random field with a built-in constraint limiting it to 0..9
 * **b** - Random field specified with the `rand` convenience field specifier
 
-* default is reset value
+* default - Specifies the reset value
 * rand  - Marks whether this field is randomizable
 * const - Marks whether this field is const
 * domain - Iterable, or Callable that produces an iterable, of the field domain

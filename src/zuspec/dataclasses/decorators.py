@@ -19,7 +19,7 @@
 import dataclasses
 import dataclasses as dc
 import enum
-from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union
+from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic
 from .annotation import Annotation, AnnotationSync
 
 
@@ -36,7 +36,7 @@ def dataclass(cls, **kwargs):
             print("TODO: annotate field")
             cls_annotations[name] = int
 
-    cls_t = dc.dataclass(cls, **kwargs)
+    cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
     setattr(cls_t, "__base_init__", getattr(cls_t, "__init__"))
     def local_init(self, tp : 'TypeProcessor', *args, **kwargs):
@@ -62,13 +62,26 @@ def mirror():
 def monitor():
     return dc.field()
 
-class bind[T]:
+BindT = TypeVarTuple('BindT')
+
+#class bind(Generic[*BindT]):
+#    """Helper class for specifying binds. Ensures that the parameter
+#     passed to the lambda is identified as the class type
+#    """
+#    def __init__(self, c : Callable[[*BindT],Dict[Any,Any]]):
+#        self._c = c
+
+class bind[Ts,Ti]:
     """Helper class for specifying binds. Ensures that the parameter
-     passed to the lambda is identified as the class type
+     passed to the lambda is identified as the class type.
     """
-    def __init__(self, c : Callable[[T],Dict[Any,Any]]):
+    def __init__(self, c : Callable[[Ts,Ti],Dict[Any,Any]]):
         self._c = c
-    
+
+class binder(object):
+    def __init__(self, c : Callable):
+        pass
+
 def field(
         rand=False, 
         bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
@@ -171,9 +184,9 @@ class ExecKind(enum.Enum):
 @dc.dataclass
 class Exec(object):
     method : Callable = dc.field()
-    kind : ExecKind = dc.field()
-    timebase : Optional[Callable] = field(default=None)
-    t : Optional[Callable] = field(default=None)
+#    kind : ExecKind = dc.field()
+#    timebase : Optional[Callable] = field(default=None)
+#    t : Optional[Callable] = field(default=None)
 
 def extern(
     typename,
@@ -233,7 +246,7 @@ def sync(clock : Callable, reset : Callable):
     each time _update is evaluated.
     """
     def __call__(T):
-        return ExecSync(method=T, kind=ExecKind.Sync, clock=clock, reset=reset)
+        return ExecSync(method=T, clock=clock, reset=reset)
     return __call__
 
 def comb(latch : bool=False):
@@ -244,6 +257,34 @@ def comb(latch : bool=False):
     def __call__(T):
         return Exec(method=T, kind=ExecKind.Comb, )
     return __call__
+
+@dc.dataclass
+class ExecState(Exec): pass
+
+class FSM(object):
+    """Declares a method-based FSM"""
+    state : ExecState = field(default_factory=ExecState)
+
+class fsm(object):
+
+    def __new__(cls, 
+                 initial : ExecState,
+                 clock : Optional[Callable] = None,
+                 reset : Optional[Callable] = None) -> dc.Field:
+        """Defines the parameters of an FSM field"""
+        return dc.field(
+            metadata=dict(initial=initial, clock=clock, reset=reset),
+            default_factory=FSM)
+
+    @staticmethod
+    def state(T):
+        """Decorates an FSM state method. A state method is automatically
+        invoked on an active clock edge when the state machine that this
+        method is a member of is in the appropriate state. FSM state 
+        methods are non-blocking assignment regions just like sync exec blocks.
+        State methods cannot be called directly"""
+        return ExecState(method=T)
+
 
 def constraint(T):
     setattr(T, "__constraint__", True)
