@@ -38,8 +38,82 @@
 <p>Components provide the structural aspect of a Zuspec model. Depending
 on their application, Zuspec components have close similarities to
 SystemVerilog <cite>module</cite>, SystemC <cite>component</cite>, and PSS <cite>component</cite> types.</p>
-<section id="built-in-methods">
-<h2>Built-in Methods<a class="headerlink" href="#built-in-methods" title="Link to this heading">¶</a></h2>
+<p>Instances of Zuspec components are never created directly. Zuspec
+automatically creates component instances for fields of <cite>Component</cite> type.
+Creating an instance of a Zuspec component class outside a component
+hierarchy (for example, in a test) must be done using a factory class.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.be.py</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zpy</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+
+<span class="n">top_i</span> <span class="o">=</span> <span class="n">zpy</span><span class="o">.</span><span class="n">Factory</span><span class="p">()</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">Top</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="ports-and-binding">
+<h2>Ports and Binding<a class="headerlink" href="#ports-and-binding" title="Link to this heading">¶</a></h2>
+<p>Fields that are initialized using <cite>input</cite>, <cite>output</cite>, <cite>port</cite>, <cite>mirror</cite>,
+or are of type <cite>Bundle</cite>, are considered ports. A port is either a
+producer (eg output) or a consumer (eg input). Ports are <cite>bound</cite>
+together as part of the component elaboration process.</p>
+<p>The following can be bound together:
+- Input and output
+- Input and input
+- Port and export
+- Export and export
+- Port and port
+- Bundle and bundle mirror
+- Bundle mirror and bundle mirror</p>
+<p>Binds may be specified in two ways:
+- Inline as part of field declaration
+- Within a <cite>__bind__</cite> method declared in the component</p>
+<p>In both cases, the bind method shall return a <cite>dict</cite> of
+mappings between ports.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Initiator</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">wb_i</span> <span class="p">:</span> <span class="n">WishboneInitiator</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">initiator</span> <span class="p">:</span> <span class="n">Initiator</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">bind</span><span class="p">[</span><span class="n">Self</span><span class="p">,</span><span class="n">Initiator</span><span class="p">](</span><span class="k">lambda</span> <span class="n">s</span><span class="p">,</span><span class="n">f</span><span class="p">:{</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">clock</span> <span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">,</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">reset</span> <span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">reset</span><span class="p">,</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">wb_i</span> <span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">consumer</span><span class="o">.</span><span class="n">wb_t</span><span class="p">,</span>
+    <span class="p">}))</span>
+</pre></div>
+</div>
+<p>The example above shows the “inline” form of binding. The <cite>bind</cite>
+parameter to the <cite>field</cite> method specifies a method to call that
+returns a dict. The method must accept two parameters: a handle
+to the parent class <cite>self</cite> and a handle to the field</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Initiator</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">wb_i</span> <span class="p">:</span> <span class="n">WishboneInitiator</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">initiator</span> <span class="p">:</span> <span class="n">Initiator</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="p">{</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initiator</span><span class="o">.</span><span class="n">clock</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initiator</span><span class="o">.</span><span class="n">reset</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initiator</span><span class="o">.</span><span class="n">wb_i</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">consumer</span><span class="o">.</span><span class="n">wb_t</span><span class="p">,</span>
+    <span class="p">}</span>
+</pre></div>
+</div>
+<p>The example above shows the method form of binding. The <cite>__bind__</cite>
+method returns a dict mapping ports.</p>
 </section>
 <section id="supported-exec-methods">
 <h2>Supported Exec Methods<a class="headerlink" href="#supported-exec-methods" title="Link to this heading">¶</a></h2>
@@ -49,7 +123,7 @@ model. User code may not invoke these methods directly.</p>
 <h3>comb<a class="headerlink" href="#comb" title="Link to this heading">¶</a></h3>
 <p>A <cite>&#64;comb</cite> exec method is evaluated whenever one of
 the variables references changes. The <cite>&#64;comb</cite> exec is
-exclusively used with RTL descriptions</p>
+exclusively used with RTL descriptions.</p>
 </section>
 <section id="process">
 <h3>process<a class="headerlink" href="#process" title="Link to this heading">¶</a></h3>
@@ -136,7 +210,7 @@ The body of the method adheres to activity semantics.</p>
 <li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
 <li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Components</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#built-in-methods">Built-in Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ports-and-binding">Ports and Binding</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#supported-exec-methods">Supported Exec Methods</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#supported-special-purpose-methods">Supported Special-Purpose Methods</a></li>
 </ul>
