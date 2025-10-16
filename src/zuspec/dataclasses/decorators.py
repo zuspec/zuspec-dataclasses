@@ -39,15 +39,23 @@ def dataclass(cls, **kwargs):
     cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
     setattr(cls_t, "__base_init__", getattr(cls_t, "__init__"))
-    def local_init(self, tp : 'TypeProcessor', *args, **kwargs):
+    def local_init(self, tp=None, *args, **kwargs):
         """Only called during type processing"""
+        if tp is None:
+            raise Exception("Zuspec types cannot be directly constructed")
+
+        if not hasattr(tp, "init"):
+            raise Exception("Type-processor parameter is missing 'init'")
+
         return tp.init(self, *args, **kwargs)
     setattr(cls_t, "__init__", local_init)
 
     if not hasattr(cls_t, "__base_new__"):
         setattr(cls_t, "__base_new__", getattr(cls_t, "__new__"))
-        def local_new(c, tp : 'TypeProcessor', *args, **kwargs):
+        def local_new(c, tp=None, *args, **kwargs):
             """Always called during user-object construction"""
+            if tp is None:
+                raise Exception("Zuspec types cannot be directly constructed")
             return tp.new(c, *args, **kwargs)
         setattr(cls_t, "__new__", local_new)
 
