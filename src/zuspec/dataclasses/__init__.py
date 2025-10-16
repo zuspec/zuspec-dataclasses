@@ -18,7 +18,7 @@ from asyncio import Event
 from .decorators import (
     dataclass, field, export, extern, mirror, process, input, output, 
     sync, const, port, export, bind, Exec, ExecKind, ExecSync, 
-    Output, FSM, ExecState, fsm, binder
+    Input, Output, FSM, ExecState, fsm, binder
 )
 from .types import *
 #from .tlm import *
