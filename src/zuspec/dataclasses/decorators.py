@@ -20,12 +20,14 @@ import dataclasses
 import dataclasses as dc
 import enum
 from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic
+from typing import dataclass_transform
 from .annotation import Annotation, AnnotationSync
 
 
 if TYPE_CHECKING:
     from .api.type_processor import TypeProcessor
 
+@dataclass_transform()
 def dataclass(cls, **kwargs):
     # TODO: Add type annotations to decorated methods
     cls_annotations = cls.__annotations__
@@ -219,6 +221,7 @@ def process(T):
     Marks an always-running process. The specified
     method must be `async` and take no arguments
     """
+    # Datamodel Mapping
     return ExecProc(T)
 
 def reg(offset=0):

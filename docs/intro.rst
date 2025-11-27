@@ -53,7 +53,6 @@ package provides a visitor that iterates over key features of a Zuspec
 model. 
 
 
-
 # Abstracted Messaging (base on which TLM was built)
 - field of <Api> = port()
 - field of <Api> = export(bind here)

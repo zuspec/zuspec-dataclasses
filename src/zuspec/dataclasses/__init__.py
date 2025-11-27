@@ -13,7 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #****************************************************************************
-# from .activity_stmts import *
+"""
+Docstring for src.zuspec.dataclasses
+"""
+
+# Datamodel Mapping
+# 
+
 from asyncio import Event
 from .decorators import (
     dataclass, field, export, extern, mirror, process, input, output, 
@@ -21,8 +27,12 @@ from .decorators import (
     Input, Output, FSM, ExecState, fsm, binder
 )
 from .types import *
-#from .tlm import *
+import zuspec.dm as dm
+from .transformer import DataclassesTransformer
 
-#from . import api
-#from . import std
+def transform(*args) -> dm.Context:
+    """Accepts one or more class types and returns a datamodel Context."""
+    tr = DataclassesTransformer()
+    tr.process(*args)
+    return tr.result()
 

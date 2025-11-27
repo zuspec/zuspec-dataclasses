@@ -14,99 +14,30 @@
 # limitations under the License.
 #****************************************************************************
 import abc
-from typing import Dict, Generic, Optional, TypeVar, Literal, Type
+import dataclasses as dc
+from typing import Dict, Generic, Optional, TypeVar, Literal, Type, Annotated
 from .decorators import dataclass, field
 
-@dataclass
+@dc.dataclass
 class TypeBase(object):
     """Marker for all Zuspec types"""
+    def __new__(cls, *args, **kwargs):
+        pass
     pass
 
-class BitMeta(type):
-    """
-    The BitMeta class is a constructor for Bit types.
-    Bit[12], for example, produces a Bit type where
-    W=12.
-    """
+@dc.dataclass
+class SignWidth(object):
+    width : int = dc.field()
+    signed : bool = dc.field(default=True)
 
-    def __new__(cls, name, bases, attrs):
-        return super().__new__(cls, name, bases, attrs)
-    
-    def __init__(self, name, bases, attrs):
-        super().__init__(name, bases, attrs)
-        self.type_m : Dict = {}
-    
-    def __getitem__(self, W : int):
-        if W in self.type_m.keys():
-            return self.type_m[W]
-        else:
-            t = type("bit[%d]" % W, (Bit,), {
-                "W" : W
-            })
-            self.type_m[W] = t
-            return t
+@dc.dataclass
+class S(SignWidth): pass
 
-# class BitLiteral(int):
-#     W : int = 1
-
-#     def __new__(cls, )
-
-#     def __getitem__(self, v) -> 'BitLiteral':
-#         return self
-#         pass
-#     pass
-
-class Bit(int, metaclass=BitMeta):
-    """
-    Variables of 'Bit' type represent unsigned W-bit values.
-    The value of the variables is automatically masked. For 
-    example, assigning 20 (b10100) to a 4-bit variable will 
-    result in 4 (b0100) being stored in the variable.
-    """
-    W : int = 1
-
-    def __new__(cls, val : int=0):
-        return super(Bit, cls).__new__(cls, val)
-
-class Bits(int, metaclass=BitMeta):
-    W : int = -1
-
-    def __new__(cls, val : int=0):
-        return super(Bits, cls).__new__(cls, val)
-
-class IntMeta(type):
-    """
-    The IntMeta class is a constructor for Int types.
-    Int[12], for example, produces a Int type where
-    W=12.
-    """
-
-    def __new__(cls, name, bases, attrs):
-        return super().__new__(cls, name, bases, attrs)
-    
-    def __init__(self, name, bases, attrs):
-        super().__init__(name, bases, attrs)
-        self.type_m : Dict = {}
-    
-    def __getitem__(self, W : int):
-        if W in self.type_m.keys():
-            return self.type_m[W]
-        else:
-            t = type("bit[%d]" % W, (Bit,), {
-                "W" : W
-            })
-            self.type_m[W] = t
-            return t
-
-class Int(TypeBase, metaclass=IntMeta):
-    """
-    Variables of 'Int' type represent signed W-bit values.
-    The value of the variables is automatically masked. For 
-    example, assigning 20 (b10100) to a 4-bit variable will 
-    result in 4 (b0100) being stored in the variable. Note
-    that this may change the size of the variable.
-    """
-    W : int = -1
+@dc.dataclass
+class U(SignWidth):
+    def __post_init__(self):
+        # signed for U types is always False
+        self.signed = False
 
 @dataclass
 class Bundle(TypeBase):
@@ -143,7 +74,7 @@ class StructPacked(TypeBase):
 @dataclass
 class Struct(TypeBase):
     """
-    Struct types are data structures that may contain
+    Struct types 
     variable-size fields. 
 
     Valid sub-regions
@@ -176,29 +107,4 @@ class Component(Struct):
         calling coroutine for the specified time.
         """
         pass
-
-CompT = TypeVar('CompT', bound=Component)
-
-@dataclass
-class ComponentExtern(Component):
-    """
-    Extern components are used to interface with existing descriptions,
-    such as existing Verilog RTL.
-    """
-
-@dataclass
-class Action[CompT](Struct):
-    """
-    Action-derived types 
-
-    Valid fields
-    - All Struct fields
-    - Input / Output fields of Buffer, Stream, and State types
-    - Lock / Share fields of Resource types
-    Valid sub-regions
-    - All Struct sub-regions
-    - activity
-    """
-    comp : Type[CompT] = field()
-
 
