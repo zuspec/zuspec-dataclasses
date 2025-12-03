@@ -13,15 +13,21 @@ class MemIF(Protocol):
                     data : bytearray, 
                     offset : int=0, 
                     size : int=-1): ...
-    
+
+class DmaChannel(zdc.Component):
+    async def m2m(self, src, dst):
+        pass
 
 @zdc.dataclass
 class Dma(zdc.Component):
     m0 : MemIF = zdc.port()
     m1 : MemIF = zdc.port()
 
-    _m0_lock : zdc.Resource = zdc.lock()
-    _channel_busy : List[bool] = zdc.list(sz=16)
+    # Resource pool
+#    channels : Pool[DmaChannel] = zdc.pool(size, bind)
+
+#    _m0_lock : zdc.Resource = zdc.lock()
+#    _channel_busy : List[bool] = zdc.list(sz=16)
 
     # Capture the multiplicity of this function by tying it
     # to resource acquisition
@@ -61,3 +67,6 @@ class Dma(zdc.Component):
 
 
     pass
+
+# Want abstraction
+- 

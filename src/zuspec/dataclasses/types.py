@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #****************************************************************************
+from __future__ import annotations
 import abc
 import dataclasses as dc
-from typing import Dict, Generic, Optional, TypeVar, Literal, Type, Annotated
+from typing import Dict, Generic, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any
 from .decorators import dataclass, field
 
 @dc.dataclass
@@ -83,8 +84,17 @@ class Struct(TypeBase):
     - method
     """
 
-@dataclass
-class Component(Struct):
+class CompImpl(Protocol):
+
+    def name(self) -> str: ...
+
+    def parent(self) -> Component: ...
+
+    def post_init(self, comp): ...
+
+
+@dc.dataclass
+class Component(object):
     """
     Component classes are structural in nature. 
     The lifecycle of a component tree is as follows:
@@ -98,13 +108,62 @@ class Component(Struct):
     - activity
     """
 
-    def __bind__(self) -> Optional[Dict]: ...
+    # _impl is always an internal field. User code must never
+    # access it
+    _impl : Optional[CompImpl] = dc.field(default=None)
 
-    @abc.abstractmethod
+    def __post_init__(self):
+        print("--> __post_init__ %s" % str(type(self)))
+        print("  impl: %s" % str(self._impl))
+#        self._impl.post_init(self)
+        print("<-- __post_init__")
+#        assert self._impl is not None
+#        self._impl.post_init(self)
+
+    @property
+    def name(self) -> str:
+        assert self._impl is not None
+        return self._impl.name()
+
+    @property
+    def parent(self) -> Optional[Component]:
+        assert self._impl is not None
+        return self._impl.parent()
+
+    def __bind__(self) -> Optional[Dict]: 
+        pass
+
     async def wait(self, amt : float, units : int = 0):
         """
         Uses the default timebase to suspend execution of the
         calling coroutine for the specified time.
         """
         pass
+
+    def __new__(cls, **kwargs):
+        from .config import Config
+        print("--> __new__ %s" % cls.__qualname__)
+        if "_impl" not in kwargs.keys():
+            ret = Config.inst().factory.mkComponent(cls, **kwargs)
+            print("impl: %s" % ret._impl)
+        else:
+            print("have _impl")
+            ret = super().__new__(cls)
+#        ret.__init__(**kwargs)
+        print("<-- __new__ %s" % cls.__qualname__)
+        return ret
+        
+    def __init__(self, *args, **kwargs):
+        print("--> __init__")
+        super().__init__(*args, **kwargs)
+        print("<-- __init__")
+
+        
+    # def __init__(self, **kwargs):
+    #     if "parent" not in kwargs.keys():
+    #         kwargs["parent"] = None
+    #     if "name" not in kwargs.keys():
+    #         kwargs["name"] = "root"
+        
+
 
