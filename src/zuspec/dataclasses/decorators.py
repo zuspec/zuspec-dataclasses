@@ -97,9 +97,9 @@ def field(
         bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
         init : Optional[Union[Dict[str,Any], Callable[[object],Dict[Any,Any]]]] = None,
         default_factory : Optional[Any] = None,
-        default : Optional[Any] = None):
+        default : Optional[Any] = None,
+        metadata : Optional[Dict[str,object]]=None):
     args = {}
-    metadata = None
 
 #     # Obtain the location of this call
 #     import inspect
@@ -181,10 +181,10 @@ def share(*args, **kwargs):
     return dc.field(default_factory=Share)
 
 def port():
-    return dc.field()
+    return dc.field(init=False, metadata={"kind": "port"})
 
 def export(*args, bind=None, **kwargs):
-    return dc.field(*args, **kwargs)
+    return dc.field(init=False, metadata={"kind": "export"})
 
 class ExecKind(enum.Enum):
     Comb = enum.auto()

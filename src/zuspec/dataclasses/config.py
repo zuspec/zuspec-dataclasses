@@ -1,6 +1,6 @@
 from __future__ import annotations
 import dataclasses as dc
-from typing import ClassVar, Optional, Protocol, Type
+from typing import ClassVar, List, Optional, Protocol, Type
 from .types import Component
 
 class ObjFactory(Protocol):
@@ -9,22 +9,24 @@ class ObjFactory(Protocol):
 
 @dc.dataclass
 class Config(object):
-    _factory : Optional[ObjFactory] = dc.field(default=None)
+    _factory_s : List[ObjFactory] = dc.field(default_factory=list)
     _inst : ClassVar[Optional[Config]] = None
 
     def __post_init__(self):
         from .rt import ObjFactory
-        self._factory = ObjFactory()
+        self._factory_s.append(ObjFactory.inst())
         pass
 
     @property
     def factory(self)-> ObjFactory:
-        assert self._factory is not None
-        return self._factory
-    
-    @factory.setter
-    def factory(self, f : ObjFactory):
-        self._factory = f
+        assert len(self._factory_s) > 0
+        return self._factory_s[-1]
+
+    def push_factory(self, f : ObjFactory):
+        self._factory_s.append(f)
+
+    def pop_factory(self):
+        self._factory_s.pop()    
 
     @classmethod
     def inst(cls) -> Config:

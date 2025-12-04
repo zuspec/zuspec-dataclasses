@@ -84,6 +84,10 @@ class Struct(TypeBase):
     - method
     """
 
+class Timebase(Protocol):
+    async def wait(self, amt : float, units : int = 0): ...
+
+
 class CompImpl(Protocol):
 
     def name(self) -> str: ...
@@ -91,6 +95,8 @@ class CompImpl(Protocol):
     def parent(self) -> Component: ...
 
     def post_init(self, comp): ...
+
+    def timebase(self) -> Timebase: ... 
 
 
 @dc.dataclass
@@ -138,32 +144,16 @@ class Component(object):
         Uses the default timebase to suspend execution of the
         calling coroutine for the specified time.
         """
+        assert self._impl is not None
+#        await self._impl.timebase().wait(20, 0)
         pass
 
     def __new__(cls, **kwargs):
         from .config import Config
-        print("--> __new__ %s" % cls.__qualname__)
         if "_impl" not in kwargs.keys():
             ret = Config.inst().factory.mkComponent(cls, **kwargs)
-            print("impl: %s" % ret._impl)
         else:
-            print("have _impl")
             ret = super().__new__(cls)
-#        ret.__init__(**kwargs)
-        print("<-- __new__ %s" % cls.__qualname__)
         return ret
-        
-    def __init__(self, *args, **kwargs):
-        print("--> __init__")
-        super().__init__(*args, **kwargs)
-        print("<-- __init__")
-
-        
-    # def __init__(self, **kwargs):
-    #     if "parent" not in kwargs.keys():
-    #         kwargs["parent"] = None
-    #     if "name" not in kwargs.keys():
-    #         kwargs["name"] = "root"
-        
 
 
