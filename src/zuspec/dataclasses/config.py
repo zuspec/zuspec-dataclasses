@@ -1,7 +1,7 @@
 from __future__ import annotations
 import dataclasses as dc
 from typing import ClassVar, List, Optional, Protocol, Type
-from .types import Component
+from .types import Component, Timebase
 
 class ObjFactory(Protocol):
 
@@ -10,11 +10,13 @@ class ObjFactory(Protocol):
 @dc.dataclass
 class Config(object):
     _factory_s : List[ObjFactory] = dc.field(default_factory=list)
+    _timebase_s : List[Timebase] = dc.field(default_factory=list)
     _inst : ClassVar[Optional[Config]] = None
 
     def __post_init__(self):
-        from .rt import ObjFactory
+        from .rt import ObjFactory, Timebase
         self._factory_s.append(ObjFactory.inst())
+        self._timebase_s.append(Timebase())
         pass
 
     @property

@@ -2,9 +2,9 @@
 Zuspec Language Overview
 ##########################
 
-Zuspec is a language focused on modeling digital hardware
-designs at multiple levels of abstraction -- from an 
-abstract behavioral model down to register transfer level (RTL).
+Zuspec is a Python-embedded modeling language focused on modeling 
+the behavior of digital hardware designs at multiple levels of abstraction 
+-- from an abstract behavioral model down to register transfer level (RTL).
 Multiple distinct implementations can be derived from a Zuspec
 model to address various points on the performance / fidelity curve.
 
@@ -12,224 +12,134 @@ Zuspec is a Python-based language, which means that it is embedded in
 Python and adopts Python syntax, but applies special semantic rules 
 to specified portions of the description. 
 
-Let's look at an example:
+Zuspec is composed of four elements:
+
+* Language facade -- the base classes and decorators used to identify key elements of the description
+* Pure-Python runtime -- A pure Python implementation of the Zuspec semantics that leverages the Python 
+  implementation of the source description
+* Data Model -- An AST-like data model that captures the key type and behavioral descriptions involved 
+  in a model
+* Datamodel Processing Tools -- Tools that operate on the data model to analyze aspects
+  of the model or produce additional outputs (eg C implementation)
+
+It is critical to keep all of these aspects independent and modular. For example, the language
+facade (zuspec.dataclasses namespace classes) must not be aware of the pure-python runtime.
+
+Zuspec types inherit from a Zuspec base class, and are decorated with @zdc.dataclass.
+Zuspec classes are dataclasses. 
+
+Fields of Zuspec classes have the basic form of Python dataclass fields.
+
+Zuspec input is valid Python syntax, but is not executable on its own because the input
+specifies intent, not implementation. For example:
 
 .. code-block:: python3
 
-    # Counter example
-    import zuspec.dataclasses as zdc
+    class MyIF(Protocol):
+      async def api(self): ...
 
-    @zdc.dataclass
-    class Counter(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
-        count : zdc.Bit[32] = zdc.output()
+    class MyTargT(zdc.Component):
+      p : MyIF = zdc.export()
 
-        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
-        def _inc(self):
-            if self.reset:
-                self.count = 0
-            else:
-                self.count += 1
+      def __bind__(self): return {
+        p.api : self.target
+      }
 
+      async def target(self, val : int):
+        print("target: %d" % val)
+        await self.wait(zdc.Time.ns(10))
 
-Note that we follow the Python `dataclasses` pattern
+    class MyInitC(zdc.Component):
+      p : MyIF = zdc.port()
 
-* **Component** - Components are structural elements, equivalent to 
-Verilog modules and SystemC or PSS components.
-* **Signal Ports** - 
-* **Sync** - Marks a method as being activated on a clock or 
-reset edge. The semantics of code in the method are behavioral.
-However, output variables only change at clock edge (ie Verilog 
-non-blocking assignment).
+      @zdc.process
+      async def run(self):
+        for i in range(16):
+          await self.p.call(i)
 
-**********************
-Interaction with Tools
-**********************
+    class TopC(zdc.Component):
+      i : MyInitC = zdc.field()
+      c : MyConsC = zdc.field()
 
-Zuspec defines a language, which means that tools must have a way to
-operate on a Zuspec description. The `zuspec.dataclasses.api` 
-package provides a visitor that iterates over key features of a Zuspec
-model. 
+      def __bind__(self): return {
+        i.t : c.t
+      }
 
 
-# Abstracted Messaging (base on which TLM was built)
-- field of <Api> = port()
-- field of <Api> = export(bind here)
-- build/connect process ensures logical result
+In the example above, the *modeling* aspect of Zuspec is shown in several
+places:
 
-=> Really clumsy to do in C++ ; impossible in SV
-=> Really easy to describe in Python. Several (more-complex)
-   ways to implement.
+* Ports and exports are marked as having a Python type of MyIF, but are not
+  explicitly initialized. A Python type checker can validate that method calls
+  are valid
+* The methods of an *export* are specified via the mapping returned from __bind__.
+  Here, again, the relationship is modeled and not the implementation
+* In the initiator, the *process* decoration marks the run method as one that is
+  automatically started when an instance of the class is created
+* In the top-level component, the __bind__ method specifies that the initiator and
+  consumer port/export is connected
 
-Goal: capture specification not implementation
-
-=> Leverage association rules
-  - associate with nearest timebase provider
-  - association control
-  => Use association properties for static APIs?
-  Api::C -> nearest association -- which might be top
-=> Assess
-
-Pool is an association:
-pool<T> forms an association with any input<T>, output<T>
-- Filter rule: associate anything?
--> Each provider 
--> Pushing down match rules
---> component must gather providers
--> Error if multiple rules match
--> associate() -> Returns a map to add to the stack
---> Upper must win...
-
--> Two stacks: natural ; override
---> Check override stack first
---> Check natural stack second
-
-=> Do need something for binding
--> That's impl specific...
--> Transform -> map 'std' to <provider>
-=> Top-level component has required associatians
-  -> Use for an external API (vs being built-in)
-
-=> Must identify base types assumed to be tool-supported
-  -> Ex: tool that doesn't support registers must be flagged
-  -> Contract of 'tool recognizes these core constructs'
-  --> This is extensible. Libraries can flag their base classes
-    as needing to be recognized
-
-Pure: having no data -> Really talking about abstract class?
-
-Core language support (parser) must provide elab and linking
-facilities. 
-- Build associations maps
-
-Alias methods to services?
-print() <-> std.print()
-- Certain implementations can require a method to be
-  a struct member
-
-# Creating a component instance triggers a scan for required services
-- If a component has associated actions, then 
--> Forall actions that match this type, check for 
---> memory and resource claims
---> Buffer/State/
-
-Violation of scheduling rules can be detected at runtime:
--> Parallel must check for duplicate targets 
--> Actions must expose associations
--> State is a single resource with completion semantics
-
-Service Provider
-Resource Provider <-> Pool is also a resource provider
-
-forall: 
-
-with forall(select) as fp:
-  constraints
-
-# Locating the claim
-- up- or -down associative
-- optional (0,1), single, or multi
-- Use a dedicated 
-
-Associations can be up- or down-associative.
-- comp is a down-associative 
-- aspace (claim), pool (lock/share, input/output) is 
-
-# Organizing assiciations
-- Provider / Client
-- Is different from port binding
--> Provider instances add to this component's scope
--> Push an override 
---> Provider stack searched in reverse
---> Override stack searched in order
---> Bind acts as an override(!)
-
-action input/output ports are consumers
-
-Associate Providers
-
-# Associating features with methods
-
-# Structs
-
-# Components
-- init
-- associate_down (maybe: available in build?)
-- build
-- associate_up
-- bind / connect
-
-=> Can avoid repeated constructions
-
-Type model
-- Type variants expanded
-- Cut-off evaluation ASAP
-
--> Component is left with
-  - bindmap of associations
-    - claim -> src
-  - bindmap of connections
-  - 
-
-# Actions
-- How 
-- Associate themselves with 0+ components
-<path>.execute(ActionT)
--> 
--> When a type is not valid on a subtree, it is not valid for all members 
-
-# Services
-- Individual connection
-- Specific provider is secondary to the existence of a provider
--> Config is a service
---> Can distribute as needed
--> Config can also be passed down as a const
-
--> Service-provider component
---> Provide access for programmatic build?
---> Need a point where 
---> Have to be 'bottom-up' build
-
-- bind is either p2p or a match pattern
-- 
-
-# Covergroups
+All the code is valid Python that supports static analysis tools such as type checkers.
 
 
-# What about local providers / consumers?
-- assumes 
-- functions support providers as well?
-  - Claims establish local deps
-  - Can roll-up 
-- How to identify? By type handle
-- action
 
-# External API to provider functionality
-- 
+Processing
+==========
 
-# Generative Features
-- Create exec blocks with parameterized co-routines
-- Create sub-components / sub-fields
+Many Zuspec implementations provide something that appears to be a Python object.
+In these cases, the Zuspec-defined class that is the base of the user-defined class
+provides a __new__ implementation that constructs an appropriate implementation object.
+These providers are known as Object Factories, and implement the ObjFactory protocol.
+The base classes obtain the proper ObjFactory implementation via the Config class.
 
-# Profiles
-- Language must define sets of supported features
-  - Synthesizable RTL
-  - Behavioral RTL
-  - Behavioral HVL
-  - Portable TLM
-  - Portable PV
-  - Portable Test
-  - Python
-  - Static/Formal
+This scheme allows Zuspec classes to be created as any other Python class. 
 
-  Run checks in terms of profiles
+Runtime 
+=======
 
-  - A profile is a concept.
-  - Always described in human-readable text
-  - Identified by a class
-  - Class provides a validator
-    - Validate decorated class with respect to its profile (always specific to most-restrictive type)
-    - 
+An implementation of the 'Timebase' class allows methods to synchronize with respect 
+to a simulation time. The time used in 'Timebase' is not a wallclock time, so 
+asyncio.sleep() is never used in a Zuspec description
 
-  - Profiles are composed by 
+
+Datamodel
+=========
+
+Zuspec uses a data model that is a superset, or specialization, of Python. In other
+words, the Zuspec data model can represent the Python language, but also has special
+types that are significant in Zuspec. For example, the data model has a `Component` 
+class that represents a class that inherits from the language-facade `Component` type.
+
+The Zuspec dataclasses package provides a processor that accepts a set of types and
+produces data models that correspond to them.
+
+Fundamentally, the Zuspec datamodel is a type data model.
+
+All type definitions in a datamodel Context have a name corresponding to the qualname 
+of the source type.
+
+The datamodel bind map captures relationships between:
+
+* port and export
+* input and output
+* input and input
+* export API type method and method
+
+port, export, input, and output references are captured as indexed expressions.
+
+.. code-block:: python3
+
+      def __bind__(self): return {
+        i.t : c.t
+      }
+
+For example, the bind from the example above results in a bind map with a single 
+entry has the following type expressions:
+
+* RefFieldIndex(RefFieldIndex(0, RefContext()), 0)
+* RefFieldIndex(RefFieldIndex(1, RefContext()), 0)
+
+
+The datamodel bind map is created by evaluating the __bind__ method and passing
+an object for 'self' that converts references to fields to reference expression 
+data model elements. 

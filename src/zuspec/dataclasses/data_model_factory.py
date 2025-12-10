@@ -1,0 +1,652 @@
+
+from typing import Union, Iterator, Type, get_type_hints, Any, Optional, Protocol
+import dataclasses as dc
+import inspect
+import ast
+from .dm.context import Context
+from .dm.data_type import (
+    DataType, DataTypeInt, DataTypeStruct, DataTypeClass, 
+    DataTypeComponent, DataTypeProtocol, DataTypeRef, DataTypeString,
+    DataTypeLock, Function, Process
+)
+from .dm.fields import Field, FieldKind, Bind
+from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtPass, StmtReturn
+from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, ExprRefField, TypeExprRefSelf, ExprRefPy
+from .types import TypeBase, Component, Lock
+from .decorators import ExecProc
+
+
+def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
+    """Create a dynamic proxy class that can be used to evaluate __bind__ with super() support.
+    
+    The proxy class inherits from the target class's base to support super() calls.
+    """
+    
+    class _BindProxyBase:
+        """Mixin that provides the proxy behavior for capturing field references."""
+        
+        def __new__(cls, *args, **kwargs):
+            # Bypass any custom __new__ from parent classes
+            return object.__new__(cls)
+        
+        def __init__(self, field_indices: dict, field_types: dict, expr: ExprRef = None):
+            object.__setattr__(self, '_field_indices', field_indices)
+            object.__setattr__(self, '_field_types', field_types)
+            object.__setattr__(self, '_expr', expr if expr is not None else TypeExprRefSelf())
+        
+        def __getattribute__(self, name: str):
+            # Handle our internal attributes
+            if name.startswith('_'):
+                return object.__getattribute__(self, name)
+            
+            field_indices = object.__getattribute__(self, '_field_indices')
+            field_types = object.__getattribute__(self, '_field_types')
+            expr = object.__getattribute__(self, '_expr')
+            
+            if name in field_indices:
+                index = field_indices[name]
+                new_expr = ExprRefField(base=expr, index=index)
+                
+                if name in field_types:
+                    hints, field_type = field_types[name]
+                    if field_type is not None and hasattr(field_type, '__dataclass_fields__'):
+                        nested_indices = {}
+                        nested_types = {}
+                        idx = 0
+                        for fname, fval in field_type.__dataclass_fields__.items():
+                            if not fname.startswith('_'):
+                                nested_indices[fname] = idx
+                                try:
+                                    nested_hints = get_type_hints(field_type)
+                                    nested_type = nested_hints.get(fname)
+                                    nested_types[fname] = (nested_hints, nested_type)
+                                except Exception:
+                                    nested_types[fname] = ({}, None)
+                                idx += 1
+                        return _BindProxy(nested_indices, nested_types, new_expr)
+                    elif field_type is not None:
+                        return _BindProxyMethod(new_expr, field_type)
+                
+                return new_expr
+            else:
+                return _ExprRefWrapper(ExprRefPy(base=expr, ref=name))
+        
+        def __hash__(self):
+            expr = object.__getattribute__(self, '_expr')
+            return hash(id(expr))
+        
+        def __eq__(self, other):
+            return self is other
+    
+    # Create a proxy class that inherits from _BindProxyBase and target_cls
+    # This allows super() to work correctly
+    proxy_cls = type(
+        f'_BindProxy_{target_cls.__name__}',
+        (_BindProxyBase, target_cls),
+        {
+            '__new__': _BindProxyBase.__new__,
+            '__init__': _BindProxyBase.__init__,
+            '__getattribute__': _BindProxyBase.__getattribute__,
+        }
+    )
+    
+    return proxy_cls(field_indices, field_types)
+
+
+class _BindProxy:
+    """Proxy object used to capture field references during __bind__ evaluation.
+    
+    When accessing attributes on this proxy, it builds up ExprRefField expressions
+    that capture the path to the referenced field. For example:
+    - self.p becomes ExprRefField(base=TypeExprRefSelf(), index=0) for field p at index 0
+    - self.p.prod becomes ExprRefField(base=ExprRefField(base=TypeExprRefSelf(), index=0), index=0)
+      for field prod at index 0 of type p
+    """
+    def __init__(self, field_indices: dict, field_types: dict, expr: ExprRef = None):
+        # field_indices maps field name -> index
+        # field_types maps field name -> (type hints dict, field type class)
+        object.__setattr__(self, '_field_indices', field_indices)
+        object.__setattr__(self, '_field_types', field_types)
+        object.__setattr__(self, '_expr', expr if expr is not None else TypeExprRefSelf())
+    
+    def __getattr__(self, name: str):
+        field_indices = object.__getattribute__(self, '_field_indices')
+        field_types = object.__getattribute__(self, '_field_types')
+        expr = object.__getattribute__(self, '_expr')
+        
+        if name in field_indices:
+            # Create ExprRefField for this field access
+            index = field_indices[name]
+            new_expr = ExprRefField(base=expr, index=index)
+            
+            # Get the type of this field to enable chained access
+            if name in field_types:
+                hints, field_type = field_types[name]
+                if field_type is not None and hasattr(field_type, '__dataclass_fields__'):
+                    # Build field indices for the nested type, excluding internal fields
+                    nested_indices = {}
+                    nested_types = {}
+                    idx = 0
+                    for fname, fval in field_type.__dataclass_fields__.items():
+                        if not fname.startswith('_'):
+                            nested_indices[fname] = idx
+                            try:
+                                nested_hints = get_type_hints(field_type)
+                                nested_type = nested_hints.get(fname)
+                                nested_types[fname] = (nested_hints, nested_type)
+                            except Exception:
+                                nested_types[fname] = ({}, None)
+                            idx += 1
+                    return _BindProxy(nested_indices, nested_types, new_expr)
+                elif field_type is not None:
+                    # Protocol or other type - allow method references via ExprRefPy
+                    return _BindProxyMethod(new_expr, field_type)
+            
+            return new_expr
+        else:
+            # For method references on self (or unknown attributes), return ExprRefPy wrapped
+            return _ExprRefWrapper(ExprRefPy(base=expr, ref=name))
+    
+    def __hash__(self):
+        # Make proxy hashable so it can be used as dict key
+        expr = object.__getattribute__(self, '_expr')
+        return hash(id(expr))
+    
+    def __eq__(self, other):
+        return self is other
+
+
+class _ExprRefWrapper:
+    """Hashable wrapper for ExprRef that can be used as dict keys."""
+    def __init__(self, expr: ExprRef):
+        object.__setattr__(self, '_expr', expr)
+    
+    def __hash__(self):
+        return hash(id(self))
+    
+    def __eq__(self, other):
+        return self is other
+
+
+class _BindProxyMethod:
+    """Proxy for method references on protocol types."""
+    def __init__(self, base_expr: ExprRef, protocol_type: type):
+        object.__setattr__(self, '_base_expr', base_expr)
+        object.__setattr__(self, '_protocol_type', protocol_type)
+    
+    def __getattr__(self, name: str):
+        base_expr = object.__getattribute__(self, '_base_expr')
+        return _ExprRefWrapper(ExprRefPy(base=base_expr, ref=name))
+    
+    def __hash__(self):
+        base_expr = object.__getattribute__(self, '_base_expr')
+        return hash(id(base_expr))
+    
+    def __eq__(self, other):
+        return self is other
+
+
+class DataModelFactory(object):
+    """Converts Zuspec class types to a data model context containing type-definition data models."""
+
+    def __init__(self):
+        self._context : Context = None
+        self._pending : list = []  # Types pending processing
+        self._processed : set = set()  # Already processed types
+
+    def build(self, 
+              types : Union[Iterator[Type[TypeBase]], Type[TypeBase]]) -> Context:
+        """Build a Context containing data models for the given types."""
+        self._context = Context()
+        self._pending = []
+        self._processed = set()
+        
+        # Handle single type or iterator
+        if isinstance(types, type):
+            types = [types]
+        
+        # Add all input types to pending
+        for t in types:
+            self._add_pending(t)
+        
+        # Process all pending types
+        while self._pending:
+            t = self._pending.pop(0)
+            if t not in self._processed:
+                self._process_type(t)
+                self._processed.add(t)
+        
+        return self._context
+
+    def _add_pending(self, t : Type):
+        """Add a type to the pending list if not already processed."""
+        if t is not None and t not in self._processed and t not in self._pending:
+            self._pending.append(t)
+
+    def _get_type_name(self, t : Type) -> str:
+        """Get the fully qualified name for a type."""
+        if hasattr(t, '__qualname__'):
+            return t.__qualname__
+        return t.__name__
+
+    def _process_type(self, t : Type):
+        """Process a single type and add its data model to the context."""
+        type_name = self._get_type_name(t)
+        
+        # Skip if already in context
+        if type_name in self._context.type_m:
+            return
+        
+        # Determine type kind and process accordingly
+        if self._is_protocol(t):
+            dm = self._process_protocol(t)
+        elif self._is_component(t):
+            dm = self._process_component(t)
+        elif dc.is_dataclass(t):
+            dm = self._process_dataclass(t)
+        else:
+            # Generic class
+            dm = self._process_class(t)
+        
+        if dm is not None:
+            dm.name = type_name
+            dm.py_type = t
+            self._context.type_m[type_name] = dm
+
+    def _is_protocol(self, t : Type) -> bool:
+        """Check if a type is a Protocol."""
+        return (hasattr(t, '__mro__') and 
+                any(getattr(b, '_is_protocol', False) for b in t.__mro__[1:]))
+
+    def _is_component(self, t : Type) -> bool:
+        """Check if a type inherits from Component."""
+        return (hasattr(t, '__mro__') and 
+                Component in t.__mro__ and 
+                t is not Component)
+
+    def _process_protocol(self, t : Type) -> DataTypeProtocol:
+        """Process a Protocol type into DataTypeProtocol."""
+        methods = []
+        
+        # Get method signatures from the protocol
+        for name, member in inspect.getmembers(t):
+            if name.startswith('_'):
+                continue
+            if callable(member) or isinstance(member, property):
+                func = self._extract_function(t, name, member)
+                if func is not None:
+                    methods.append(func)
+        
+        return DataTypeProtocol(methods=methods)
+
+    def _extract_function(self, cls : Type, name : str, member) -> Optional[Function]:
+        """Extract a Function data model from a method."""
+        try:
+            # Get the function object
+            if isinstance(member, property):
+                return None
+            
+            # Try to get signature
+            try:
+                sig = inspect.signature(member)
+            except (ValueError, TypeError):
+                # For abstract methods in protocols, try to get from annotations
+                if hasattr(cls, '__annotations__') and name in cls.__annotations__:
+                    return None
+                return None
+            
+            # Get type hints
+            try:
+                hints = get_type_hints(member)
+            except Exception:
+                hints = {}
+            
+            # Build arguments
+            args_list = []
+            for param_name, param in sig.parameters.items():
+                if param_name == 'self':
+                    continue
+                annotation = hints.get(param_name)
+                arg = Arg(arg=param_name, annotation=self._type_to_expr(annotation))
+                args_list.append(arg)
+            
+            arguments = Arguments(args=args_list)
+            
+            # Get return type
+            return_type = hints.get('return')
+            returns = self._annotation_to_datatype(return_type) if return_type else None
+            
+            # Check if async
+            is_async = inspect.iscoroutinefunction(member)
+            
+            # Get method body (for actual implementations)
+            body = self._extract_method_body(cls, name)
+            
+            return Function(
+                name=name,
+                args=arguments,
+                body=body,
+                returns=returns,
+                is_async=is_async
+            )
+        except Exception:
+            return None
+
+    def _type_to_expr(self, annotation) -> Optional[Any]:
+        """Convert a type annotation to an expression (for now, just store as constant)."""
+        if annotation is None:
+            return None
+        return ExprConstant(value=annotation)
+
+    def _annotation_to_datatype(self, annotation) -> Optional[DataType]:
+        """Convert a type annotation to a DataType."""
+        if annotation is None:
+            return None
+        if annotation is int:
+            return DataTypeInt()
+        if annotation is str:
+            return DataTypeString()
+        # For other types, create a reference
+        if hasattr(annotation, '__name__'):
+            return DataTypeRef(ref_name=annotation.__name__)
+        return None
+
+    def _process_component(self, t : Type) -> DataTypeComponent:
+        """Process a Component type into DataTypeComponent."""
+        # Get superclass data type
+        super_dt = None
+        for base in t.__mro__[1:]:
+            if base is Component:
+                break
+            if self._is_component(base):
+                self._add_pending(base)
+                super_dt = DataTypeRef(ref_name=self._get_type_name(base))
+                break
+        
+        # Process fields
+        fields = self._extract_fields(t)
+        
+        # Process functions (methods and processes)
+        functions = []
+        processes = []
+        
+        # First, find @process decorated methods from class __dict__
+        for name, member in t.__dict__.items():
+            if isinstance(member, ExecProc):
+                proc = self._extract_process(t, name, member)
+                if proc is not None:
+                    processes.append(proc)
+        
+        # Then, find regular methods (excluding those starting with _ except __bind__)
+        for name, member in inspect.getmembers(t):
+            if name.startswith('_') and name != '__bind__':
+                continue
+            
+            # Skip if already processed as a process
+            if isinstance(t.__dict__.get(name), ExecProc):
+                continue
+            
+            if callable(member) and not isinstance(member, type):
+                func = self._extract_function(t, name, member)
+                if func is not None:
+                    functions.append(func)
+        
+        # Extract bind map from __bind__ method
+        bind_map = self._extract_bind_map(t)
+        
+        dm = DataTypeComponent(
+            super=super_dt,
+            fields=fields,
+            functions=functions + processes,
+            bind_map=bind_map
+        )
+        return dm
+
+    def _extract_fields(self, t : Type) -> list:
+        """Extract fields from a dataclass type."""
+        fields = []
+        
+        if not dc.is_dataclass(t):
+            return fields
+        
+        # Get type hints
+        try:
+            hints = get_type_hints(t)
+        except Exception:
+            hints = {}
+        
+        for f in dc.fields(t):
+            # Skip internal fields (except Lock fields which are meaningful)
+            field_type = hints.get(f.name)
+            if f.name.startswith('_'):
+                # Include Lock fields even if they start with _
+                if not (field_type is Lock):
+                    continue
+            
+            # Determine field kind from metadata
+            kind = FieldKind.Field
+            if f.metadata:
+                field_kind = f.metadata.get('kind')
+                if field_kind == 'port':
+                    kind = FieldKind.Port
+                elif field_kind == 'export':
+                    kind = FieldKind.Export
+            
+            # Get field type
+            datatype = self._resolve_field_type(field_type)
+            
+            # Add referenced types to pending
+            if field_type is not None and hasattr(field_type, '__mro__'):
+                if self._is_protocol(field_type) or self._is_component(field_type):
+                    self._add_pending(field_type)
+            
+            field_dm = Field(
+                name=f.name,
+                datatype=datatype,
+                kind=kind
+            )
+            fields.append(field_dm)
+        
+        return fields
+
+    def _resolve_field_type(self, field_type) -> DataType:
+        """Resolve a field type annotation to a DataType."""
+        if field_type is None:
+            return DataType()
+        if field_type is int:
+            return DataTypeInt()
+        if field_type is str:
+            return DataTypeString()
+        if field_type is Lock:
+            return DataTypeLock()
+        if hasattr(field_type, '__name__'):
+            return DataTypeRef(ref_name=field_type.__name__)
+        return DataType()
+
+    def _extract_bind_map(self, t: Type) -> list:
+        """Extract bind map from __bind__ method by evaluating it with a proxy self.
+        
+        The bind map captures connections between ports/exports as ExprRefField expressions.
+        For example, `self.p.prod : self.c.cons` becomes:
+        - lhs: ExprRefField(base=ExprRefField(base=TypeExprRefSelf(), index=0), index=0)
+        - rhs: ExprRefField(base=ExprRefField(base=TypeExprRefSelf(), index=1), index=0)
+        """
+        bind_map = []
+        
+        # Check if __bind__ is defined on this class (not inherited)
+        if '__bind__' not in t.__dict__:
+            return bind_map
+        
+        bind_method = t.__dict__['__bind__']
+        if not callable(bind_method):
+            return bind_map
+        
+        # Build field indices and types for the proxy
+        field_indices = {}
+        field_types = {}
+        
+        if dc.is_dataclass(t):
+            try:
+                hints = get_type_hints(t)
+            except Exception:
+                hints = {}
+            
+            idx = 0
+            for f in dc.fields(t):
+                if f.name.startswith('_'):
+                    continue
+                field_indices[f.name] = idx
+                field_type = hints.get(f.name)
+                field_types[f.name] = (hints, field_type)
+                idx += 1
+        
+        # Create proxy that supports super() calls by inheriting from target class
+        proxy = _create_bind_proxy_class(t, field_indices, field_types)
+        
+        try:
+            result = bind_method(proxy)
+            if result is not None and isinstance(result, dict):
+                for lhs, rhs in result.items():
+                    # Convert proxy results to Bind entries
+                    lhs_expr = self._normalize_bind_expr(lhs)
+                    rhs_expr = self._normalize_bind_expr(rhs)
+                    if lhs_expr is not None and rhs_expr is not None:
+                        bind_map.append(Bind(lhs=lhs_expr, rhs=rhs_expr))
+        except Exception:
+            # If evaluation fails, return empty bind map
+            pass
+        
+        return bind_map
+    
+    def _normalize_bind_expr(self, expr) -> Optional[ExprRef]:
+        """Normalize a bind expression result to an ExprRef."""
+        if isinstance(expr, ExprRef):
+            return expr
+        if isinstance(expr, _BindProxy):
+            return object.__getattribute__(expr, '_expr')
+        if isinstance(expr, _BindProxyMethod):
+            return object.__getattribute__(expr, '_base_expr')
+        if isinstance(expr, _ExprRefWrapper):
+            return object.__getattribute__(expr, '_expr')
+        return None
+
+    def _extract_process(self, cls : Type, name : str, exec_proc : ExecProc) -> Optional[Process]:
+        """Extract a Process from an @process decorated method."""
+        method = exec_proc.method
+        body = self._extract_method_body(cls, method.__name__)
+        
+        return Process(
+            name=method.__name__,
+            body=body
+        )
+
+    def _extract_method_body(self, cls : Type, method_name : str) -> list:
+        """Extract the AST body of a method and convert to data model statements."""
+        try:
+            source = inspect.getsource(cls)
+            tree = ast.parse(source)
+            
+            # Find the class definition
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    # Find the method
+                    for item in node.body:
+                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            if item.name == method_name:
+                                return self._convert_ast_body(item.body)
+        except Exception:
+            pass
+        
+        return []
+
+    def _convert_ast_body(self, body : list) -> list:
+        """Convert AST statement list to data model statements."""
+        stmts = []
+        for node in body:
+            stmt = self._convert_ast_stmt(node)
+            if stmt is not None:
+                stmts.append(stmt)
+        return stmts
+
+    def _convert_ast_stmt(self, node : ast.AST) -> Optional[Stmt]:
+        """Convert an AST statement to a data model statement."""
+        if isinstance(node, ast.Expr):
+            expr = self._convert_ast_expr(node.value)
+            if expr is not None:
+                return StmtExpr(expr=expr)
+        elif isinstance(node, ast.For):
+            return StmtFor(
+                target=self._convert_ast_expr(node.target),
+                iter=self._convert_ast_expr(node.iter),
+                body=self._convert_ast_body(node.body),
+                orelse=self._convert_ast_body(node.orelse)
+            )
+        elif isinstance(node, ast.Assign):
+            return StmtAssign(
+                targets=[self._convert_ast_expr(t) for t in node.targets],
+                value=self._convert_ast_expr(node.value)
+            )
+        elif isinstance(node, ast.Pass):
+            return StmtPass()
+        elif isinstance(node, ast.Return):
+            return StmtReturn(
+                value=self._convert_ast_expr(node.value) if node.value else None
+            )
+        return None
+
+    def _convert_ast_expr(self, node : ast.AST) -> Optional[Any]:
+        """Convert an AST expression to a data model expression."""
+        if node is None:
+            return None
+        
+        if isinstance(node, ast.Call):
+            return ExprCall(
+                func=self._convert_ast_expr(node.func),
+                args=[self._convert_ast_expr(a) for a in node.args]
+            )
+        elif isinstance(node, ast.Attribute):
+            return ExprAttribute(
+                value=self._convert_ast_expr(node.value),
+                attr=node.attr
+            )
+        elif isinstance(node, ast.Name):
+            return ExprConstant(value=node.id)
+        elif isinstance(node, ast.Constant):
+            return ExprConstant(value=node.value)
+        elif isinstance(node, ast.BinOp):
+            return ExprBin(
+                lhs=self._convert_ast_expr(node.left),
+                op=self._convert_binop(node.op),
+                rhs=self._convert_ast_expr(node.right)
+            )
+        elif isinstance(node, ast.Await):
+            # For await expressions, just return the awaited expression
+            return self._convert_ast_expr(node.value)
+        
+        # Fallback: store as constant with the AST node type
+        return ExprConstant(value=f"<{type(node).__name__}>")
+
+    def _convert_binop(self, op : ast.operator) -> BinOp:
+        """Convert AST binary operator to data model BinOp."""
+        op_map = {
+            ast.Add: BinOp.Add,
+            ast.Sub: BinOp.Sub,
+            ast.Mult: BinOp.Mult,
+            ast.Div: BinOp.Div,
+            ast.Mod: BinOp.Mod,
+            ast.BitAnd: BinOp.BitAnd,
+            ast.BitOr: BinOp.BitOr,
+            ast.BitXor: BinOp.BitXor,
+            ast.LShift: BinOp.LShift,
+            ast.RShift: BinOp.RShift,
+        }
+        return op_map.get(type(op), BinOp.Add)
+
+    def _process_dataclass(self, t : Type) -> DataTypeStruct:
+        """Process a dataclass into DataTypeStruct."""
+        fields = self._extract_fields(t)
+        return DataTypeStruct(super=None, fields=fields)
+
+    def _process_class(self, t : Type) -> DataTypeClass:
+        """Process a generic class into DataTypeClass."""
+        return DataTypeClass(super=None, fields=[], functions=[])

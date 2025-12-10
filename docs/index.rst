@@ -14,16 +14,5 @@ hardware - from the transfer-function level down to RTL.
    :caption: Contents:
 
    intro
-   datatypes
-   fields
-   struct
    components
-   actions
-   constraints
-   dependencies
-   profiles
 
-Python to Verilog Transformation
---------------------------------
-
-.. include:: python_to_verilog_diagram.md

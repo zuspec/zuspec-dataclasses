@@ -22,17 +22,12 @@ Docstring for src.zuspec.dataclasses
 
 from asyncio import Event
 from .decorators import (
-    dataclass, field, export, extern, mirror, process, input, output, 
-    sync, const, port, export, bind, Exec, ExecKind, ExecSync, 
-    Input, Output, FSM, ExecState, fsm, binder
+    dataclass, field, process, input, output, 
+    port, export, bind, Exec, ExecKind, ExecProc,
+    Input, Output
 )
 from .types import *
 import zuspec.dm as dm
-from .transformer import DataclassesTransformer
+from .data_model_factory import DataModelFactory
 
-def transform(*args) -> dm.Context:
-    """Accepts one or more class types and returns a datamodel Context."""
-    tr = DataclassesTransformer()
-    tr.process(*args)
-    return tr.result()
 

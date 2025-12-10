@@ -21,11 +21,7 @@ import dataclasses as dc
 import enum
 from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic
 from typing import dataclass_transform
-from .annotation import Annotation, AnnotationSync
 
-
-if TYPE_CHECKING:
-    from .api.type_processor import TypeProcessor
 
 @dataclass_transform()
 def dataclass(cls, **kwargs):
@@ -40,46 +36,7 @@ def dataclass(cls, **kwargs):
 
     cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
-    # setattr(cls_t, "__base_init__", getattr(cls_t, "__init__"))
-    # def local_init(self, tp=None, *args, **kwargs):
-    #     """Only called during type processing"""
-    #     if tp is None:
-    #         raise Exception("Zuspec types cannot be directly constructed")
-
-    #     if not hasattr(tp, "init"):
-    #         raise Exception("Type-processor parameter is missing 'init'")
-
-    #     return tp.init(self, *args, **kwargs)
-    # setattr(cls_t, "__init__", local_init)
-
-    # if not hasattr(cls_t, "__base_new__"):
-    #     setattr(cls_t, "__base_new__", getattr(cls_t, "__new__"))
-    #     def local_new(c, tp=None, *args, **kwargs):
-    #         """Always called during user-object construction"""
-    #         if tp is None:
-    #             raise Exception("Zuspec types cannot be directly constructed")
-    #         return tp.new(c, *args, **kwargs)
-    #     setattr(cls_t, "__new__", local_new)
-
     return cls_t
-
-def bundle():
-    return dc.field()
-
-def mirror():
-    return dc.field()
-
-def monitor():
-    return dc.field()
-
-BindT = TypeVarTuple('BindT')
-
-#class bind(Generic[*BindT]):
-#    """Helper class for specifying binds. Ensures that the parameter
-#     passed to the lambda is identified as the class type
-#    """
-#    def __init__(self, c : Callable[[*BindT],Dict[Any,Any]]):
-#        self._c = c
 
 class bind[Ts,Ti]:
     """Helper class for specifying binds. Ensures that the parameter
@@ -88,44 +45,16 @@ class bind[Ts,Ti]:
     def __init__(self, c : Callable[[Ts,Ti],Dict[Any,Any]]):
         self._c = c
 
-class binder(object):
-    def __init__(self, c : Callable):
-        pass
-
 def field(
         rand=False, 
-        bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
         init : Optional[Union[Dict[str,Any], Callable[[object],Dict[Any,Any]]]] = None,
         default_factory : Optional[Any] = None,
         default : Optional[Any] = None,
         metadata : Optional[Dict[str,object]]=None):
     args = {}
 
-#     # Obtain the location of this call
-#     import inspect
-#     frame = inspect.currentframe()
-#     print("--> ")
-#     while frame is not None:
-#         modname = frame.f_globals["__name__"]
-
-#         print("modname: %s" % modname)
-#         if not modname.startswith("zuspec.dataclasses") and not modname.startswith("importlib"):
-#             break
-# #            pass
-# #            frame = frame.f_back
-#         else:
-#             frame = frame.f_back
-#     print("<-- ")
-
-#     if frame is not None:
-#         print("Location: %s:%d" % (frame.f_code.co_filename, frame.f_lineno))
-
     if default_factory is not None:
         args["default_factory"] = default_factory
-
-    if bind is not None:
-        metadata = {} if metadata is None else metadata
-        metadata["bind"] = bind
 
     # *Always* specify a default to avoid becoming a required field
     if "default_factory" not in args.keys():
@@ -134,20 +63,9 @@ def field(
     if metadata is not None:
         print("metadata: %s" % metadata)
         args["metadata"] = metadata
+
     return dc.field(**args)
     
-    # @staticmethod
-    # def __call__(rand=False, bind : Callable[[T],Dict[Any,Any]] = None):
-    #     pass
-
-    # """
-    # Marks a plain data field
-    # - rand -- Marks the field as being randomizable
-    # - 
-    # """
-    # # TODO: 
-    # return dc.field()
-
 class Input(object): 
     """Marker type for 'input' dataclass fields"""
     ...
@@ -174,16 +92,16 @@ def output(*args, **kwargs):
     """
     return dc.field(default_factory=Output)
 
-def lock(*args, **kwargs):
-    return dc.field(default_factory=Lock)
-
-def share(*args, **kwargs):
-    return dc.field(default_factory=Share)
-
 def port():
+    """A 'port' field is an API consumer. It must be bound
+    to a matching 'export' field that provides an implementation
+    of the API"""
     return dc.field(init=False, metadata={"kind": "port"})
 
-def export(*args, bind=None, **kwargs):
+def export():
+    """An 'export' field is an API provider. It must be bound
+    to implementations of the API class -- either per method 
+    or on a whole-class basis."""
     return dc.field(init=False, metadata={"kind": "export"})
 
 class ExecKind(enum.Enum):
@@ -198,107 +116,15 @@ class Exec(object):
 #    timebase : Optional[Callable] = field(default=None)
 #    t : Optional[Callable] = field(default=None)
 
-def extern(
-    typename,
-    bind,
-    files=None,
-    params=None):
-    """
-    Denotes an instance of an external module
-    """
-    from .struct import Extern
-    return dc.field(default_factory=Extern,
-                    metadata=dict(
-                        typename=typename,
-                        bind=bind,
-                        files=files,
-                        params=params))
-
 class ExecProc(Exec): pass
 
 def process(T):
     """
     Marks an always-running process. The specified
-    method must be `async` and take no arguments
+    method must be `async` and take no arguments. The
+    process is started when the component containing 
+    it begins to run.
     """
     # Datamodel Mapping
     return ExecProc(T)
 
-def reg(offset=0):
-    return dc.field()
-    pass
-
-def const(default=None):
-    return dc.field()
-
-@dc.dataclass
-class ExecSync(Exec):
-    clock : Optional[Callable] = field(default=None)
-    reset : Optional[Callable] = field(default=None)
-
-def sync(clock : Callable, reset : Callable):
-    """
-    Marks a synchronous-evaluation region, which is evaluated on 
-    the active edge of either the clock or reset.
-
-    The semantics of a `sync` method differ from native Python.
-    Assignments are delayed/nonblocking: they only take effect after
-    evaluation of the method completes. If a variable is assigned multiple times
-    within a sync method, only the last assignment to that variable in the method
-    is applied for that cycle. Earlier assignments are ignored. Augmented
-    assignments (eg +=) are treated the same as regular assignments.
-
-    @zdc.sync
-    def _update(self):
-      self.val1 = self.val1 + 1
-      self.val1 = self.val1 + 1
-      self.val2 += 1
-      self.val2 += 1
-
-    In the example above, both val1 and val2 will only be increased by one
-    each time _update is evaluated.
-    """
-    def __call__(T):
-        return ExecSync(method=T, clock=clock, reset=reset)
-    return __call__
-
-def comb(latch : bool=False):
-    """
-    Marks a combinational evaluation region that is evaluated 
-    whenever one of the variables read by the method changes.
-    """
-    def __call__(T):
-        return Exec(method=T, kind=ExecKind.Comb, )
-    return __call__
-
-@dc.dataclass
-class ExecState(Exec): pass
-
-class FSM(object):
-    """Declares a method-based FSM"""
-    state : ExecState = field(default_factory=ExecState)
-
-class fsm(object):
-
-    def __new__(cls, 
-                 initial : ExecState,
-                 clock : Optional[Callable] = None,
-                 reset : Optional[Callable] = None) -> dc.Field:
-        """Defines the parameters of an FSM field"""
-        return dc.field(
-            metadata=dict(initial=initial, clock=clock, reset=reset),
-            default_factory=FSM)
-
-    @staticmethod
-    def state(T):
-        """Decorates an FSM state method. A state method is automatically
-        invoked on an active clock edge when the state machine that this
-        method is a member of is in the appropriate state. FSM state 
-        methods are non-blocking assignment regions just like sync exec blocks.
-        State methods cannot be called directly"""
-        return ExecState(method=T)
-
-
-def constraint(T):
-    setattr(T, "__constraint__", True)
-    return T

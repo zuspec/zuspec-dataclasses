@@ -16,7 +16,8 @@
 from __future__ import annotations
 import abc
 import dataclasses as dc
-from typing import Dict, Generic, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any
+import enum
+from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any
 from .decorators import dataclass, field
 
 @dc.dataclass
@@ -40,52 +41,60 @@ class U(SignWidth):
         # signed for U types is always False
         self.signed = False
 
-@dataclass
-class Bundle(TypeBase):
-    """
-    A bundle type collects one or more ports, exports,
-    inputs, outputs, or bundles. 
+class TimeUnit(enum.IntEnum):
+    S = 1
+    MS = -3
+    US = -6
+    NS = -9
+    PS = -12
+    FS = -15
 
-    Bundle fields are created with field(). Bundle-mirror
-    fields are created with mirror() or field(mirror=True)
-    Bundle-monitor fields are created with monitor() or
-    field(monitor=True)
+@dc.dataclass
+class Time(object):
+    unit : TimeUnit = dc.field()
+    amt : float = dc.field()
+    _delta : ClassVar = None
 
-    A bundle field can be connected to a mirror field. 
-    A bundle monitor field can be connected to both a 
-    bundle and a bundle mirror.
-    - Bundle
-    - Bundle Mirror
-    - Bundle Monitor (all are inputs / exports)
-    """
-    pass
+    @classmethod
+    def delta(cls):
+        if cls._delta is None:
+            cls._delta = Time(TimeUnit.S, 0)
+        return cls._delta
 
-@dataclass
-class StructPacked(TypeBase):
-    """
-    StructPacked types are fixed-size data structures. 
-    Fields may only be of a fixed size. 
+    @classmethod
+    def s(cls, amt : float):
+        return Time(TimeUnit.S, amt)
 
-    Valid sub-regions
-    - constraint
-    - pre_solve / post_solve
-    """
-    pass
+    @classmethod
+    def ms(cls, amt : float):
+        return Time(TimeUnit.MS, amt)
 
-@dataclass
-class Struct(TypeBase):
-    """
-    Struct types 
-    variable-size fields. 
+    @classmethod
+    def us(cls, amt : float):
+        return Time(TimeUnit.US, amt)
 
-    Valid sub-regions
-    - constraint
-    - pre_solve / post_solve
-    - method
-    """
+    @classmethod
+    def ns(cls, amt : float):
+        return Time(TimeUnit.NS, amt)
+
+    @classmethod
+    def ps(cls, amt : float):
+        return Time(TimeUnit.PS, amt)
+
+    @classmethod
+    def fs(cls, amt : float):
+        return Time(TimeUnit.FS, amt)
 
 class Timebase(Protocol):
-    async def wait(self, amt : float, units : int = 0): ...
+    async def wait(self, amt : Optional[Time] = None): 
+        """Suspends the calling coroutine until the specified
+        time has elapsed (None==delta)
+        """
+        ...
+
+    def after(self, amt : Optional[Time], call : Callable): 
+        """Schedules 'call' to be invoke at 'amt' in the future"""
+        ...
 
 
 class CompImpl(Protocol):
@@ -98,9 +107,11 @@ class CompImpl(Protocol):
 
     def timebase(self) -> Timebase: ... 
 
+    def shutdown(self): ...
+
 
 @dc.dataclass
-class Component(object):
+class Component(TypeBase):
     """
     Component classes are structural in nature. 
     The lifecycle of a component tree is as follows:
@@ -119,12 +130,14 @@ class Component(object):
     _impl : Optional[CompImpl] = dc.field(default=None)
 
     def __post_init__(self):
-        print("--> __post_init__ %s" % str(type(self)))
-        print("  impl: %s" % str(self._impl))
-#        self._impl.post_init(self)
-        print("<-- __post_init__")
-#        assert self._impl is not None
-#        self._impl.post_init(self)
+        # _impl may be None during initial construction; post_init
+        # will be called later by __comp_build__
+        if self._impl is not None:
+            self._impl.post_init(self)
+
+    def shutdown(self):
+        assert self._impl is not None
+        self._impl.shutdown()
 
     @property
     def name(self) -> str:
@@ -139,21 +152,96 @@ class Component(object):
     def __bind__(self) -> Optional[Dict]: 
         pass
 
-    async def wait(self, amt : float, units : int = 0):
+    async def wait(self, amt : Time = None):
         """
         Uses the default timebase to suspend execution of the
         calling coroutine for the specified time.
+        
+        When called and simulation is not already running, this also 
+        drives the simulation forward.
         """
         assert self._impl is not None
-#        await self._impl.timebase().wait(20, 0)
-        pass
+        tb = self._impl.timebase()
+        
+        if not tb._running:
+            # Simulation not running: find root and drive simulation
+            root = self
+            while root._impl.parent is not None:
+                root = root._impl.parent
+            root._impl.start_all_processes(root)
+            await tb.run_until(amt)
+        else:
+            # Inside simulation: just wait for the specified time
+            await tb.wait(amt)
 
     def __new__(cls, **kwargs):
         from .config import Config
         if "_impl" not in kwargs.keys():
             ret = Config.inst().factory.mkComponent(cls, **kwargs)
         else:
-            ret = super().__new__(cls)
+            ret = object.__new__(cls)
         return ret
+
+class Pool[T,Tc](Protocol):
+
+    @property
+    def selector(self) -> Callable[[List[T]], int]:  ...
+
+    @selector.setter
+    def selector(self, s : Callable[[List[T]], int]) -> None: ...
+
+    def match(self, c : Tc, m : Callable[[T], bool]) -> int: ...
+
+    def add(self, t : T): ...
+
+    def get(self, i : int) -> T: ...
+
+
+class ClaimPool[T,Tc](Pool[T,Tc]):
+
+    @abc.abstractmethod
+    def lock(self, i : int) -> T: 
+        """Acquires the specified object for read-write access"""
+        ...
+
+    @abc.abstractmethod
+    def share(self, i : int) -> T: 
+        """Acquires the specified object for read-only access"""
+        ...
+
+    def drop(self, i : int): ...
+
+    pass
+
+
+class Lock:
+    """A mutex lock for coordinating access to shared resources.
+    
+    This is a zuspec-aware wrapper around asyncio.Lock that can be
+    used in component fields and is properly handled by the data model.
+    """
+    def __init__(self):
+        import asyncio
+        self._lock = asyncio.Lock()
+    
+    async def acquire(self):
+        """Acquire the lock. Blocks until the lock is available."""
+        await self._lock.acquire()
+    
+    def release(self):
+        """Release the lock."""
+        self._lock.release()
+    
+    def locked(self) -> bool:
+        """Return True if the lock is currently held."""
+        return self._lock.locked()
+    
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+        return False
 
 

@@ -20,6 +20,7 @@ def profile(modname, super=None):
 from .base import Base, BaseP
 from .context import Context
 from .visitor import Visitor
+from .json_converter import JsonConverter
 
 @dataclass_transform()
 def visitor_dataclass(pmod, *args, **kwargs):
@@ -37,13 +38,20 @@ def visitor(pmod, *args, **kwargs):
         return T
     return closure
 
+def json_converter(pmod, *args, **kwargs):
+    """Decorator for JsonConverter class"""
+    def closure(T):
+        setattr(T, "__new__", lambda cls,pmod=pmod: JsonConverter.__new__(cls,pmod))
+        return T
+    return closure
 
 
 # Re-export data model types
-from .fields import Bind, BindSet, Field, FieldInOut
+from .fields import Bind, BindSet, Field, FieldInOut, FieldKind
 from .data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent,
-    DataTypeExpr, DataTypeEnum, DataTypeString
+    DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeProtocol, DataTypeRef,
+    Function, Process
 )
 from .expr import (
     Expr, BinOp, UnaryOp, BoolOp, CmpOp, AugOp,
@@ -64,10 +72,11 @@ from .stmt import (
 )
 
 __all__ = [
-    "profile","Base","BaseP","Visitor",
-    "Bind","BindSet","Field","FieldInOut",
+    "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
+    "Bind","BindSet","Field","FieldInOut","FieldKind",
     "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent",
-    "DataTypeExpr","DataTypeEnum","DataTypeString",
+    "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeProtocol","DataTypeRef",
+    "Function","Process",
     "Expr","BinOp","UnaryOp","BoolOp","CmpOp","AugOp","ExprBin","ExprRef","ExprConstant",
     "TypeExprRefSelf","ExprRefField","ExprRefPy","ExprRefBottomUp","ExprUnary",
     "ExprBool","ExprCompare","ExprAttribute","ExprSlice","ExprSubscript","ExprCall","Keyword",
@@ -83,4 +92,5 @@ __all__ = [
 # Important to place after all data-model classes have been imported
 profile(__name__)
 
-from . import fe
+# Note: 'fe' module is only available in the base zuspec.dm package, not zuspec.dataclasses.dm
+# from . import fe
