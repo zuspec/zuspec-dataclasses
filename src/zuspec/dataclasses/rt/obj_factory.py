@@ -161,7 +161,7 @@ class ObjFactory(ObjFactoryP):
                                 break
                 
                 # Create the runtime register instance
-                reg_rt = RegRT(_value=0, _width=width)
+                reg_rt = RegRT(_value=0, _width=width, _element_type=element_type)
                 
                 # Add register to regfile
                 regfile_rt.add_register(reg_field.name, reg_rt, offset)
@@ -337,7 +337,7 @@ class ObjFactory(ObjFactoryP):
                                         break
                         
                         # Create the runtime register instance
-                        reg_rt = RegRT(_value=0, _width=width)
+                        reg_rt = RegRT(_value=0, _width=width, _element_type=element_type)
                         
                         # Add register to regfile
                         regfile_rt.add_register(reg_field.name, reg_rt, offset)

@@ -14,10 +14,56 @@
 # limitations under the License.
 #****************************************************************************
 from __future__ import annotations
-from typing import TypeVar, Generic, Dict
+from typing import TypeVar, Generic, Dict, Type, Optional, get_args
 import dataclasses as dc
 
 T = TypeVar('T')
+
+def unpack_int_to_struct(value: int, struct_type: Type) -> object:
+    """Unpack an integer value into a packed struct instance.
+    
+    Args:
+        value: Integer value containing packed fields
+        struct_type: The PackedStruct type to unpack into
+        
+    Returns:
+        An instance of struct_type with fields extracted from value
+    """
+    from ..types import U, S
+    
+    # Create instance using object.__new__ to bypass TypeBase.__new__
+    instance = object.__new__(struct_type)
+    
+    # Get all fields and extract their bit values
+    bit_offset = 0
+    
+    for field in dc.fields(struct_type):
+        # Get field width from metadata
+        width = 32  # default
+        field_type = field.type
+        
+        # Check if type has __metadata__ (for Annotated types)
+        if hasattr(field_type, '__metadata__'):
+            for item in field_type.__metadata__:
+                if isinstance(item, (U, S)):
+                    width = item.width
+                    break
+        # Check for get_args (for newer style annotations)
+        elif hasattr(field_type, '__args__'):
+            args = get_args(field_type)
+            if args:
+                for item in args:
+                    if isinstance(item, (U, S)):
+                        width = item.width
+                        break
+        
+        # Extract the field value from the packed integer
+        mask = (1 << width) - 1
+        field_value = (value >> bit_offset) & mask
+        setattr(instance, field.name, field_value)
+        bit_offset += width
+    
+    return instance
 
 @dc.dataclass
 class RegRT(Generic[T]):
@@ -27,21 +73,61 @@ class RegRT(Generic[T]):
     """
     _value: int = dc.field(default=0)
     _width: int = dc.field(default=32)
+    _element_type: Optional[Type] = dc.field(default=None)
     
     async def read(self) -> T:
         """Read the register value.
         
         Returns:
-            The current register value
+            The current register value (unpacked if element_type is a PackedStruct)
         """
+        from ..types import PackedStruct
+        import inspect
+        
+        # If element type is a PackedStruct, unpack the value
+        if self._element_type is not None and inspect.isclass(self._element_type) and issubclass(self._element_type, PackedStruct):
+            return unpack_int_to_struct(self._value, self._element_type)
+        
         return self._value
     
     async def write(self, val: T) -> None:
         """Write the register value.
         
         Args:
-            val: Value to write
+            val: Value to write (can be int or PackedStruct)
         """
+        from ..types import PackedStruct
+        
+        # If val is a PackedStruct, convert it to int
+        if isinstance(val, PackedStruct):
+            # Pack the struct fields into an integer
+            int_val = 0
+            bit_offset = 0
+            
+            for field in dc.fields(type(val)):
+                field_value = getattr(val, field.name)
+                int_val |= (field_value << bit_offset)
+                
+                # Get field width
+                from ..types import U, S
+                width = 32
+                field_type = field.type
+                if hasattr(field_type, '__metadata__'):
+                    for item in field_type.__metadata__:
+                        if isinstance(item, (U, S)):
+                            width = item.width
+                            break
+                elif hasattr(field_type, '__args__'):
+                    args = get_args(field_type)
+                    if args:
+                        for item in args:
+                            if isinstance(item, (U, S)):
+                                width = item.width
+                                break
+                
+                bit_offset += width
+            val = int_val
+        
         if self._width < 64:
             mask = (1 << self._width) - 1
             self._value = val & mask
