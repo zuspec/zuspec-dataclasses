@@ -17,7 +17,7 @@ from __future__ import annotations
 import abc
 import dataclasses as dc
 import enum
-from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any
+from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple
 from .decorators import dataclass, field
 
 @dc.dataclass
@@ -31,6 +31,14 @@ class TypeBase(object):
 class SignWidth(object):
     width : int = dc.field()
     signed : bool = dc.field(default=True)
+
+# class SignedWidthMeta(type):
+
+#     def __new__(cls, *args, **kwargs):
+#         pass
+
+#     def __getitem__(self, v):
+#         pass
 
 @dc.dataclass
 class S(SignWidth): pass
@@ -85,6 +93,17 @@ class Time(object):
     def fs(cls, amt : float):
         return Time(TimeUnit.FS, amt)
 
+    def __str__(self) -> str:
+        unit_str = {
+            TimeUnit.S: 's',
+            TimeUnit.MS: 'ms',
+            TimeUnit.US: 'us',
+            TimeUnit.NS: 'ns',
+            TimeUnit.PS: 'ps',
+            TimeUnit.FS: 'fs'
+        }
+        return f"{self.amt}{unit_str[self.unit]}"
+
 class Timebase(Protocol):
     async def wait(self, amt : Optional[Time] = None): 
         """Suspends the calling coroutine until the specified
@@ -94,6 +113,10 @@ class Timebase(Protocol):
 
     def after(self, amt : Optional[Time], call : Callable): 
         """Schedules 'call' to be invoke at 'amt' in the future"""
+        ...
+
+    def time(self) -> Time: 
+        """Returns the current time"""
         ...
 
 
@@ -108,6 +131,17 @@ class CompImpl(Protocol):
     def timebase(self) -> Timebase: ... 
 
     def shutdown(self): ...
+
+    async def wait(self, comp: Component, amt: Time = None): ...
+
+    def time(self) -> Time: ...
+
+class PackedStruct(TypeBase,SupportsInt):
+
+    def __int__(self) -> int:
+        return 5
+
+    pass
 
 
 @dc.dataclass
@@ -161,18 +195,12 @@ class Component(TypeBase):
         drives the simulation forward.
         """
         assert self._impl is not None
-        tb = self._impl.timebase()
-        
-        if not tb._running:
-            # Simulation not running: find root and drive simulation
-            root = self
-            while root._impl.parent is not None:
-                root = root._impl.parent
-            root._impl.start_all_processes(root)
-            await tb.run_until(amt)
-        else:
-            # Inside simulation: just wait for the specified time
-            await tb.wait(amt)
+        await self._impl.wait(self, amt)
+
+    def time(self) -> Time: 
+        """Returns the current time"""
+        assert self._impl is not None
+        return self._impl.time()
 
     def __new__(cls, **kwargs):
         from .config import Config
@@ -243,5 +271,109 @@ class Lock:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self.release()
         return False
+
+uint1_t = Annotated[int, U(1)]
+uint2_t = Annotated[int, U(2)]
+uint3_t = Annotated[int, U(3)]
+uint4_t = Annotated[int, U(4)]
+uint5_t = Annotated[int, U(5)]
+uint6_t = Annotated[int, U(6)]
+uint7_t = Annotated[int, U(7)]
+uint8_t = Annotated[int, U(8)]
+uint16_t = Annotated[int, U(16)]
+uint32_t = Annotated[int, U(32)]
+uint64_t = Annotated[int, U(64)]
+
+int8_t = Annotated[int, S(8)]
+int16_t = Annotated[int, S(16)]
+int32_t = Annotated[int, S(32)]
+int64_t = Annotated[int, S(64)]
+
+class MyE(enum.IntEnum):
+    a = 1
+    b = 2
+
+width = Annotated[MyE, U(16)]
+
+class RegFile(TypeBase):
+    regwidth : Optional[int] = None
+
+    async def when(self, regs : List[Reg], cond: Callable[[List],bool]):
+        """Performs a multi-register conditioned wait. A list of register 
+        values is passed to the callable
+        """
+        ...
+
+    def __new__(cls, **kwargs):
+        from .config import Config
+        ret = Config.inst().factory.mkRegFile(cls, **kwargs)
+        return ret
+
+class Reg[T](TypeBase):
+
+    async def read(self) -> T: ...
+
+    async def write(self, val : T): ...
+
+    async def when(self, cond : Callable[[T],bool]): 
+        """Performs a single-register conditioned wait."""
+        ...
+
+class RegFifo[T]():
+
+    async def read(self) -> T:
+        pass
+
+
+class Memory[T](TypeBase):
+
+    # APIs for memory owner to use -- provides direct memory access
+    def read(self, addr : int) -> T:
+        """Read a value from the memory at the specified address"""
+        pass
+
+    def write(self, addr : int, data : T):
+        """Write a value to the memory at the specified address"""
+        pass
+
+class MemIF(Protocol):
+
+    async def read8(self, addr : int) -> uint8_t: ...
+
+    async def read16(self, addr : int) -> uint16_t: ...
+
+    async def read32(self, addr : int) -> uint32_t: ...
+
+    async def read64(self, addr : int) -> uint64_t: ...
+
+    async def write8(self, addr : int, data : uint8_t): ...
+
+    async def write16(self, addr : int, data : uint16_t): ...
+
+    async def write32(self, addr : int, data : uint32_t): ...
+
+@dc.dataclass
+class At(object):
+    """Locates an element at a specific offset"""
+    offset : int = dc.field()
+    element : Union[RegFile, Memory,AddressSpace] = dc.field()
+
+# Note: Need some 'swizzle' classes to specify width and alignment
+# conversion
+
+class AddrHandle(MemIF):
+      pass
+
+@dc.dataclass
+class AddressSpace(object):
+    """Software-centric view of memory"""
+
+    # mmap specifies the memory maps that compose this
+    # address space. mmap is specified using bind.
+    # 
+    mmap : Tuple[Union[At,RegFile,AddressSpace]] = dc.field()
+
+    # Handle to the base of the address space
+    base : AddrHandle = dc.field()
 
 

@@ -50,7 +50,8 @@ def field(
         init : Optional[Union[Dict[str,Any], Callable[[object],Dict[Any,Any]]]] = None,
         default_factory : Optional[Any] = None,
         default : Optional[Any] = None,
-        metadata : Optional[Dict[str,object]]=None):
+        metadata : Optional[Dict[str,object]]=None,
+        size : Optional[int]=None):
     args = {}
 
     if default_factory is not None:
@@ -59,9 +60,12 @@ def field(
     # *Always* specify a default to avoid becoming a required field
     if "default_factory" not in args.keys():
         args["default"] = default
+    
+    if size is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["size"] = size
 
     if metadata is not None:
-        print("metadata: %s" % metadata)
         args["metadata"] = metadata
 
     return dc.field(**args)

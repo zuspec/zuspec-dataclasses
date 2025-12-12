@@ -82,7 +82,7 @@ class Timebase(TimebaseP):
 
     async def run_until(self, amt: Time):
         """Run simulation until specified time, then return."""
-        end_time = self._time_to_fs(amt)
+        end_time = self._current_time + self._time_to_fs(amt)
         self._running = True
         
         while self._running:
@@ -114,4 +114,8 @@ class Timebase(TimebaseP):
     def current_time(self) -> int:
         """Current simulation time in femtoseconds."""
         return self._current_time
+    
+    def time(self) -> Time:
+        """Returns the current time in nanoseconds."""
+        return Time(TimeUnit.NS, self._current_time / 10**6)
     

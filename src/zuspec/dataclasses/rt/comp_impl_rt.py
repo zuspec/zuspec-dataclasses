@@ -94,4 +94,32 @@ class CompImplRT(object):
                 task.cancel()
         self._tasks.clear()
 
+    async def wait(self, comp: Component, amt = None):
+        """
+        Uses the default timebase to suspend execution of the
+        calling coroutine for the specified time.
+        
+        When called and simulation is not already running, this also 
+        drives the simulation forward.
+        """
+        from ..types import Time
+        tb = self.timebase()
+        
+        if not tb._running:
+            # Simulation not running: find root and drive simulation
+            root = comp
+            while root._impl.parent is not None:
+                root = root._impl.parent
+            root._impl.start_all_processes(root)
+            await tb.run_until(amt)
+        else:
+            # Inside simulation: just wait for the specified time
+            await tb.wait(amt)
+
+    def time(self):
+        """Returns the current time"""
+        from ..types import Time
+        tb = self.timebase()
+        return tb.time()
+
     pass

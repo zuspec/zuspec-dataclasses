@@ -1,12 +1,15 @@
 from __future__ import annotations
 import dataclasses as dc
 import inspect
-from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple
+from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args
 from ..config import ObjFactory as ObjFactoryP
 from ..decorators import ExecProc
-from ..types import Component, Lock
+from ..types import Component, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
 from .comp_impl_rt import CompImplRT
 from .timebase import Timebase
+from .memory_rt import MemoryRT
+from .address_space_rt import AddressSpaceRT
+from .regfile_rt import RegFileRT, RegRT
 
 class BindPath:
     """Represents a path in the binding system (e.g., self.cons.call or self.p.prod)"""
@@ -53,7 +56,6 @@ class ObjFactory(ObjFactoryP):
         return cls._inst
 
     def mkComponent(self, cls : Type[Component], **kwargs) -> Component:
-        print("mkComponent: %s" % cls.__qualname__)
         if cls in self.comp_type_m.keys():
             cls_rt = self.comp_type_m[cls]
         else:
@@ -65,20 +67,43 @@ class ObjFactory(ObjFactoryP):
 
             field_names = set()
             for f in dc.fields(cls):
-                print("Src Field: %s" % f.name)
-                if inspect.isclass(f.type):
-                    if issubclass(f.type, Component):
-                        print("Component instance %s" % str(f.default_factory))
+                field_type = f.type
+                origin = get_origin(field_type)
+                
+                # Check if this is a Memory field
+                if origin is not None and origin is Memory:
+                    # Memory fields will be initialized in __comp_build__
+                    # Store the original type in metadata for later use
+                    metadata = dict(f.metadata) if f.metadata else {}
+                    metadata['__memory_type__'] = field_type
+                    fields.append((f.name, object, dc.field(
+                        default=None,
+                        metadata=metadata)))
+                elif inspect.isclass(field_type):
+                    if issubclass(field_type, Component):
                         if f.default_factory is dc.MISSING:
-                            fields.append((f.name, f.type, dc.field(default_factory=f.type)))
+                            fields.append((f.name, field_type, dc.field(default_factory=field_type)))
                         # Re-author to ensure construction is proper
-                    elif issubclass(f.type, Lock):
+                    elif issubclass(field_type, AddressSpace):
+                        # AddressSpace fields will be initialized in __comp_build__
+                        # Store the original type in metadata for later use
+                        metadata = dict(f.metadata) if f.metadata else {}
+                        metadata['__aspace_type__'] = field_type
+                        fields.append((f.name, object, dc.field(
+                            default=None,
+                            metadata=metadata)))
+                    elif issubclass(field_type, Lock):
                         # Lock fields get auto-constructed
-                        print("Lock field: %s" % f.name)
-                        fields.append((f.name, f.type, dc.field(default_factory=Lock)))
+                        fields.append((f.name, field_type, dc.field(default_factory=Lock)))
+                    elif issubclass(field_type, RegFile):
+                        # RegFile fields will be initialized in __comp_build__
+                        metadata = dict(f.metadata) if f.metadata else {}
+                        metadata['__regfile_type__'] = field_type
+                        fields.append((f.name, object, dc.field(
+                            default=None,
+                            metadata=metadata)))
                     elif not f.init:
-                        print("Stub field")
-                        fields.append((f.name, f.type, dc.field(
+                        fields.append((f.name, field_type, dc.field(
                             default=None,
                             metadata=f.metadata)))
             # TODO: Copy over 
@@ -108,13 +133,53 @@ class ObjFactory(ObjFactoryP):
         
         return cast(Component, comp)
 
+    def mkRegFile(self, cls : Type[RegFile], **kwargs) -> RegFile:
+        """Create a standalone RegFile instance."""
+        # Create the runtime regfile instance
+        regfile_rt = RegFileRT()
+        
+        # Iterate through the RegFile's fields to create individual registers
+        offset = 0
+        for reg_field in dc.fields(cls):
+            reg_field_type = reg_field.type
+            reg_origin = get_origin(reg_field_type)
+            
+            # Check if this is a Reg field
+            if reg_origin is not None and reg_origin is Reg:
+                # Get the element type from the generic parameter
+                args = get_args(reg_field_type)
+                element_type = args[0] if args else int
+                
+                # Extract width from the element type
+                width = 32  # default
+                if hasattr(element_type, '__metadata__'):
+                    metadata = element_type.__metadata__
+                    if metadata:
+                        for item in metadata:
+                            if isinstance(item, (U, S)):
+                                width = item.width
+                                break
+                
+                # Create the runtime register instance
+                reg_rt = RegRT(_value=0, _width=width)
+                
+                # Add register to regfile
+                regfile_rt.add_register(reg_field.name, reg_rt, offset)
+                
+                # Create a property-like object that allows access to the register
+                setattr(regfile_rt, reg_field.name, reg_rt)
+                
+                # Advance offset (assuming 32-bit registers aligned on 4-byte boundaries)
+                offset += 4
+        
+        return cast(RegFile, regfile_rt)
+
     @staticmethod 
     def __comp_init__(comp, *args, **kwargs):
         """Wrapper around component __init__. Allows the 
         factory to elaborate the component tree
         """
         self = ObjFactory.inst()
-        print("--> comp_init__ %d" % len(self.comp_s))
         
         # Extract port bindings from kwargs (fields with "port" metadata)
         port_bindings = {}
@@ -138,8 +203,6 @@ class ObjFactory(ObjFactoryP):
             # Note: Processes are started lazily when the simulation runs,
             # not during construction (no event loop available yet)
 
-        print("<-- __comp_init__ %d" % len(self.comp_s))
-
     @staticmethod
     def __comp_build__(comp, parent, name, timebase: Timebase, port_bindings: Dict[str, Any] = None):
         comp._impl = CompImplRT(_factory=None, _name=name, _parent=parent)
@@ -157,10 +220,17 @@ class ObjFactory(ObjFactoryP):
         # Build child components first (bottom-up)
         for f in dc.fields(comp):
             fo = getattr(comp, f.name)
-            print("name: %s" % f.name)
             if isinstance(fo, Component):
-                print("Component")
                 ObjFactory.__comp_build__(fo, comp, f.name, timebase)
+        
+        # Initialize Memory fields
+        ObjFactory.__init_memory_fields__(comp)
+        
+        # Initialize RegFile fields
+        ObjFactory.__init_regfile_fields__(comp)
+        
+        # Initialize AddressSpace fields
+        ObjFactory.__init_address_space_fields__(comp)
         
         # Apply port bindings provided at construction (for top-level ports)
         if port_bindings:
@@ -186,6 +256,102 @@ class ObjFactory(ObjFactoryP):
                 ObjFactory.__apply_bindmap__(comp, bindmap)
 
     @staticmethod
+    def __init_memory_fields__(comp):
+        """Initialize Memory fields with their runtime implementations."""
+        for f in dc.fields(comp):
+            # Check if this field has Memory type info stored in metadata
+            if f.metadata and '__memory_type__' in f.metadata:
+                field_type = f.metadata['__memory_type__']
+                
+                # Get the element type from the generic parameter
+                args = get_args(field_type)
+                element_type = args[0] if args else int
+                
+                # Extract width from the element type
+                width = 32  # default
+                if hasattr(element_type, '__metadata__'):
+                    metadata = element_type.__metadata__
+                    if metadata:
+                        for item in metadata:
+                            if isinstance(item, (U, S)):
+                                width = item.width
+                                break
+                
+                # Get size from field metadata
+                size = 1024  # default
+                if f.metadata and 'size' in f.metadata:
+                    size = f.metadata['size']
+                
+                # Create the runtime memory instance
+                mem_rt = MemoryRT(
+                    _size=size,
+                    _element_type=element_type,
+                    _width=width
+                )
+                
+                # Set the field value to the runtime instance
+                setattr(comp, f.name, mem_rt)
+
+    @staticmethod
+    def __init_address_space_fields__(comp):
+        """Initialize AddressSpace fields with their runtime implementations."""
+        for f in dc.fields(comp):
+            # Check if this field has AddressSpace type info stored in metadata
+            if f.metadata and '__aspace_type__' in f.metadata:
+                # Create the runtime address space instance
+                aspace_rt = AddressSpaceRT()
+                # Set the field value to the runtime instance
+                setattr(comp, f.name, aspace_rt)
+
+    @staticmethod
+    def __init_regfile_fields__(comp):
+        """Initialize RegFile fields with their runtime implementations."""
+        for f in dc.fields(comp):
+            # Check if this field has RegFile type info stored in metadata
+            if f.metadata and '__regfile_type__' in f.metadata:
+                field_type = f.metadata['__regfile_type__']
+                
+                # Create the runtime regfile instance
+                regfile_rt = RegFileRT()
+                
+                # Iterate through the RegFile's fields to create individual registers
+                offset = 0
+                for reg_field in dc.fields(field_type):
+                    reg_field_type = reg_field.type
+                    reg_origin = get_origin(reg_field_type)
+                    
+                    # Check if this is a Reg field
+                    if reg_origin is not None and reg_origin is Reg:
+                        # Get the element type from the generic parameter
+                        args = get_args(reg_field_type)
+                        element_type = args[0] if args else int
+                        
+                        # Extract width from the element type
+                        width = 32  # default
+                        if hasattr(element_type, '__metadata__'):
+                            metadata = element_type.__metadata__
+                            if metadata:
+                                for item in metadata:
+                                    if isinstance(item, (U, S)):
+                                        width = item.width
+                                        break
+                        
+                        # Create the runtime register instance
+                        reg_rt = RegRT(_value=0, _width=width)
+                        
+                        # Add register to regfile
+                        regfile_rt.add_register(reg_field.name, reg_rt, offset)
+                        
+                        # Create a property-like object that allows access to the register
+                        setattr(regfile_rt, reg_field.name, reg_rt)
+                        
+                        # Advance offset (assuming 32-bit registers aligned on 4-byte boundaries)
+                        offset += 4
+                
+                # Set the field value to the runtime instance
+                setattr(comp, f.name, regfile_rt)
+
+    @staticmethod
     def __apply_bindmap__(comp, bindmap):
         """Apply bindmap entries by setting target values to source values.
         
@@ -193,16 +359,44 @@ class ObjFactory(ObjFactoryP):
         Both should be BindPath objects that represent attribute paths.
         - Targets: Port, ExportMethod (fields or methods that need assignment)
         - Sources: Export, Method (fields or methods to be assigned from)
+        - Special case: AddressSpace.mmap targets get At() objects for memory mapping
         """
-        print(f"Applying bindmap for {comp}")
+        # Process AddressSpace.mmap bindings first
+        aspace_bindings = []
+        other_bindings = {}
+        
+        for target, source in bindmap.items():
+            # Check if target is a path to .mmap attribute
+            if isinstance(target, BindPath) and len(target._path) >= 2 and target._path[-1] == 'mmap':
+                aspace_bindings.append((target, source))
+            else:
+                other_bindings[target] = source
+        
+        # Handle AddressSpace.mmap bindings
+        for target, source in aspace_bindings:
+            # Get the AddressSpace object
+            aspace_path = target._path[:-1]  # Remove 'mmap' from path
+            aspace = ObjFactory.__resolve_bind_path__(comp, BindPath(comp, aspace_path))
+            
+            if isinstance(aspace, AddressSpaceRT):
+                # source can be a single At object or a tuple of At objects
+                at_list = [source] if isinstance(source, At) else (source if isinstance(source, tuple) else [source])
+                
+                for at_obj in at_list:
+                    if isinstance(at_obj, At):
+                        # Resolve the storage element (could be a BindPath to Memory)
+                        storage = at_obj.element
+                        if isinstance(storage, BindPath):
+                            storage = ObjFactory.__resolve_bind_path__(comp, storage)
+                        
+                        # Add the mapping to the address space
+                        aspace.add_mapping(at_obj.offset, storage)
         
         # Sort bindmap entries: prioritize entries where source is available
         # Process in order: Export->Port, Method->ExportMethod, Port->ExportMethod
-        ordered_entries = ObjFactory.__order_bindmap__(comp, bindmap)
+        ordered_entries = ObjFactory.__order_bindmap__(comp, other_bindings)
         
         for target, source in ordered_entries:
-            print(f"Binding {target} <- {source}")
-            
             # Get source value by traversing from comp
             source_value = ObjFactory.__resolve_bind_path__(comp, source)
             

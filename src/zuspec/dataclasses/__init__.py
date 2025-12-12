@@ -27,7 +27,7 @@ from .decorators import (
     Input, Output
 )
 from .types import *
-import zuspec.dm as dm
+from . import dm
 from .data_model_factory import DataModelFactory
 
 

@@ -50,7 +50,8 @@ def json_converter(pmod, *args, **kwargs):
 from .fields import Bind, BindSet, Field, FieldInOut, FieldKind
 from .data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent,
-    DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeProtocol, DataTypeRef,
+    DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeMemory,
+    DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
     Function, Process
 )
 from .expr import (
@@ -75,7 +76,8 @@ __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
     "Bind","BindSet","Field","FieldInOut","FieldKind",
     "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent",
-    "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeProtocol","DataTypeRef",
+    "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeMemory",
+    "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
     "Function","Process",
     "Expr","BinOp","UnaryOp","BoolOp","CmpOp","AugOp","ExprBin","ExprRef","ExprConstant",
     "TypeExprRefSelf","ExprRefField","ExprRefPy","ExprRefBottomUp","ExprUnary",

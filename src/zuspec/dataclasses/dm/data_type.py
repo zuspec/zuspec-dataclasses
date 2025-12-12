@@ -69,6 +69,22 @@ class DataTypeLock(DataType):
     pass
 
 @dc.dataclass(kw_only=True)
+class DataTypeMemory(DataType):
+    """Represents a Memory type - storage for data elements"""
+    element_type : Optional[DataType] = dc.field(default=None)
+    size : int = dc.field(default=1024)
+
+@dc.dataclass(kw_only=True)
+class DataTypeAddressSpace(DataType):
+    """Represents an AddressSpace - software view of memory and registers"""
+    pass
+
+@dc.dataclass(kw_only=True)
+class DataTypeAddrHandle(DataType):
+    """Represents an AddrHandle - pointer abstraction for memory access"""
+    pass
+
+@dc.dataclass(kw_only=True)
 class DataTypeProtocol(DataType):
     """Represents a Python Protocol (interface definition)"""
     methods : List['Function'] = dc.field(default_factory=list)

@@ -11,9 +11,9 @@ package:
           #        url: https://github.com/mballance/pytypeworks.git
           #      - name: zuspec-arl-dm
           #        url: https://github.com/zuspec/zuspec-arl-dm.git
-      - name: zuspec-dm
-        url: https://github.com/zuspec/zuspec-dm.git
-        branch: mballance/simplify
+          #- name: zuspec-dm
+          #url: https://github.com/zuspec/zuspec-dm.git
+          #branch: mballance/simplify
       - name: pytest
         src: pypi
       - name: mypy
