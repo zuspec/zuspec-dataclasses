@@ -52,6 +52,7 @@ from .data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent,
     DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
+    DataTypeGetIF, DataTypePutIF, DataTypeChannel,
     Function, Process
 )
 from .expr import (
@@ -78,6 +79,7 @@ __all__ = [
     "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent",
     "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
+    "DataTypeGetIF","DataTypePutIF","DataTypeChannel",
     "Function","Process",
     "Expr","BinOp","UnaryOp","BoolOp","CmpOp","AugOp","ExprBin","ExprRef","ExprConstant",
     "TypeExprRefSelf","ExprRefField","ExprRefPy","ExprRefBottomUp","ExprUnary",

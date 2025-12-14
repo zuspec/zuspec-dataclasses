@@ -15,4 +15,8 @@ hardware - from the transfer-function level down to RTL.
 
    intro
    components
+   fields
+   types
+   runtime
+   datamodel
 

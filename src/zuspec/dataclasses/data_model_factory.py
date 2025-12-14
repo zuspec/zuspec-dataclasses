@@ -1,5 +1,5 @@
 
-from typing import Union, Iterator, Type, get_type_hints, Any, Optional, Protocol
+from typing import Union, Iterator, Type, get_type_hints, Any, Optional, Protocol, get_origin, get_args
 import dataclasses as dc
 import inspect
 import ast
@@ -7,12 +7,14 @@ from .dm.context import Context
 from .dm.data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, 
     DataTypeComponent, DataTypeProtocol, DataTypeRef, DataTypeString,
-    DataTypeLock, Function, Process
+    DataTypeLock, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
+    Function, Process
 )
 from .dm.fields import Field, FieldKind, Bind
 from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtPass, StmtReturn
 from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, ExprRefField, TypeExprRefSelf, ExprRefPy
 from .types import TypeBase, Component, Lock
+from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc
 
 
@@ -459,6 +461,20 @@ class DataModelFactory(object):
             return DataTypeString()
         if field_type is Lock:
             return DataTypeLock()
+        
+        # Check for generic TLM types (Channel[T], GetIF[T], PutIF[T])
+        origin = get_origin(field_type)
+        if origin is not None:
+            args = get_args(field_type)
+            element_type = self._resolve_field_type(args[0]) if args else None
+            
+            if origin is Channel:
+                return DataTypeChannel(element_type=element_type)
+            if origin is GetIF:
+                return DataTypeGetIF(element_type=element_type)
+            if origin is PutIF:
+                return DataTypePutIF(element_type=element_type)
+        
         if hasattr(field_type, '__name__'):
             return DataTypeRef(ref_name=field_type.__name__)
         return DataType()

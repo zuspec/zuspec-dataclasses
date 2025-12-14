@@ -110,3 +110,21 @@ class DataTypeRef(DataType):
     ref_name : str = dc.field()
 
 
+@dc.dataclass(kw_only=True)
+class DataTypeGetIF(DataType):
+    """Represents a GetIF interface - consumer side of a channel"""
+    element_type : Optional[DataType] = dc.field(default=None)
+
+
+@dc.dataclass(kw_only=True)
+class DataTypePutIF(DataType):
+    """Represents a PutIF interface - producer side of a channel"""
+    element_type : Optional[DataType] = dc.field(default=None)
+
+
+@dc.dataclass(kw_only=True)
+class DataTypeChannel(DataType):
+    """Represents a TLM Channel - bidirectional communication channel"""
+    element_type : Optional[DataType] = dc.field(default=None)
+
+

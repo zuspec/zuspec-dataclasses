@@ -20,14 +20,18 @@ Docstring for src.zuspec.dataclasses
 # Datamodel Mapping
 # 
 
-from asyncio import Event
+from asyncio import Event as aEvent
 from .decorators import (
     dataclass, field, process, input, output, 
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output
 )
 from .types import *
+from .tlm import *
 from . import dm
 from .data_model_factory import DataModelFactory
+
+type Event = aEvent
+
 
 

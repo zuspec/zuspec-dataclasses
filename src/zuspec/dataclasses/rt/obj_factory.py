@@ -1,15 +1,17 @@
 from __future__ import annotations
 import dataclasses as dc
 import inspect
-from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args
+from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, TypeAliasType
 from ..config import ObjFactory as ObjFactoryP
 from ..decorators import ExecProc
 from ..types import Component, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
+from ..tlm import Channel, GetIF, PutIF, Transport
 from .comp_impl_rt import CompImplRT
 from .timebase import Timebase
 from .memory_rt import MemoryRT
 from .address_space_rt import AddressSpaceRT
 from .regfile_rt import RegFileRT, RegRT
+from .channel_rt import ChannelRT, GetIFRT, PutIFRT
 
 class BindPath:
     """Represents a path in the binding system (e.g., self.cons.call or self.p.prod)"""
@@ -76,6 +78,33 @@ class ObjFactory(ObjFactoryP):
                     # Store the original type in metadata for later use
                     metadata = dict(f.metadata) if f.metadata else {}
                     metadata['__memory_type__'] = field_type
+                    fields.append((f.name, object, dc.field(
+                        default=None,
+                        metadata=metadata)))
+                # Check if this is a Channel field
+                elif origin is not None and origin is Channel:
+                    # Channel fields will be initialized in __comp_build__
+                    metadata = dict(f.metadata) if f.metadata else {}
+                    metadata['__channel_type__'] = field_type
+                    fields.append((f.name, object, dc.field(
+                        default=None,
+                        metadata=metadata)))
+                # Check if this is a GetIF or PutIF port field
+                elif origin is not None and (origin is GetIF or origin is PutIF):
+                    # These are port types - they stay as None until bound
+                    metadata = dict(f.metadata) if f.metadata else {}
+                    if origin is GetIF:
+                        metadata['__getif_type__'] = field_type
+                    else:
+                        metadata['__putif_type__'] = field_type
+                    fields.append((f.name, object, dc.field(
+                        default=None,
+                        metadata=metadata)))
+                # Check if this is a Transport type (TypeAliasType)
+                elif origin is not None and isinstance(origin, TypeAliasType) and origin.__name__ == 'Transport':
+                    # Transport is a Callable type alias for port/export bindings
+                    metadata = dict(f.metadata) if f.metadata else {}
+                    metadata['__transport_type__'] = field_type
                     fields.append((f.name, object, dc.field(
                         default=None,
                         metadata=metadata)))
@@ -232,6 +261,9 @@ class ObjFactory(ObjFactoryP):
         # Initialize AddressSpace fields
         ObjFactory.__init_address_space_fields__(comp)
         
+        # Initialize Channel fields
+        ObjFactory.__init_channel_fields__(comp)
+        
         # Apply port bindings provided at construction (for top-level ports)
         if port_bindings:
             for port_name, impl in port_bindings.items():
@@ -350,6 +382,24 @@ class ObjFactory(ObjFactoryP):
                 
                 # Set the field value to the runtime instance
                 setattr(comp, f.name, regfile_rt)
+
+    @staticmethod
+    def __init_channel_fields__(comp):
+        """Initialize Channel fields with their runtime implementations."""
+        for f in dc.fields(comp):
+            # Check if this field has Channel type info stored in metadata
+            if f.metadata and '__channel_type__' in f.metadata:
+                field_type = f.metadata['__channel_type__']
+                
+                # Get the element type from the generic parameter
+                args = get_args(field_type)
+                element_type = args[0] if args else None
+                
+                # Create the runtime channel instance
+                channel_rt = ChannelRT(_element_type=element_type)
+                
+                # Set the field value to the runtime instance
+                setattr(comp, f.name, channel_rt)
 
     @staticmethod
     def __apply_bindmap__(comp, bindmap):

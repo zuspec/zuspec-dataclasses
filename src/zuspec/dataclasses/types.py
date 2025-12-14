@@ -17,7 +17,7 @@ from __future__ import annotations
 import abc
 import dataclasses as dc
 import enum
-from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple
+from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, Self
 from .decorators import dataclass, field
 
 @dc.dataclass
@@ -92,6 +92,70 @@ class Time(object):
     @classmethod
     def fs(cls, amt : float):
         return Time(TimeUnit.FS, amt)
+    
+    def __mul__(self, o : Union[int, float, 'Time']) -> 'Time':
+        """Multiply time by a scalar or another Time value.
+        
+        Args:
+            o: Either a numeric scalar (int/float) or another Time value
+            
+        Returns:
+            New Time value with the result. When multiplying two Time values,
+            the result uses the finer (smaller) time unit.
+        """
+        if isinstance(o, (int, float)):
+            # Scalar multiplication: keep same unit, multiply amount
+            return Time(self.unit, self.amt * o)
+        elif isinstance(o, Time):
+            # Time * Time: convert to common unit and multiply
+            # Use the finer (smaller) unit for the result
+            # Finer unit has smaller exponent (more negative)
+            def get_exponent(unit: TimeUnit) -> int:
+                if unit == TimeUnit.S:
+                    return 0
+                return unit.value
+            
+            self_exp = get_exponent(self.unit)
+            o_exp = get_exponent(o.unit)
+            
+            # Smaller exponent = finer unit
+            if self_exp <= o_exp:
+                result_unit = self.unit
+            else:
+                result_unit = o.unit
+            
+            # Convert both to the result unit and multiply
+            self_in_result = self._convert_to_unit(result_unit)
+            o_in_result = o._convert_to_unit(result_unit)
+            
+            return Time(result_unit, self_in_result * o_in_result)
+        else:
+            return NotImplemented
+    
+    def __rmul__(self, o : Union[int, float]) -> 'Time':
+        """Right multiplication for scalar * Time."""
+        return self.__mul__(o)
+    
+    def _convert_to_unit(self, target_unit: TimeUnit) -> float:
+        """Convert this time's amount to a different unit.
+        
+        Args:
+            target_unit: The unit to convert to
+            
+        Returns:
+            The amount in the target unit
+        """
+        # TimeUnit values: S=1 (represents 10^0), MS=-3 (10^-3), US=-6 (10^-6), etc.
+        # S=1 is a special case - treat it as exponent 0
+        def get_exponent(unit: TimeUnit) -> int:
+            if unit == TimeUnit.S:
+                return 0
+            return unit.value
+        
+        self_exp = get_exponent(self.unit)
+        target_exp = get_exponent(target_unit)
+        power_diff = self_exp - target_exp
+        return self.amt * (10 ** power_diff)
 
     def __str__(self) -> str:
         unit_str = {
@@ -141,6 +205,9 @@ class PackedStruct(TypeBase,SupportsInt):
     def __int__(self) -> int:
         return 5
 
+    pass
+
+class Struct(TypeBase):
     pass
 
 
@@ -283,11 +350,13 @@ uint8_t = Annotated[int, U(8)]
 uint16_t = Annotated[int, U(16)]
 uint32_t = Annotated[int, U(32)]
 uint64_t = Annotated[int, U(64)]
+uint128_t = Annotated[int, U(128)]
 
 int8_t = Annotated[int, S(8)]
 int16_t = Annotated[int, S(16)]
 int32_t = Annotated[int, S(32)]
 int64_t = Annotated[int, S(64)]
+int128_t = Annotated[int, S(128)]
 
 class MyE(enum.IntEnum):
     a = 1
@@ -311,9 +380,13 @@ class RegFile(TypeBase):
 
 class Reg[T](TypeBase):
 
+    # Register storage and register access...
+    # - Use non-blocking access within the device
+    # - Use blocking access from an address space
+
     async def read(self) -> T: ...
 
-    async def write(self, val : T): ...
+    async def write(self, val : Union[T,int]): ...
 
     async def when(self, cond : Callable[[T],bool]): 
         """Performs a single-register conditioned wait."""
@@ -351,6 +424,8 @@ class MemIF(Protocol):
     async def write16(self, addr : int, data : uint16_t): ...
 
     async def write32(self, addr : int, data : uint32_t): ...
+
+    async def write64(self, addr : int, data : uint64_t): ...
 
 @dc.dataclass
 class At(object):

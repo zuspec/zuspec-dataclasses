@@ -9,19 +9,38 @@ SystemVerilog `module`, SystemC `component`, and PSS `component` types.
 Instances of Zuspec components are never created directly. Zuspec 
 automatically creates component instances for fields of `Component` type.
 Creating an instance of a Zuspec component class outside a component
-hierarchy (for example, in a test) must be done using a factory class.
+hierarchy (for example, in a test) must be done using the runtime factory.
 
 .. code-block:: python3
 
     import zuspec.dataclasses as zdc
-    import zuspec.be.py as zpy
 
     @zdc.dataclass
     class Top(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
+        clock : zdc.uint1_t = zdc.input()
+        reset : zdc.uint1_t = zdc.input()
 
-    top_i = zpy.Factory().build(Top)
+    # Create root component - triggers full tree elaboration
+    top_i = Top()
+
+*******************
+Component Lifecycle
+*******************
+
+When a root component is instantiated, the following sequence occurs:
+
+1. **Construction** - Root component and all child component fields 
+   are constructed via the ObjFactory
+2. **Tree Building** - ``__comp_build__`` recursively initializes:
+   
+   - Creates runtime implementation (``CompImplRT``) for each component
+   - Sets timebase on root component
+   - Discovers ``@process`` decorated methods
+   - Initializes Memory, RegFile, and AddressSpace fields
+   - Applies ``__bind__`` mappings (bottom-up)
+
+3. **Validation** - Top-level ports are validated as bound
+4. **Process Start** - Processes start lazily when ``wait()`` is called
 
 
 *****************
@@ -53,14 +72,14 @@ mappings between ports.
 
     @zdc.dataclass
     class Initiator(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
+        clock : zdc.uint1_t = zdc.input()
+        reset : zdc.uint1_t = zdc.input()
         wb_i : WishboneInitiator = zdc.field()
 
     @zdc.dataclass
     class Top(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
+        clock : zdc.uint1_t = zdc.input()
+        reset : zdc.uint1_t = zdc.input()
         initiator : Initiator = zdc.field(bind=zdc.bind[Self,Initiator](lambda s,f:{
             f.clock : s.clock,
             f.reset : s.reset,
@@ -78,14 +97,14 @@ to the parent class `self` and a handle to the field
 
     @zdc.dataclass
     class Initiator(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
+        clock : zdc.uint1_t = zdc.input()
+        reset : zdc.uint1_t = zdc.input()
         wb_i : WishboneInitiator = zdc.field()
 
     @zdc.dataclass
     class Top(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
+        clock : zdc.uint1_t = zdc.input()
+        reset : zdc.uint1_t = zdc.input()
         initiator : Initiator = zdc.field()
         
         def __bind__(self): return {
@@ -96,6 +115,36 @@ to the parent class `self` and a handle to the field
     
 The example above shows the method form of binding. The `__bind__`
 method returns a dict mapping ports.
+
+***********************
+Memory and RegFile Binding
+***********************
+
+AddressSpace fields can be bound to Memory and RegFile instances
+using the ``At`` helper to specify address offsets.
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class ControlRegs(zdc.RegFile):
+        status : zdc.Reg[zdc.uint32_t] = zdc.field()
+        control : zdc.Reg[zdc.uint32_t] = zdc.field()
+
+    @zdc.dataclass
+    class SoC(zdc.Component):
+        mem : zdc.Memory[zdc.uint32_t] = zdc.field(size=0x10000)
+        regs : ControlRegs = zdc.field()
+        aspace : zdc.AddressSpace = zdc.field()
+
+        def __bind__(self): return {
+            self.aspace.mmap : (
+                zdc.At(0x0000_0000, self.mem),
+                zdc.At(0x1000_0000, self.regs),
+            )
+        }
+
+The ``aspace.base`` provides a ``MemIF`` handle for byte-level access
+to the mapped regions.
 
 
 **********************
@@ -117,6 +166,20 @@ The `@process` async exec method is evaluated when evaluation of
 the containing component begins. A `@process` exec method is
 an independent thread of control in the model.
 
+Processes start lazily when the first ``wait()`` call is made on any
+component in the tree. This allows the component tree to be fully
+constructed before simulation begins.
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class Worker(zdc.Component):
+        @zdc.process
+        async def run(self):
+            for i in range(10):
+                await self.wait(zdc.Time.ns(100))
+                print(f"Iteration {i} at {self.time()}")
+
 sync
 ****
 A `@sync` exec method is evaluated on the active transition of 
@@ -129,9 +192,9 @@ The `@sync` exec is exclusively used with RTL descriptions
     import zuspec.dataclasses as zdc
     @zdc.dataclass
     class Counter(zdc.Component):
-      clock : zdc.Bit = zdc.input()
-      reset : zdc.Bit = zdc.input()
-      count : zdc.Bit[32] = zdc.output()
+      clock : zdc.uint1_t = zdc.input()
+      reset : zdc.uint1_t = zdc.input()
+      count : zdc.uint32_t = zdc.output()
 
       @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
       def inc(self):
