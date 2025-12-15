@@ -119,3 +119,50 @@ def test_time_delta():
     assert d1 is d2  # Should be same instance
     assert d1.amt == 0
     assert d1.unit == zdc.TimeUnit.S
+
+
+def test_time_as_s():
+    """Test conversion to seconds."""
+    assert zdc.Time.s(1).as_s() == 1
+    assert zdc.Time.ms(1).as_s() == 0.001
+    assert zdc.Time.us(1).as_s() == 0.000001
+    assert zdc.Time.ns(1).as_s() == 1e-9
+    assert zdc.Time.ps(1).as_s() == 1e-12
+    assert zdc.Time.fs(1).as_s() == 1e-15
+
+
+def test_time_as_ms():
+    """Test conversion to milliseconds."""
+    assert zdc.Time.s(1).as_ms() == 1000
+    assert zdc.Time.ms(1).as_ms() == 1
+    assert zdc.Time.us(1).as_ms() == 0.001
+    assert zdc.Time.ns(1).as_ms() == 1e-6
+
+
+def test_time_as_us():
+    """Test conversion to microseconds."""
+    assert zdc.Time.s(1).as_us() == 1e6
+    assert zdc.Time.ms(1).as_us() == 1000
+    assert zdc.Time.us(1).as_us() == 1
+    assert zdc.Time.ns(1).as_us() == 0.001
+
+
+def test_time_as_ns():
+    """Test conversion to nanoseconds."""
+    assert zdc.Time.s(1).as_ns() == 1e9
+    assert zdc.Time.ms(1).as_ns() == 1e6
+    assert zdc.Time.us(1).as_ns() == 1000
+    assert zdc.Time.ns(1).as_ns() == 1
+
+
+def test_time_as_ps():
+    """Test conversion to picoseconds."""
+    assert zdc.Time.ns(1).as_ps() == 1000
+    assert zdc.Time.ps(1).as_ps() == 1
+    assert zdc.Time.fs(1).as_ps() == 0.001
+
+
+def test_time_as_fs():
+    """Test conversion to femtoseconds."""
+    assert zdc.Time.ps(1).as_fs() == 1000
+    assert zdc.Time.fs(1).as_fs() == 1

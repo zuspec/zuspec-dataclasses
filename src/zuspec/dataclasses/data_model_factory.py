@@ -12,10 +12,19 @@ from .dm.data_type import (
 )
 from .dm.fields import Field, FieldKind, Bind
 from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtPass, StmtReturn
-from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, ExprRefField, TypeExprRefSelf, ExprRefPy
+from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved
 from .types import TypeBase, Component, Lock
 from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc
+
+
+@dc.dataclass
+class ConversionScope:
+    """Scope context for AST to datamodel conversion"""
+    component: DataTypeComponent = None  # Current component being processed
+    field_indices: dict = dc.field(default_factory=dict)    # field_name -> index
+    method_params: set = dc.field(default_factory=set)      # Parameter names in current method
+    local_vars: set = dc.field(default_factory=set)         # Local variables in current scope
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -281,58 +290,65 @@ class DataModelFactory(object):
         
         return DataTypeProtocol(methods=methods)
 
-    def _extract_function(self, cls : Type, name : str, member) -> Optional[Function]:
+    def _extract_function(self, cls : Type, name : str, member, field_indices: dict = None) -> Optional[Function]:
         """Extract a Function data model from a method."""
-        try:
-            # Get the function object
-            if isinstance(member, property):
-                return None
-            
-            # Try to get signature
-            try:
-                sig = inspect.signature(member)
-            except (ValueError, TypeError):
-                # For abstract methods in protocols, try to get from annotations
-                if hasattr(cls, '__annotations__') and name in cls.__annotations__:
-                    return None
-                return None
-            
-            # Get type hints
-            try:
-                hints = get_type_hints(member)
-            except Exception:
-                hints = {}
-            
-            # Build arguments
-            args_list = []
-            for param_name, param in sig.parameters.items():
-                if param_name == 'self':
-                    continue
-                annotation = hints.get(param_name)
-                arg = Arg(arg=param_name, annotation=self._type_to_expr(annotation))
-                args_list.append(arg)
-            
-            arguments = Arguments(args=args_list)
-            
-            # Get return type
-            return_type = hints.get('return')
-            returns = self._annotation_to_datatype(return_type) if return_type else None
-            
-            # Check if async
-            is_async = inspect.iscoroutinefunction(member)
-            
-            # Get method body (for actual implementations)
-            body = self._extract_method_body(cls, name)
-            
-            return Function(
-                name=name,
-                args=arguments,
-                body=body,
-                returns=returns,
-                is_async=is_async
-            )
-        except Exception:
+        # Get the function object
+        if isinstance(member, property):
             return None
+        
+        # Try to get signature
+        try:
+            sig = inspect.signature(member)
+        except (ValueError, TypeError):
+            # For abstract methods in protocols, try to get from annotations
+            if hasattr(cls, '__annotations__') and name in cls.__annotations__:
+                return None
+            return None
+        
+        # Get type hints
+        try:
+            hints = get_type_hints(member)
+        except Exception as e:
+            # get_type_hints can fail due to forward references or missing imports
+            # This is acceptable - we'll just work without type hints
+            hints = {}
+        
+        # Build arguments and collect param names for scope
+        args_list = []
+        param_names = set()
+        for idx, (param_name, param) in enumerate(sig.parameters.items()):
+            if param_name == 'self':
+                continue
+            annotation = hints.get(param_name)
+            arg = Arg(arg=param_name, annotation=self._type_to_expr(annotation))
+            args_list.append(arg)
+            param_names.add(param_name)
+        
+        arguments = Arguments(args=args_list)
+        
+        # Get return type
+        return_type = hints.get('return')
+        returns = self._annotation_to_datatype(return_type) if return_type else None
+        
+        # Check if async
+        is_async = inspect.iscoroutinefunction(member)
+        
+        # Create conversion scope
+        scope = ConversionScope(
+            field_indices=field_indices if field_indices else {},
+            method_params=param_names
+        )
+        
+        # Get method body (for actual implementations) with scope
+        body = self._extract_method_body(cls, name, scope)
+        
+        return Function(
+            name=name,
+            args=arguments,
+            body=body,
+            returns=returns,
+            is_async=is_async
+        )
 
     def _type_to_expr(self, annotation) -> Optional[Any]:
         """Convert a type annotation to an expression (for now, just store as constant)."""
@@ -365,8 +381,9 @@ class DataModelFactory(object):
                 super_dt = DataTypeRef(ref_name=self._get_type_name(base))
                 break
         
-        # Process fields
+        # Process fields and build field indices for scope
         fields = self._extract_fields(t)
+        field_indices = {f.name: idx for idx, f in enumerate(fields)}
         
         # Process functions (methods and processes)
         functions = []
@@ -375,7 +392,7 @@ class DataModelFactory(object):
         # First, find @process decorated methods from class __dict__
         for name, member in t.__dict__.items():
             if isinstance(member, ExecProc):
-                proc = self._extract_process(t, name, member)
+                proc = self._extract_process(t, name, member, field_indices)
                 if proc is not None:
                     processes.append(proc)
         
@@ -389,7 +406,7 @@ class DataModelFactory(object):
                 continue
             
             if callable(member) and not isinstance(member, type):
-                func = self._extract_function(t, name, member)
+                func = self._extract_function(t, name, member, field_indices)
                 if func is not None:
                     functions.append(func)
         
@@ -414,7 +431,9 @@ class DataModelFactory(object):
         # Get type hints
         try:
             hints = get_type_hints(t)
-        except Exception:
+        except Exception as e:
+            # get_type_hints can fail due to forward references or missing imports
+            # This is acceptable for field extraction - we'll just work without type hints
             hints = {}
         
         for f in dc.fields(t):
@@ -504,7 +523,9 @@ class DataModelFactory(object):
         if dc.is_dataclass(t):
             try:
                 hints = get_type_hints(t)
-            except Exception:
+            except Exception as e:
+                # get_type_hints can fail due to forward references or missing imports
+                # This is acceptable for bind proxy - we'll work without type hints
                 hints = {}
             
             idx = 0
@@ -528,9 +549,13 @@ class DataModelFactory(object):
                     rhs_expr = self._normalize_bind_expr(rhs)
                     if lhs_expr is not None and rhs_expr is not None:
                         bind_map.append(Bind(lhs=lhs_expr, rhs=rhs_expr))
-        except Exception:
-            # If evaluation fails, return empty bind map
-            pass
+        except Exception as e:
+            # __bind__ method execution failed - this indicates a user error in the bind method
+            raise RuntimeError(
+                f"Failed to evaluate __bind__ method for class '{t.__name__}': {e}\n"
+                f"The __bind__ method should return a dict mapping port/export expressions. "
+                f"Example: return {{self.producer.output: self.consumer.input}}"
+            ) from e
         
         return bind_map
     
@@ -546,20 +571,37 @@ class DataModelFactory(object):
             return object.__getattribute__(expr, '_expr')
         return None
 
-    def _extract_process(self, cls : Type, name : str, exec_proc : ExecProc) -> Optional[Process]:
+    def _extract_process(self, cls : Type, name : str, exec_proc : ExecProc, field_indices: dict = None) -> Optional[Process]:
         """Extract a Process from an @process decorated method."""
         method = exec_proc.method
-        body = self._extract_method_body(cls, method.__name__)
+        
+        # Create conversion scope for process
+        scope = ConversionScope(
+            field_indices=field_indices if field_indices else {}
+        )
+        
+        body = self._extract_method_body(cls, method.__name__, scope)
         
         return Process(
             name=method.__name__,
             body=body
         )
 
-    def _extract_method_body(self, cls : Type, method_name : str) -> list:
+    def _extract_method_body(self, cls : Type, method_name : str, scope: ConversionScope = None) -> list:
         """Extract the AST body of a method and convert to data model statements."""
         try:
             source = inspect.getsource(cls)
+        except OSError as e:
+            # inspect.getsource fails when source is not available (e.g., classes defined
+            # in string literals passed to exec(), interactive sessions, or __main__ scripts)
+            raise RuntimeError(
+                f"Cannot retrieve source code for class '{cls.__name__}' method '{method_name}'. "
+                f"This typically happens when classes are defined in string literals passed to exec() "
+                f"or in interactive sessions. Define your classes in a proper .py module file instead. "
+                f"Original error: {e}"
+            ) from e
+        
+        try:
             tree = ast.parse(source)
             
             # Find the class definition
@@ -569,75 +611,120 @@ class DataModelFactory(object):
                     for item in node.body:
                         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             if item.name == method_name:
-                                return self._convert_ast_body(item.body)
-        except Exception:
-            pass
+                                return self._convert_ast_body(item.body, scope)
+        except SyntaxError as e:
+            raise RuntimeError(
+                f"Failed to parse source code for class '{cls.__name__}' method '{method_name}': {e}"
+            ) from e
         
         return []
 
-    def _convert_ast_body(self, body : list) -> list:
+    def _convert_ast_body(self, body : list, scope: ConversionScope = None) -> list:
         """Convert AST statement list to data model statements."""
         stmts = []
         for node in body:
-            stmt = self._convert_ast_stmt(node)
+            stmt = self._convert_ast_stmt(node, scope)
             if stmt is not None:
                 stmts.append(stmt)
         return stmts
 
-    def _convert_ast_stmt(self, node : ast.AST) -> Optional[Stmt]:
+    def _convert_ast_stmt(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Stmt]:
         """Convert an AST statement to a data model statement."""
         if isinstance(node, ast.Expr):
-            expr = self._convert_ast_expr(node.value)
+            expr = self._convert_ast_expr(node.value, scope)
             if expr is not None:
                 return StmtExpr(expr=expr)
         elif isinstance(node, ast.For):
+            # Track loop variable as local
+            if scope is not None and isinstance(node.target, ast.Name):
+                scope.local_vars.add(node.target.id)
             return StmtFor(
-                target=self._convert_ast_expr(node.target),
-                iter=self._convert_ast_expr(node.iter),
-                body=self._convert_ast_body(node.body),
-                orelse=self._convert_ast_body(node.orelse)
+                target=self._convert_ast_expr(node.target, scope),
+                iter=self._convert_ast_expr(node.iter, scope),
+                body=self._convert_ast_body(node.body, scope),
+                orelse=self._convert_ast_body(node.orelse, scope)
             )
         elif isinstance(node, ast.Assign):
+            # Track assigned variables as locals
+            if scope is not None:
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        scope.local_vars.add(target.id)
             return StmtAssign(
-                targets=[self._convert_ast_expr(t) for t in node.targets],
-                value=self._convert_ast_expr(node.value)
+                targets=[self._convert_ast_expr(t, scope) for t in node.targets],
+                value=self._convert_ast_expr(node.value, scope)
             )
         elif isinstance(node, ast.Pass):
             return StmtPass()
         elif isinstance(node, ast.Return):
             return StmtReturn(
-                value=self._convert_ast_expr(node.value) if node.value else None
+                value=self._convert_ast_expr(node.value, scope) if node.value else None
             )
         return None
 
-    def _convert_ast_expr(self, node : ast.AST) -> Optional[Any]:
+    def _convert_ast_expr(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Any]:
         """Convert an AST expression to a data model expression."""
         if node is None:
             return None
         
         if isinstance(node, ast.Call):
             return ExprCall(
-                func=self._convert_ast_expr(node.func),
-                args=[self._convert_ast_expr(a) for a in node.args]
+                func=self._convert_ast_expr(node.func, scope),
+                args=[self._convert_ast_expr(a, scope) for a in node.args]
             )
         elif isinstance(node, ast.Attribute):
+            value_expr = self._convert_ast_expr(node.value, scope)
+            attr_name = node.attr
+            
+            # Handle self.field -> ExprRefField
+            if isinstance(value_expr, TypeExprRefSelf) and scope and attr_name in scope.field_indices:
+                return ExprRefField(
+                    base=value_expr,
+                    index=scope.field_indices[attr_name]
+                )
+            
+            # For other cases, use ExprAttribute
             return ExprAttribute(
-                value=self._convert_ast_expr(node.value),
-                attr=node.attr
+                value=value_expr,
+                attr=attr_name
             )
         elif isinstance(node, ast.Name):
-            return ExprConstant(value=node.id)
+            name = node.id
+            
+            # Handle 'self'
+            if name == "self":
+                return TypeExprRefSelf()
+            
+            # Handle field reference
+            if scope and name in scope.field_indices:
+                return ExprRefField(
+                    base=TypeExprRefSelf(),
+                    index=scope.field_indices[name]
+                )
+            
+            # Handle method parameter reference
+            if scope and name in scope.method_params:
+                return ExprRefParam(name=name)
+            
+            # Handle local variable reference
+            if scope and name in scope.local_vars:
+                return ExprRefLocal(name=name)
+            
+            # Unresolved - could be a builtin or external reference
+            return ExprRefUnresolved(name=name)
         elif isinstance(node, ast.Constant):
             return ExprConstant(value=node.value)
         elif isinstance(node, ast.BinOp):
             return ExprBin(
-                lhs=self._convert_ast_expr(node.left),
+                lhs=self._convert_ast_expr(node.left, scope),
                 op=self._convert_binop(node.op),
-                rhs=self._convert_ast_expr(node.right)
+                rhs=self._convert_ast_expr(node.right, scope)
             )
         elif isinstance(node, ast.Await):
-            # For await expressions, just return the awaited expression
-            return self._convert_ast_expr(node.value)
+            # Preserve await expression in datamodel
+            return ExprAwait(
+                value=self._convert_ast_expr(node.value, scope)
+            )
         
         # Fallback: store as constant with the AST node type
         return ExprConstant(value=f"<{type(node).__name__}>")

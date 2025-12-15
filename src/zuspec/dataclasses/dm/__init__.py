@@ -57,9 +57,10 @@ from .data_type import (
 )
 from .expr import (
     Expr, BinOp, UnaryOp, BoolOp, CmpOp, AugOp,
-    ExprBin, ExprRef, ExprConstant, TypeExprRefSelf, ExprRefField, ExprRefPy,
+    ExprBin, ExprRef, ExprConstant, TypeExprRefSelf, ExprRefField,
+    ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprRefPy,
     ExprRefBottomUp, ExprUnary, ExprBool, ExprCompare,
-    ExprAttribute, ExprSlice, ExprSubscript, ExprCall, Keyword
+    ExprAttribute, ExprSlice, ExprSubscript, ExprCall, Keyword, ExprAwait
 )
 from .expr_phase2 import (
     ExprList, ExprTuple, ExprDict, ExprSet, Comprehension, ExprListComp,
@@ -82,8 +83,9 @@ __all__ = [
     "DataTypeGetIF","DataTypePutIF","DataTypeChannel",
     "Function","Process",
     "Expr","BinOp","UnaryOp","BoolOp","CmpOp","AugOp","ExprBin","ExprRef","ExprConstant",
-    "TypeExprRefSelf","ExprRefField","ExprRefPy","ExprRefBottomUp","ExprUnary",
-    "ExprBool","ExprCompare","ExprAttribute","ExprSlice","ExprSubscript","ExprCall","Keyword",
+    "TypeExprRefSelf","ExprRefField","ExprRefParam","ExprRefLocal","ExprRefUnresolved",
+    "ExprRefPy","ExprRefBottomUp","ExprUnary",
+    "ExprBool","ExprCompare","ExprAttribute","ExprSlice","ExprSubscript","ExprCall","Keyword","ExprAwait",
     "Stmt","StmtExpr","StmtAssign","StmtAugAssign","StmtReturn","StmtIf","StmtFor","StmtWhile",
     "StmtBreak","StmtContinue","StmtPass","StmtRaise","StmtAssert","Alias","Arg","Arguments",
 "ExprList","ExprTuple","ExprDict","ExprSet","Comprehension","ExprListComp","ExprDictComp",

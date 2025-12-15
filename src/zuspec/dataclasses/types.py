@@ -72,6 +72,24 @@ class Time(object):
     @classmethod
     def s(cls, amt : float):
         return Time(TimeUnit.S, amt)
+    
+    def as_s(self) -> float:
+        return self._convert_to_unit(TimeUnit.S)
+    
+    def as_ms(self) -> float:
+        return self._convert_to_unit(TimeUnit.MS)
+    
+    def as_us(self) -> float:
+        return self._convert_to_unit(TimeUnit.US)
+    
+    def as_ns(self) -> float:
+        return self._convert_to_unit(TimeUnit.NS)
+    
+    def as_ps(self) -> float:
+        return self._convert_to_unit(TimeUnit.PS)
+    
+    def as_fs(self) -> float:
+        return self._convert_to_unit(TimeUnit.FS)
 
     @classmethod
     def ms(cls, amt : float):

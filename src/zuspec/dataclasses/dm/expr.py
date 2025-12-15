@@ -76,6 +76,25 @@ class ExprRefField(ExprRef):
 
 
 @dc.dataclass(kw_only=True)
+class ExprRefParam(ExprRef):
+    """Reference to a method parameter"""
+    name: str = dc.field()
+    index: int = dc.field(default=-1)
+
+
+@dc.dataclass(kw_only=True)
+class ExprRefLocal(ExprRef):
+    """Reference to a local variable"""
+    name: str = dc.field()
+
+
+@dc.dataclass(kw_only=True)
+class ExprRefUnresolved(ExprRef):
+    """Unresolved reference - builtin or external"""
+    name: str = dc.field()
+
+
+@dc.dataclass(kw_only=True)
 class ExprRefPy(ExprRef):
     """Reference relative to a Python object (base)"""
     base : Expr = dc.field()
@@ -129,5 +148,11 @@ class ExprCall(Expr):
     func: Expr = dc.field()
     args: list[Expr] = dc.field(default_factory=list)
     keywords: list[Keyword] = dc.field(default_factory=list)
+
+
+@dc.dataclass(kw_only=True)
+class ExprAwait(Expr):
+    """Represents an await expression in async code"""
+    value: Expr = dc.field()
 
 
