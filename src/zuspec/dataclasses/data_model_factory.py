@@ -1,5 +1,5 @@
 
-from typing import Union, Iterator, Type, get_type_hints, Any, Optional, Protocol, get_origin, get_args
+from typing import Union, Iterator, Type, get_type_hints, Any, Optional, Protocol, get_origin, get_args, Annotated
 import dataclasses as dc
 import inspect
 import ast
@@ -7,13 +7,13 @@ from .dm.context import Context
 from .dm.data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, 
     DataTypeComponent, DataTypeProtocol, DataTypeRef, DataTypeString,
-    DataTypeLock, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
+    DataTypeLock, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     Function, Process
 )
 from .dm.fields import Field, FieldKind, Bind
 from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtPass, StmtReturn
 from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved
-from .types import TypeBase, Component, Lock
+from .types import TypeBase, Component, Lock, Memory
 from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc
 
@@ -456,6 +456,10 @@ class DataModelFactory(object):
             # Get field type
             datatype = self._resolve_field_type(field_type)
             
+            # For Memory fields, extract size from metadata
+            if isinstance(datatype, DataTypeMemory) and f.metadata and 'size' in f.metadata:
+                datatype.size = f.metadata['size']
+            
             # Add referenced types to pending
             if field_type is not None and hasattr(field_type, '__mro__'):
                 if self._is_protocol(field_type) or self._is_component(field_type):
@@ -481,12 +485,33 @@ class DataModelFactory(object):
         if field_type is Lock:
             return DataTypeLock()
         
-        # Check for generic TLM types (Channel[T], GetIF[T], PutIF[T])
+        # Check for Annotated types (e.g., Annotated[int, U(32)])
         origin = get_origin(field_type)
+        if origin is Annotated:
+            # Extract the base type and metadata
+            args = get_args(field_type)
+            base_type = args[0] if args else None
+            metadata = args[1:] if len(args) > 1 else ()
+            
+            # Check if this is an annotated int with width information
+            if base_type is int and metadata:
+                from .types import U, S
+                for m in metadata:
+                    if isinstance(m, (U, S)):
+                        return DataTypeInt(bits=m.width, signed=isinstance(m, S))
+            
+            # Fall back to resolving the base type
+            return self._resolve_field_type(base_type)
+        
+        # Check for generic types (Memory[T], Channel[T], GetIF[T], PutIF[T])
         if origin is not None:
             args = get_args(field_type)
             element_type = self._resolve_field_type(args[0]) if args else None
             
+            if origin is Memory:
+                # Extract size from field metadata if available
+                # Size will be handled during field extraction where we have access to metadata
+                return DataTypeMemory(element_type=element_type, size=1024)
             if origin is Channel:
                 return DataTypeChannel(element_type=element_type)
             if origin is GetIF:
