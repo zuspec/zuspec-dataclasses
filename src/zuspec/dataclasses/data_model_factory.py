@@ -10,12 +10,12 @@ from .dm.data_type import (
     DataTypeLock, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     Function, Process
 )
-from .dm.fields import Field, FieldKind, Bind
-from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtPass, StmtReturn
+from .dm.fields import Field, FieldKind, Bind, FieldInOut
+from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtPass, StmtReturn, StmtIf
 from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved
 from .types import TypeBase, Component, Lock, Memory
 from .tlm import Channel, GetIF, PutIF
-from .decorators import ExecProc
+from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
 
 
 @dc.dataclass
@@ -385,24 +385,46 @@ class DataModelFactory(object):
         fields = self._extract_fields(t)
         field_indices = {f.name: idx for idx, f in enumerate(fields)}
         
+        # Build field types for proxy class creation
+        try:
+            hints = get_type_hints(t)
+        except Exception:
+            hints = {}
+        
+        field_types = {}
+        for fname in field_indices.keys():
+            field_type = hints.get(fname)
+            field_types[fname] = (hints, field_type)
+        
         # Process functions (methods and processes)
         functions = []
         processes = []
+        sync_processes = []
+        comb_processes = []
         
-        # First, find @process decorated methods from class __dict__
+        # First, find @process, @sync, @comb decorated methods from class __dict__
         for name, member in t.__dict__.items():
             if isinstance(member, ExecProc):
                 proc = self._extract_process(t, name, member, field_indices)
                 if proc is not None:
                     processes.append(proc)
+            elif isinstance(member, ExecSync):
+                func = self._process_sync_method(t, name, member, field_indices, field_types)
+                if func is not None:
+                    sync_processes.append(func)
+            elif isinstance(member, ExecComb):
+                func = self._process_comb_method(t, name, member, field_indices, field_types)
+                if func is not None:
+                    comb_processes.append(func)
         
         # Then, find regular methods (excluding those starting with _ except __bind__)
         for name, member in inspect.getmembers(t):
             if name.startswith('_') and name != '__bind__':
                 continue
             
-            # Skip if already processed as a process
-            if isinstance(t.__dict__.get(name), ExecProc):
+            # Skip if already processed as a process, sync, or comb
+            member_in_dict = t.__dict__.get(name)
+            if isinstance(member_in_dict, (ExecProc, ExecSync, ExecComb)):
                 continue
             
             if callable(member) and not isinstance(member, type):
@@ -417,7 +439,9 @@ class DataModelFactory(object):
             super=super_dt,
             fields=fields,
             functions=functions + processes,
-            bind_map=bind_map
+            bind_map=bind_map,
+            sync_processes=sync_processes,
+            comb_processes=comb_processes
         )
         return dm
 
@@ -444,6 +468,15 @@ class DataModelFactory(object):
                 if not (field_type is Lock):
                     continue
             
+            # Check if this is an input or output port
+            is_input_port = False
+            is_output_port = False
+            if f.default_factory is not dc.MISSING:
+                if f.default_factory is Input:
+                    is_input_port = True
+                elif f.default_factory is Output:
+                    is_output_port = True
+            
             # Determine field kind from metadata
             kind = FieldKind.Field
             if f.metadata:
@@ -465,11 +498,20 @@ class DataModelFactory(object):
                 if self._is_protocol(field_type) or self._is_component(field_type):
                     self._add_pending(field_type)
             
-            field_dm = Field(
-                name=f.name,
-                datatype=datatype,
-                kind=kind
-            )
+            # Create FieldInOut for input/output ports, otherwise regular Field
+            if is_input_port or is_output_port:
+                field_dm = FieldInOut(
+                    name=f.name,
+                    datatype=datatype,
+                    kind=kind,
+                    is_out=is_output_port  # True for output, False for input
+                )
+            else:
+                field_dm = Field(
+                    name=f.name,
+                    datatype=datatype,
+                    kind=kind
+                )
             fields.append(field_dm)
         
         return fields
@@ -573,7 +615,10 @@ class DataModelFactory(object):
                     lhs_expr = self._normalize_bind_expr(lhs)
                     rhs_expr = self._normalize_bind_expr(rhs)
                     if lhs_expr is not None and rhs_expr is not None:
-                        bind_map.append(Bind(lhs=lhs_expr, rhs=rhs_expr))
+                        bind = Bind(lhs=lhs_expr, rhs=rhs_expr)
+                        # Validate binding rules (if this component has sync/comb processes)
+                        self._validate_bind(t, bind, field_indices, field_types)
+                        bind_map.append(bind)
         except Exception as e:
             # __bind__ method execution failed - this indicates a user error in the bind method
             raise RuntimeError(
@@ -595,6 +640,60 @@ class DataModelFactory(object):
         if isinstance(expr, _ExprRefWrapper):
             return object.__getattribute__(expr, '_expr')
         return None
+    
+    def _validate_bind(self, component_class: Type, bind: Bind, field_indices: dict, field_types: dict):
+        """Validate binding rules for port connections.
+        
+        Binding Rules:
+        - ✅ Legal: output → input (normal signal flow)
+        - ✅ Legal: input → input (wire-through/fanout)
+        - ❌ Illegal: output → output (multiple drivers)
+        - ✅ Legal: constant → input (tie-off)
+        
+        Args:
+            component_class: The component class being processed
+            bind: The Bind to validate
+            field_indices: Field name to index mapping
+            field_types: Field name to type information mapping
+        """
+        # Only validate if we have sync or comb processes (indicates component with evaluation)
+        if not any(isinstance(member, (ExecSync, ExecComb)) for member in component_class.__dict__.values()):
+            return  # Not a component with sync/comb processes, skip validation
+        
+        # Check if LHS is a constant (not allowed)
+        if isinstance(bind.lhs, ExprConstant):
+            raise ValueError(
+                f"Bind error in {component_class.__name__}: "
+                f"Cannot bind to a constant value on the left-hand side. "
+                f"Binds must be of the form: target_port: source_signal"
+            )
+        
+        # If RHS is a constant, this is a tie-off (always legal for inputs)
+        if isinstance(bind.rhs, ExprConstant):
+            # Constant bindings are always legal (tie-off to 0, 1, etc.)
+            return
+        
+        # TODO: Full port direction validation
+        # For now, we've validated the basic cases:
+        # - No constants on LHS
+        # - Constants on RHS are allowed (tie-offs)
+        # 
+        # Full validation of output→output would require walking the component
+        # hierarchy and checking FieldInOut.is_out flags, which is complex during
+        # construction. This could be added as a post-construction validation pass.
+    
+    def _resolve_bind_field(self, expr, field_indices: dict, field_types: dict) -> Optional[tuple]:
+        """Resolve a bind expression to (is_input, field_name).
+        
+        Returns:
+            Tuple of (is_input: bool, field_name: str) or None if cannot resolve
+        """
+        # For now, we'll just return None to skip detailed validation
+        # The proper implementation would need to walk the component hierarchy
+        # and check FieldInOut.is_out flags in the datamodel
+        # This is complex because we're validating during datamodel construction
+        # A better approach would be to validate after the full datamodel is built
+        return None
 
     def _extract_process(self, cls : Type, name : str, exec_proc : ExecProc, field_indices: dict = None) -> Optional[Process]:
         """Extract a Process from an @process decorated method."""
@@ -612,10 +711,182 @@ class DataModelFactory(object):
             body=body
         )
 
+    def _process_sync_method(self, cls: Type, name: str, 
+                            exec_sync: ExecSync, 
+                            field_indices: dict,
+                            field_types: dict) -> Optional[Function]:
+        """Convert a @sync decorated method to a datamodel Function."""
+        
+        # Create proxy instance to evaluate clock/reset lambdas
+        proxy_inst = _create_bind_proxy_class(cls, field_indices, field_types)
+        
+        # Evaluate lambdas to get ExprRefField for clock and reset
+        clock_expr = None
+        reset_expr = None
+        
+        try:
+            if exec_sync.clock is not None:
+                clock_result = exec_sync.clock(proxy_inst)
+                clock_expr = self._normalize_bind_expr(clock_result)
+                if clock_expr is None:
+                    raise ValueError(f"Clock lambda in @sync for '{name}' did not return a valid field reference")
+            
+            if exec_sync.reset is not None:
+                reset_result = exec_sync.reset(proxy_inst)
+                reset_expr = self._normalize_bind_expr(reset_result)
+                if reset_expr is None:
+                    raise ValueError(f"Reset lambda in @sync for '{name}' did not return a valid field reference")
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to evaluate clock/reset lambdas for @sync method '{name}' in class '{cls.__name__}': {e}"
+            ) from e
+        
+        # Extract method body as AST
+        scope = ConversionScope(
+            component=None,
+            field_indices=field_indices,
+            method_params=set(),
+            local_vars=set()
+        )
+        
+        try:
+            body = self._extract_method_body(cls, exec_sync.method.__name__, scope)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to extract method body for @sync method '{name}' in class '{cls.__name__}': {e}"
+            ) from e
+        
+        # Create Function with metadata
+        func = Function(
+            name=name,
+            body=body,
+            metadata={
+                "kind": "sync",
+                "clock": clock_expr,
+                "reset": reset_expr,
+                "method": exec_sync.method
+            }
+        )
+        
+        return func
+
+    def _process_comb_method(self, cls: Type, name: str,
+                            exec_comb: ExecComb,
+                            field_indices: dict,
+                            field_types: dict) -> Optional[Function]:
+        """Convert a @comb decorated method to a datamodel Function."""
+        
+        # Extract method body
+        scope = ConversionScope(
+            component=None,
+            field_indices=field_indices,
+            method_params=set(),
+            local_vars=set()
+        )
+        
+        try:
+            body = self._extract_method_body(cls, exec_comb.method.__name__, scope)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to extract method body for @comb method '{name}' in class '{cls.__name__}': {e}"
+            ) from e
+        
+        # Analyze AST to extract sensitivity list
+        sensitivity_list = self._extract_sensitivity_list(body)
+        
+        # Create Function with metadata
+        func = Function(
+            name=name,
+            body=body,
+            metadata={
+                "kind": "comb",
+                "sensitivity": sensitivity_list,
+                "method": exec_comb.method
+            }
+        )
+        
+        return func
+
+    def _extract_sensitivity_list(self, body: list) -> list:
+        """Walk AST and collect all field references that are read."""
+        
+        class SensitivityVisitor:
+            def __init__(self):
+                self.reads = []
+                self.writes = set()
+            
+            def visit_stmt(self, stmt):
+                if isinstance(stmt, StmtAssign):
+                    self.visit_stmt_assign(stmt)
+                elif isinstance(stmt, StmtExpr):
+                    self.visit_expr(stmt.expr)
+                elif isinstance(stmt, StmtFor):
+                    self.visit_expr(stmt.iter)
+                    for s in stmt.body:
+                        self.visit_stmt(s)
+                    for s in stmt.orelse:
+                        self.visit_stmt(s)
+                elif isinstance(stmt, StmtReturn):
+                    if stmt.value:
+                        self.visit_expr(stmt.value)
+            
+            def visit_stmt_assign(self, stmt):
+                # Track write targets
+                for target in stmt.targets:
+                    if isinstance(target, ExprRefField):
+                        # Compute a unique key for the field reference
+                        field_key = self._field_key(target)
+                        self.writes.add(field_key)
+                # Visit RHS for reads
+                self.visit_expr(stmt.value)
+            
+            def visit_expr(self, expr):
+                if expr is None:
+                    return
+                
+                if isinstance(expr, ExprRefField):
+                    # Track reads (but we'll filter out writes later)
+                    self.reads.append(expr)
+                elif isinstance(expr, ExprCall):
+                    self.visit_expr(expr.func)
+                    for arg in expr.args:
+                        self.visit_expr(arg)
+                elif isinstance(expr, ExprAttribute):
+                    self.visit_expr(expr.value)
+                elif isinstance(expr, ExprBin):
+                    self.visit_expr(expr.lhs)
+                    self.visit_expr(expr.rhs)
+                # Add more expression types as needed
+            
+            def _field_key(self, field_ref: ExprRefField) -> str:
+                """Generate a unique key for a field reference."""
+                # Simple approach: just use the field index
+                # More sophisticated approach would walk the base chain
+                return str(field_ref.index)
+        
+        visitor = SensitivityVisitor()
+        for stmt in body:
+            visitor.visit_stmt(stmt)
+        
+        # Filter out writes from sensitivity list
+        sensitivity = []
+        for read_expr in visitor.reads:
+            field_key = visitor._field_key(read_expr)
+            if field_key not in visitor.writes:
+                # Avoid duplicates
+                if not any(visitor._field_key(s) == field_key for s in sensitivity):
+                    sensitivity.append(read_expr)
+        
+        return sensitivity
+
     def _extract_method_body(self, cls : Type, method_name : str, scope: ConversionScope = None) -> list:
         """Extract the AST body of a method and convert to data model statements."""
+        import textwrap
+        
         try:
             source = inspect.getsource(cls)
+            # Dedent to handle classes defined in indented contexts (e.g., inside functions)
+            source = textwrap.dedent(source)
         except OSError as e:
             # inspect.getsource fails when source is not available (e.g., classes defined
             # in string literals passed to exec(), interactive sessions, or __main__ scripts)
@@ -629,14 +900,20 @@ class DataModelFactory(object):
         try:
             tree = ast.parse(source)
             
-            # Find the class definition
+            # Find the class definition - need to handle nested classes in functions
+            # Use ast.walk() but filter to the right class name
+            class_node = None
             for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef):
-                    # Find the method
-                    for item in node.body:
-                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            if item.name == method_name:
-                                return self._convert_ast_body(item.body, scope)
+                if isinstance(node, ast.ClassDef) and node.name == cls.__name__:
+                    class_node = node
+                    break
+            
+            if class_node is not None:
+                # Find the method in this class
+                for item in class_node.body:
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if item.name == method_name:
+                            return self._convert_ast_body(item.body, scope)
         except SyntaxError as e:
             raise RuntimeError(
                 f"Failed to parse source code for class '{cls.__name__}' method '{method_name}': {e}"
@@ -666,6 +943,12 @@ class DataModelFactory(object):
             return StmtFor(
                 target=self._convert_ast_expr(node.target, scope),
                 iter=self._convert_ast_expr(node.iter, scope),
+                body=self._convert_ast_body(node.body, scope),
+                orelse=self._convert_ast_body(node.orelse, scope)
+            )
+        elif isinstance(node, ast.If):
+            return StmtIf(
+                test=self._convert_ast_expr(node.test, scope),
                 body=self._convert_ast_body(node.body, scope),
                 orelse=self._convert_ast_body(node.orelse, scope)
             )

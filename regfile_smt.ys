@@ -1,0 +1,4 @@
+read -sv regfile.sv
+hierarchy -check; proc; opt; check -assert
+#write_smt2 -bv -tpl test.tpl test.smt2
+write_smt2  test.smt2
