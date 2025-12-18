@@ -333,6 +333,9 @@ class DataModelFactory(object):
         # Check if async
         is_async = inspect.iscoroutinefunction(member)
         
+        # Check for @invariant decorator
+        is_invariant = hasattr(member, '_is_invariant') and member._is_invariant
+        
         # Create conversion scope
         scope = ConversionScope(
             field_indices=field_indices if field_indices else {},
@@ -347,7 +350,8 @@ class DataModelFactory(object):
             args=arguments,
             body=body,
             returns=returns,
-            is_async=is_async
+            is_async=is_async,
+            is_invariant=is_invariant
         )
 
     def _type_to_expr(self, annotation) -> Optional[Any]:
@@ -898,6 +902,7 @@ class DataModelFactory(object):
             ) from e
         
         try:
+            source = textwrap.dedent(source)
             tree = ast.parse(source)
             
             # Find the class definition - need to handle nested classes in functions
@@ -1050,6 +1055,25 @@ class DataModelFactory(object):
                 op=self._convert_binop(node.op),
                 rhs=self._convert_ast_expr(node.right, scope)
             )
+        elif isinstance(node, ast.Compare):
+            from .dm.expr import ExprCompare
+            return ExprCompare(
+                left=self._convert_ast_expr(node.left, scope),
+                ops=[self._convert_cmpop(op) for op in node.ops],
+                comparators=[self._convert_ast_expr(comp, scope) for comp in node.comparators]
+            )
+        elif isinstance(node, ast.BoolOp):
+            from .dm.expr import ExprBool
+            return ExprBool(
+                op=self._convert_boolop(node.op),
+                values=[self._convert_ast_expr(v, scope) for v in node.values]
+            )
+        elif isinstance(node, ast.UnaryOp):
+            from .dm.expr import ExprUnary
+            return ExprUnary(
+                op=self._convert_unaryop(node.op),
+                operand=self._convert_ast_expr(node.operand, scope)
+            )
         elif isinstance(node, ast.Await):
             # Preserve await expression in datamodel
             return ExprAwait(
@@ -1105,6 +1129,43 @@ class DataModelFactory(object):
             ast.RShift: BinOp.RShift,
         }
         return op_map.get(type(op), BinOp.Add)
+    
+    def _convert_cmpop(self, op : ast.cmpop):
+        """Convert AST comparison operator to data model CmpOp."""
+        from .dm.expr import CmpOp
+        op_map = {
+            ast.Eq: CmpOp.Eq,
+            ast.NotEq: CmpOp.NotEq,
+            ast.Lt: CmpOp.Lt,
+            ast.LtE: CmpOp.LtE,
+            ast.Gt: CmpOp.Gt,
+            ast.GtE: CmpOp.GtE,
+            ast.Is: CmpOp.Is,
+            ast.IsNot: CmpOp.IsNot,
+            ast.In: CmpOp.In,
+            ast.NotIn: CmpOp.NotIn,
+        }
+        return op_map.get(type(op), CmpOp.Eq)
+    
+    def _convert_boolop(self, op : ast.boolop):
+        """Convert AST boolean operator to data model BoolOp."""
+        from .dm.expr import BoolOp as DmBoolOp
+        op_map = {
+            ast.And: DmBoolOp.And,
+            ast.Or: DmBoolOp.Or,
+        }
+        return op_map.get(type(op), DmBoolOp.And)
+    
+    def _convert_unaryop(self, op : ast.unaryop):
+        """Convert AST unary operator to data model UnaryOp."""
+        from .dm.expr import UnaryOp
+        op_map = {
+            ast.Invert: UnaryOp.Invert,
+            ast.Not: UnaryOp.Not,
+            ast.UAdd: UnaryOp.UAdd,
+            ast.USub: UnaryOp.USub,
+        }
+        return op_map.get(type(op), UnaryOp.UAdd)
 
     def _convert_cmpop(self, op : ast.cmpop) -> 'CmpOp':
         """Convert AST comparison operator to data model CmpOp."""
@@ -1125,8 +1186,21 @@ class DataModelFactory(object):
 
     def _process_dataclass(self, t : Type) -> DataTypeStruct:
         """Process a dataclass into DataTypeStruct."""
+        # Process fields and build field indices for scope
         fields = self._extract_fields(t)
-        return DataTypeStruct(super=None, fields=fields)
+        field_indices = {f.name: idx for idx, f in enumerate(fields)}
+        
+        # Extract methods (including @invariant decorated ones)
+        functions = []
+        for name, member in inspect.getmembers(t):
+            if name.startswith('_'):
+                continue
+            if callable(member) and not isinstance(member, type):
+                func = self._extract_function(t, name, member, field_indices)
+                if func is not None:
+                    functions.append(func)
+        
+        return DataTypeStruct(super=None, fields=fields, functions=functions)
 
     def _process_class(self, t : Type) -> DataTypeClass:
         """Process a generic class into DataTypeClass."""

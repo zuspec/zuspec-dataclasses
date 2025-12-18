@@ -100,6 +100,7 @@ class Function(Base):
     returns : Optional[DataType] = dc.field(default=None)
     is_async : bool = dc.field(default=False)
     metadata : dict = dc.field(default_factory=dict)
+    is_invariant : bool = dc.field(default=False)
 
 @dc.dataclass(kw_only=True)
 class Process(Base):

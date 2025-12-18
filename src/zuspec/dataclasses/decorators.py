@@ -51,7 +51,8 @@ def field(
         default_factory : Optional[Any] = None,
         default : Optional[Any] = None,
         metadata : Optional[Dict[str,object]]=None,
-        size : Optional[int]=None):
+        size : Optional[int]=None,
+        bounds : Optional[tuple]=None):
     args = {}
 
     if default_factory is not None:
@@ -64,6 +65,10 @@ def field(
     if size is not None:
         metadata = {} if metadata is None else metadata
         metadata["size"] = size
+    
+    if bounds is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["bounds"] = bounds
 
     if metadata is not None:
         args["metadata"] = metadata
@@ -180,4 +185,29 @@ def comb(method):
             self.out = self.a ^ self.b
     """
     return ExecComb(method=method)
+
+def invariant(func):
+    """Decorator to mark a method as a structural invariant.
+    
+    The decorated method should return a boolean expression that must 
+    always hold for valid instances of the dataclass.
+    
+    Example:
+        @zdc.dataclass
+        class Config(zdc.Struct):
+            x: zdc.uint8_t = zdc.field(bounds=(0, 100))
+            y: zdc.uint8_t = zdc.field(bounds=(0, 100))
+            
+            @zdc.invariant
+            def sum_constraint(self) -> bool:
+                return self.x + self.y <= 150
+    
+    Args:
+        func: Method that returns bool
+        
+    Returns:
+        Decorated function with _is_invariant flag set
+    """
+    func._is_invariant = True
+    return func
 
