@@ -15,10 +15,11 @@ from .channel_rt import ChannelRT, GetIFRT, PutIFRT
 
 class SignalDescriptor:
     """Property descriptor that intercepts signal access and routes to eval infrastructure."""
-    def __init__(self, name: str, field_type: type, is_input: bool):
+    def __init__(self, name: str, field_type: type, is_input: bool, default_value: int = 0):
         self.name = name
         self.field_type = field_type
         self.is_input = is_input
+        self.default_value = default_value
     
     def __get__(self, obj, objtype=None):
         if obj is None:
@@ -30,9 +31,9 @@ class SignalDescriptor:
         
         # Fallback during construction
         if hasattr(obj, '_impl') and obj._impl:
-            return obj._impl._signal_values.get(self.name, 0)
+            return obj._impl._signal_values.get(self.name, self.default_value)
         
-        return 0
+        return self.default_value
     
     def __set__(self, obj, value):
         # Use signal_write if eval is initialized
@@ -134,8 +135,9 @@ class ObjFactory(ObjFactoryP):
                             is_field_signal = True
                 
                 if is_signal:
-                    # Store signal field metadata - don't add to dataclass fields
-                    signal_fields.append((f.name, field_type, is_input))
+                    # Store signal field metadata including default value - don't add to dataclass fields
+                    default_value = f.default if f.default is not dc.MISSING else 0
+                    signal_fields.append((f.name, field_type, is_input, default_value))
                     continue
                 
                 # Check if this is a Memory field
@@ -218,8 +220,8 @@ class ObjFactory(ObjFactoryP):
             self.comp_type_m[cls] = cls_rt
             
             # Add signal properties after class creation
-            for sig_name, sig_type, is_input in signal_fields:
-                descriptor = SignalDescriptor(sig_name, sig_type, is_input)
+            for sig_name, sig_type, is_input, default_value in signal_fields:
+                descriptor = SignalDescriptor(sig_name, sig_type, is_input, default_value)
                 setattr(cls_rt, sig_name, descriptor)
 
             # Only set up __init__ wrapper once when creating the class
@@ -531,6 +533,29 @@ class ObjFactory(ObjFactoryP):
             
             # Set target to source value by traversing from comp
             ObjFactory.__set_bind_path_value__(comp, target, source_value)
+            
+            # Register runtime binding for signal propagation
+            # This allows clock edges to propagate from parent to child components
+            if isinstance(target, BindPath) and isinstance(source, BindPath):
+                # Get source component and signal name
+                if len(source._path) > 0:
+                    source_comp = comp
+                    if len(source._path) > 1:
+                        # Navigate to the component that owns this signal
+                        for part in source._path[:-1]:
+                            source_comp = getattr(source_comp, part)
+                    source_signal = source._path[-1]
+                    
+                    # Get target component and signal name
+                    target_comp = comp
+                    if len(target._path) > 1:
+                        for part in target._path[:-1]:
+                            target_comp = getattr(target_comp, part)
+                    target_signal = target._path[-1]
+                    
+                    # Register binding: when source_signal changes, update target_signal
+                    if hasattr(source_comp, '_impl') and source_comp._impl:
+                        source_comp._impl.add_signal_binding(source_signal, target_comp, target_signal)
 
     @staticmethod
     def __order_bindmap__(comp, bindmap):

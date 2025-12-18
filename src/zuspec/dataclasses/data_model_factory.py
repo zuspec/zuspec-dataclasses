@@ -12,7 +12,7 @@ from .dm.data_type import (
 )
 from .dm.fields import Field, FieldKind, Bind, FieldInOut
 from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf
-from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved
+from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript
 from .types import TypeBase, Component, Lock, Memory
 from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
@@ -1055,6 +1055,37 @@ class DataModelFactory(object):
             return ExprAwait(
                 value=self._convert_ast_expr(node.value, scope)
             )
+        elif isinstance(node, ast.IfExp):
+            # Handle ternary conditional expression (a if test else b)
+            from .dm.expr_phase2 import ExprIfExp
+            return ExprIfExp(
+                test=self._convert_ast_expr(node.test, scope),
+                body=self._convert_ast_expr(node.body, scope),
+                orelse=self._convert_ast_expr(node.orelse, scope)
+            )
+        elif isinstance(node, ast.Compare):
+            # Handle comparison expressions (a == b, a < b, etc.)
+            return ExprCompare(
+                left=self._convert_ast_expr(node.left, scope),
+                ops=[self._convert_cmpop(op) for op in node.ops],
+                comparators=[self._convert_ast_expr(comp, scope) for comp in node.comparators]
+            )
+        elif isinstance(node, ast.List):
+            # Handle list literals [a, b, c] as a constant containing the list
+            # Convert to a tuple of the evaluated constant values for simpler runtime handling
+            elts = [self._convert_ast_expr(elt, scope) for elt in node.elts]
+            # If all elements are constants, create a constant list
+            if all(isinstance(e, ExprConstant) for e in elts):
+                return ExprConstant(value=[e.value for e in elts])
+            # Otherwise use ExprList from phase2
+            from .dm.expr_phase2 import ExprList
+            return ExprList(elts=elts)
+        elif isinstance(node, ast.Subscript):
+            # Handle subscript operations (e.g., array[index])
+            return ExprSubscript(
+                value=self._convert_ast_expr(node.value, scope),
+                slice=self._convert_ast_expr(node.slice, scope)
+            )
         
         # Fallback: store as constant with the AST node type
         return ExprConstant(value=f"<{type(node).__name__}>")
@@ -1074,6 +1105,23 @@ class DataModelFactory(object):
             ast.RShift: BinOp.RShift,
         }
         return op_map.get(type(op), BinOp.Add)
+
+    def _convert_cmpop(self, op : ast.cmpop) -> 'CmpOp':
+        """Convert AST comparison operator to data model CmpOp."""
+        from .dm.expr import CmpOp
+        op_map = {
+            ast.Eq: CmpOp.Eq,
+            ast.NotEq: CmpOp.NotEq,
+            ast.Lt: CmpOp.Lt,
+            ast.LtE: CmpOp.LtE,
+            ast.Gt: CmpOp.Gt,
+            ast.GtE: CmpOp.GtE,
+            ast.Is: CmpOp.Is,
+            ast.IsNot: CmpOp.IsNot,
+            ast.In: CmpOp.In,
+            ast.NotIn: CmpOp.NotIn,
+        }
+        return op_map.get(type(op), CmpOp.Eq)
 
     def _process_dataclass(self, t : Type) -> DataTypeStruct:
         """Process a dataclass into DataTypeStruct."""

@@ -38,6 +38,7 @@ class CompImplRT(object):
     _comb_processes : List = dc.field(default_factory=list)
     _eval_initialized : bool = dc.field(default=False)
     _pending_eval : Set = dc.field(default_factory=set)  # Comb processes to evaluate in next delta
+    _signal_bindings : Dict[str, List] = dc.field(default_factory=dict)  # signal -> list of (comp, signal) bound to it
 
     @property
     def name(self) -> str:
@@ -62,6 +63,15 @@ class CompImplRT(object):
     def add_process(self, name: str, proc: ExecProc):
         """Register a process to be started."""
         self._processes.append((name, proc))
+    
+    def add_signal_binding(self, source_signal: str, target_comp: Component, target_signal: str):
+        """Register a binding from source signal to target component's signal.
+        
+        When source_signal changes, target_signal on target_comp will also be updated.
+        """
+        if source_signal not in self._signal_bindings:
+            self._signal_bindings[source_signal] = []
+        self._signal_bindings[source_signal].append((target_comp, target_signal))
     
     def _init_eval(self, comp: Component):
         """Initialize evaluation structures."""
@@ -113,11 +123,18 @@ class CompImplRT(object):
             if not attr_name.startswith('_'):
                 attr = getattr(type(comp), attr_name, None)
                 if isinstance(attr, SignalDescriptor):
-                    # Only initialize if not already set
+                    # Only initialize if not already set, use descriptor's default value
                     if attr.name not in self._signal_values:
-                        self._signal_values[attr.name] = 0
+                        self._signal_values[attr.name] = attr.default_value
         
         self._eval_initialized = True
+        
+        # Run comb processes once to set initial output values
+        # This is important so outputs reflect the initial state
+        for comb_func in self._comb_processes:
+            self._eval_mode = EvalMode.COMB_EVAL
+            self._execute_function(comp, comb_func)
+            self._eval_mode = EvalMode.IDLE
     
     def _get_signal_name(self, expr, comp):
         """Extract signal name from expression."""
@@ -152,12 +169,24 @@ class CompImplRT(object):
                 for proc_idx in self._sensitivity[name]:
                     if proc_idx not in self._pending_eval:
                         self._pending_eval.add(proc_idx)
+            
+            # If this is an output signal and value changed, notify parent
+            if old_value != value and self._parent is not None:
+                tb = self.timebase()
+                self._notify_parent_of_output_change(comp, name, tb)
         
         else:  # IDLE - user write from outside process
             old_value = self._signal_values.get(name)
             self._signal_values[name] = value
             
             if old_value != value:
+                # Propagate to bound signals FIRST (before scheduling processes)
+                if name in self._signal_bindings:
+                    for target_comp, target_signal in self._signal_bindings[name]:
+                        # Write to bound component's signal
+                        # This will recursively trigger that component's processes
+                        target_comp._impl.signal_write(target_comp, target_signal, value)
+                
                 # Schedule dependent processes on timebase at delta (0) time
                 tb = self.timebase()
                 events_scheduled = False
@@ -213,6 +242,11 @@ class CompImplRT(object):
                         if proc_idx not in self._pending_eval:
                             self._pending_eval.add(proc_idx)
                             self._schedule_comb_eval(comp, proc_idx, timebase)
+                
+                # If this is an output signal and value changed, notify parent
+                # so parent comb processes that read this output can run
+                if old_value != val and self._parent is not None:
+                    self._notify_parent_of_output_change(comp, sig_name, timebase)
             
             self._deferred_writes.clear()
         
@@ -245,6 +279,25 @@ class CompImplRT(object):
         executor = Executor(self, comp)
         executor.is_deferred = (self._eval_mode == EvalMode.SYNC_EVAL)
         executor.execute_stmts(func.body)
+    
+    def _notify_parent_of_output_change(self, comp: Component, signal_name: str, timebase):
+        """Notify parent that a child output has changed.
+        
+        This triggers parent comb processes to re-evaluate since they may read this output.
+        For simplicity, we schedule all parent comb processes when any child output changes.
+        A more sophisticated approach would track which parent processes actually read this signal.
+        """
+        if self._parent is None or not hasattr(self._parent, '_impl'):
+            return
+        
+        parent_impl = self._parent._impl
+        
+        # Schedule all parent comb processes since any of them might read this child output
+        # This is conservative but correct - parent processes will check if values actually changed
+        for proc_idx in range(len(parent_impl._comb_processes)):
+            if proc_idx not in parent_impl._pending_eval:
+                parent_impl._pending_eval.add(proc_idx)
+                parent_impl._schedule_comb_eval(self._parent, proc_idx, timebase)
     
     def _initialize_eval_state(self, comp: Component):
         """Initialize evaluation state for this component if it has sync/comb processes."""
