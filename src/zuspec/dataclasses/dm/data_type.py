@@ -97,6 +97,7 @@ class Function(Base):
     body : List['Stmt'] = dc.field(default_factory=list)
     returns : Optional[DataType] = dc.field(default=None)
     is_async : bool = dc.field(default=False)
+    is_invariant : bool = dc.field(default=False)
 
 @dc.dataclass(kw_only=True)
 class Process(Base):
