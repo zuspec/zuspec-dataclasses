@@ -49,6 +49,8 @@ class DataTypeComponent(DataTypeClass):
     """Components are structural building blocks that can have ports, exports, 
     and bindings. The bind_map captures connections between ports/exports."""
     bind_map : List['Bind'] = dc.field(default_factory=list)
+    sync_processes : List[Function] = dc.field(default_factory=list)
+    comb_processes : List[Function] = dc.field(default_factory=list)
 
 if TYPE_CHECKING:
     from .fields import Bind
@@ -97,6 +99,7 @@ class Function(Base):
     body : List['Stmt'] = dc.field(default_factory=list)
     returns : Optional[DataType] = dc.field(default=None)
     is_async : bool = dc.field(default=False)
+    metadata : dict = dc.field(default_factory=dict)
     is_invariant : bool = dc.field(default=False)
 
 @dc.dataclass(kw_only=True)

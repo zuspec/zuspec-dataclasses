@@ -3,7 +3,7 @@ import dataclasses as dc
 import inspect
 from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, TypeAliasType
 from ..config import ObjFactory as ObjFactoryP
-from ..decorators import ExecProc
+from ..decorators import ExecProc, ExecSync, ExecComb, Input, Output
 from ..types import Component, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
 from ..tlm import Channel, GetIF, PutIF, Transport
 from .comp_impl_rt import CompImplRT
@@ -12,6 +12,36 @@ from .memory_rt import MemoryRT
 from .address_space_rt import AddressSpaceRT
 from .regfile_rt import RegFileRT, RegRT
 from .channel_rt import ChannelRT, GetIFRT, PutIFRT
+
+class SignalDescriptor:
+    """Property descriptor that intercepts signal access and routes to eval infrastructure."""
+    def __init__(self, name: str, field_type: type, is_input: bool):
+        self.name = name
+        self.field_type = field_type
+        self.is_input = is_input
+    
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        
+        # Use signal_read if eval is initialized
+        if hasattr(obj, '_impl') and obj._impl and obj._impl._eval_initialized:
+            return obj._impl.signal_read(obj, self.name)
+        
+        # Fallback during construction
+        if hasattr(obj, '_impl') and obj._impl:
+            return obj._impl._signal_values.get(self.name, 0)
+        
+        return 0
+    
+    def __set__(self, obj, value):
+        # Use signal_write if eval is initialized
+        if hasattr(obj, '_impl') and obj._impl:
+            if obj._impl._eval_initialized:
+                obj._impl.signal_write(obj, self.name, value)
+            else:
+                # During construction, just store directly
+                obj._impl._signal_values[self.name] = value
 
 class BindPath:
     """Represents a path in the binding system (e.g., self.cons.call or self.p.prod)"""
@@ -63,6 +93,7 @@ class ObjFactory(ObjFactoryP):
         else:
             fields = []
             namespace = {}
+            signal_fields = []  # Track signal fields to create properties
 
 #            if "__post_init__" in cls.__dict__.keys():
 #                namespace["__post_init__"] = cls.__dict__["__post_init__"]
@@ -71,6 +102,41 @@ class ObjFactory(ObjFactoryP):
             for f in dc.fields(cls):
                 field_type = f.type
                 origin = get_origin(field_type)
+                
+                # Check if this is an Input or Output field (marker via default_factory)
+                is_signal = False
+                is_input = False
+                is_field_signal = False
+                
+                if f.default_factory is not dc.MISSING:
+                    if f.default_factory is Input:
+                        is_signal = True
+                        is_input = True
+                    elif f.default_factory is Output:
+                        is_signal = True
+                        is_input = False
+                
+                # Also check if this is a regular field with a bit type (should participate in eval)
+                # Bit types can be Annotated[int, U(...)] or direct type references
+                if not is_signal and f.init:
+                    # Check for Annotated types (e.g., bit8 = Annotated[int, U(width=8)])
+                    from typing import Annotated
+                    if origin is not None and origin is Annotated:
+                        # It's an Annotated type, likely a bit type
+                        is_signal = True
+                        is_field_signal = True
+                    elif hasattr(field_type, '__name__'):
+                        type_name = getattr(field_type, '__name__', '')
+                        # Check for bit types (bit, bit8, bit16, etc.) or uint types
+                        if (type_name.startswith('bit') or type_name.startswith('uint') or 
+                            type_name.startswith('int') and type_name.endswith('_t')):
+                            is_signal = True
+                            is_field_signal = True
+                
+                if is_signal:
+                    # Store signal field metadata - don't add to dataclass fields
+                    signal_fields.append((f.name, field_type, is_input))
+                    continue
                 
                 # Check if this is a Memory field
                 if origin is not None and origin is Memory:
@@ -150,6 +216,11 @@ class ObjFactory(ObjFactoryP):
                 kw_only=True,
                 bases=(cls,))
             self.comp_type_m[cls] = cls_rt
+            
+            # Add signal properties after class creation
+            for sig_name, sig_type, is_input in signal_fields:
+                descriptor = SignalDescriptor(sig_name, sig_type, is_input)
+                setattr(cls_rt, sig_name, descriptor)
 
             # Only set up __init__ wrapper once when creating the class
             setattr(cls_rt, "__dc_init__", getattr(cls_rt, "__init__"))
@@ -241,10 +312,18 @@ class ObjFactory(ObjFactoryP):
             comp._impl.set_timebase(timebase)
 
         # Discover @process decorated methods
+        # Note: @sync and @comb methods are discovered through datamodel, not here
+        has_eval = False
         for attr_name in dir(type(comp)):
             attr = getattr(type(comp), attr_name, None)
             if isinstance(attr, ExecProc):
                 comp._impl.add_process(attr_name, attr)
+            elif isinstance(attr, (ExecSync, ExecComb)):
+                has_eval = True
+        
+        # Initialize evaluation infrastructure if component has sync/comb processes
+        if has_eval:
+            comp._impl._init_eval(comp)
 
         # Build child components first (bottom-up)
         for f in dc.fields(comp):

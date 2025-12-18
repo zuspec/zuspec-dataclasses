@@ -1,0 +1,12 @@
+read -sv regfile.sv
+hierarchy -top regfile
+proc; opt; techmap; opt
+
+show -prefix regfile -format dot
+
+stat
+
+write_verilog regfile_net.v
+
+
+

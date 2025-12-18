@@ -51,14 +51,10 @@ class Timebase(TimebaseP):
         delay_fs = self._time_to_fs(amt)
         wake_time = self._current_time + delay_fs
         
-        async def callback_wrapper():
-            future = asyncio.get_event_loop().create_future()
-            self._event_counter += 1
-            heapq.heappush(self._event_queue, (wake_time, self._event_counter, future))
-            await future
-            call()
-        
-        asyncio.create_task(callback_wrapper())
+        # Create a callback entry - store the callback directly
+        self._event_counter += 1
+        # Use None as a marker for callback (vs Future for coroutines)
+        heapq.heappush(self._event_queue, (wake_time, self._event_counter, call))
 
     def advance(self) -> bool:
         """Advance simulation time to the next event and wake waiters.
@@ -74,9 +70,15 @@ class Timebase(TimebaseP):
         
         # Wake all events at this time
         while self._event_queue and self._event_queue[0][0] == next_time:
-            _, _, future = heapq.heappop(self._event_queue)
-            if not future.done():
-                future.set_result(None)
+            _, _, item = heapq.heappop(self._event_queue)
+            
+            # Check if it's a callback or a Future
+            if callable(item):
+                # It's a callback - invoke it
+                item()
+            elif hasattr(item, 'done') and not item.done():
+                # It's a Future - set result
+                item.set_result(None)
         
         return len(self._event_queue) > 0
 

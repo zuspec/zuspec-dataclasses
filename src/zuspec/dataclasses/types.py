@@ -253,6 +253,39 @@ class Component(TypeBase):
         # will be called later by __comp_build__
         if self._impl is not None:
             self._impl.post_init(self)
+    
+    def __setattr__(self, name: str, value):
+        """Intercept writes to output fields for evaluation.
+        
+        Only output fields need interception since they can trigger
+        downstream combinational logic or be sampled by sync processes.
+        Input fields are just data storage.
+        """
+        # Always allow setting _impl and internal fields
+        if name.startswith('_'):
+            object.__setattr__(self, name, value)
+            return
+        
+        # Check if this is an output field that needs special handling
+        impl = object.__getattribute__(self, '_impl')
+        if impl is not None and hasattr(impl, '_eval_initialized') and impl._eval_initialized:
+            # Check if this field is an output
+            import dataclasses as dc
+            from .decorators import Output
+            
+            for field in dc.fields(self):
+                if field.name == name:
+                    # Check if this is an output field
+                    if field.default_factory is Output:
+                        # Route output writes through evaluation system
+                        impl.signal_write(self, name, value)
+                        # Also update the actual field
+                        object.__setattr__(self, name, value)
+                        return
+                    break
+        
+        # Normal assignment for inputs and non-evaluated fields
+        object.__setattr__(self, name, value)
 
     def shutdown(self):
         assert self._impl is not None
@@ -375,6 +408,20 @@ int16_t = Annotated[int, S(16)]
 int32_t = Annotated[int, S(32)]
 int64_t = Annotated[int, S(64)]
 int128_t = Annotated[int, S(128)]
+
+# Bit type aliases
+bit = uint1_t
+bit1 = uint1_t
+bit2 = uint2_t
+bit3 = uint3_t
+bit4 = uint4_t
+bit5 = uint5_t
+bit6 = uint6_t
+bit7 = uint7_t
+bit8 = uint8_t
+bit16 = uint16_t
+bit32 = uint32_t
+bit64 = uint64_t
 
 class MyE(enum.IntEnum):
     a = 1

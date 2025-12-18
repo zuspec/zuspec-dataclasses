@@ -1,0 +1,23 @@
+
+	   docs/index.rst
+	   docs/intro.rst
+	   src/zuspec/dataclasses/__init__.py
+	   src/zuspec/dataclasses/config.py
+	   src/zuspec/dataclasses/decorators.py
+	   src/zuspec/dataclasses/dm/__init__.py
+	   src/zuspec/dataclasses/dm/data_type.py
+	   src/zuspec/dataclasses/dm/fields.py
+	   src/zuspec/dataclasses/rt/__init__.py
+	   src/zuspec/dataclasses/rt/comp_impl_rt.py
+	   src/zuspec/dataclasses/rt/obj_factory.py
+	   src/zuspec/dataclasses/types.py
+	   tests/unit/test_component.py
+	   tests/unit/test_dma_engine.py
+
+	src/zuspec/dataclasses/data_model_factory.py
+	src/zuspec/dataclasses/dm/json_converter.py
+	src/zuspec/dataclasses/rt/timebase.py
+	tests/unit/test_bind_map.py
+	tests/unit/test_json_converter.py
+	tests/unit/test_process.py
+

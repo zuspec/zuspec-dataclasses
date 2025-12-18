@@ -127,6 +127,17 @@ class Exec(object):
 
 class ExecProc(Exec): pass
 
+@dc.dataclass
+class ExecSync(Exec):
+    """Synchronous process"""
+    clock : Optional[Callable] = dc.field(default=None)
+    reset : Optional[Callable] = dc.field(default=None)
+
+@dc.dataclass
+class ExecComb(Exec):
+    """Combinational process"""
+    pass
+
 def process(T):
     """
     Marks an always-running process. The specified
@@ -136,6 +147,44 @@ def process(T):
     """
     # Datamodel Mapping
     return ExecProc(T)
+
+def sync(clock: Callable = None, reset: Callable = None):
+    """
+    Decorator for synchronous processes.
+    
+    The process is evaluated on positive edge of clock or reset.
+    Assignments in sync processes are deferred - they take effect
+    after the method completes but before next evaluation.
+    
+    Args:
+        clock: Lambda expression that returns clock signal reference
+        reset: Lambda expression that returns reset signal reference
+        
+    Example:
+        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
+        def _count(self):
+            if self.reset:
+                self.count = 0
+            else:
+                self.count += 1
+    """
+    def decorator(method):
+        return ExecSync(method=method, clock=clock, reset=reset)
+    return decorator
+
+def comb(method):
+    """
+    Decorator for combinational processes.
+    
+    The process is re-evaluated whenever any of the signals it reads change.
+    Assignments in comb processes take effect immediately.
+    
+    Example:
+        @zdc.comb
+        def _calc(self):
+            self.out = self.a ^ self.b
+    """
+    return ExecComb(method=method)
 
 def invariant(func):
     """Decorator to mark a method as a structural invariant.
