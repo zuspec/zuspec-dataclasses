@@ -11,8 +11,8 @@ from .dm.data_type import (
     Function, Process
 )
 from .dm.fields import Field, FieldKind, Bind, FieldInOut
-from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtPass, StmtReturn, StmtIf
-from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved
+from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf
+from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved
 from .types import TypeBase, Component, Lock, Memory
 from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
@@ -454,7 +454,7 @@ class DataModelFactory(object):
         
         # Get type hints
         try:
-            hints = get_type_hints(t)
+            hints = get_type_hints(t, include_extras=True)
         except Exception as e:
             # get_type_hints can fail due to forward references or missing imports
             # This is acceptable for field extraction - we'll just work without type hints
@@ -960,6 +960,28 @@ class DataModelFactory(object):
                         scope.local_vars.add(target.id)
             return StmtAssign(
                 targets=[self._convert_ast_expr(t, scope) for t in node.targets],
+                value=self._convert_ast_expr(node.value, scope)
+            )
+        elif isinstance(node, ast.AugAssign):
+            # Convert augmented assignment (e.g., x += 1)
+            op_map = {
+                ast.Add: AugOp.Add,
+                ast.Sub: AugOp.Sub,
+                ast.Mult: AugOp.Mult,
+                ast.Div: AugOp.Div,
+                ast.Mod: AugOp.Mod,
+                ast.Pow: AugOp.Pow,
+                ast.LShift: AugOp.LShift,
+                ast.RShift: AugOp.RShift,
+                ast.BitAnd: AugOp.BitAnd,
+                ast.BitOr: AugOp.BitOr,
+                ast.BitXor: AugOp.BitXor,
+                ast.FloorDiv: AugOp.FloorDiv
+            }
+            op = op_map.get(type(node.op), AugOp.Add)
+            return StmtAugAssign(
+                target=self._convert_ast_expr(node.target, scope),
+                op=op,
                 value=self._convert_ast_expr(node.value, scope)
             )
         elif isinstance(node, ast.Pass):
