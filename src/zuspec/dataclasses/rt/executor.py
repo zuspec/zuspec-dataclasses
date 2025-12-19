@@ -241,8 +241,9 @@ class Executor:
         For simple components, field index maps directly to field name.
         """
         if isinstance(expr, ExprRefField):
-            # Get field name from component's user fields by index (excluding _impl, etc.)
-            fields = [f for f in dc.fields(self.component) if not f.name.startswith('_')]
+            # Get field name from component's user fields by index (excluding _impl)
+            # This must match the logic in data_model_factory._extract_fields
+            fields = [f for f in dc.fields(self.component) if f.name != '_impl']
             if expr.index < len(fields):
                 field = fields[expr.index]
                 return field.name

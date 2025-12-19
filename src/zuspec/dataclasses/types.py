@@ -210,6 +210,8 @@ class CompImpl(Protocol):
 
     def post_init(self, comp): ...
 
+    def handle_setattr(self, comp: Component, name: str, value): ...
+
     def timebase(self) -> Timebase: ... 
 
     def shutdown(self): ...
@@ -244,48 +246,22 @@ class Component(TypeBase):
     - activity
     """
 
-    # _impl is always an internal field. User code must never
-    # access it
     _impl : Optional[CompImpl] = dc.field(default=None)
 
     def __post_init__(self):
-        # _impl may be None during initial construction; post_init
-        # will be called later by __comp_build__
         if self._impl is not None:
             self._impl.post_init(self)
     
     def __setattr__(self, name: str, value):
-        """Intercept writes to output fields for evaluation.
-        
-        Only output fields need interception since they can trigger
-        downstream combinational logic or be sampled by sync processes.
-        Input fields are just data storage.
-        """
-        # Always allow setting _impl and internal fields
         if name.startswith('_'):
             object.__setattr__(self, name, value)
             return
         
-        # Check if this is an output field that needs special handling
         impl = object.__getattribute__(self, '_impl')
-        if impl is not None and hasattr(impl, '_eval_initialized') and impl._eval_initialized:
-            # Check if this field is an output
-            import dataclasses as dc
-            from .decorators import Output
-            
-            for field in dc.fields(self):
-                if field.name == name:
-                    # Check if this is an output field
-                    if field.default_factory is Output:
-                        # Route output writes through evaluation system
-                        impl.signal_write(self, name, value)
-                        # Also update the actual field
-                        object.__setattr__(self, name, value)
-                        return
-                    break
-        
-        # Normal assignment for inputs and non-evaluated fields
-        object.__setattr__(self, name, value)
+        if impl is not None:
+            impl.handle_setattr(self, name, value)
+        else:
+            object.__setattr__(self, name, value)
 
     def shutdown(self):
         assert self._impl is not None
@@ -305,18 +281,10 @@ class Component(TypeBase):
         pass
 
     async def wait(self, amt : Time = None):
-        """
-        Uses the default timebase to suspend execution of the
-        calling coroutine for the specified time.
-        
-        When called and simulation is not already running, this also 
-        drives the simulation forward.
-        """
         assert self._impl is not None
         await self._impl.wait(self, amt)
 
     def time(self) -> Time: 
-        """Returns the current time"""
         assert self._impl is not None
         return self._impl.time()
 
@@ -328,22 +296,29 @@ class Component(TypeBase):
             ret = object.__new__(cls)
         return ret
 
-class Pool[T,Tc](Protocol):
+class Pool[T](Protocol):
+    pass
+
+@dc.dataclass
+class ListPool[T](Pool[T]):
+    # Bind target to specify pool elements
+    elems : List[T] = dc.field()
+
+    @abc.abstractmethod
+    def __getitem__(self, idx : int) -> T:
+        ...
+
+    @abc.abstractmethod
+    def get(self, idx : int) -> T:
+        ...
 
     @property
-    def selector(self) -> Callable[[List[T]], int]:  ...
-
-    @selector.setter
-    def selector(self, s : Callable[[List[T]], int]) -> None: ...
-
-    def match(self, c : Tc, m : Callable[[T], bool]) -> int: ...
-
-    def add(self, t : T): ...
-
-    def get(self, i : int) -> T: ...
+    @abc.abstractmethod
+    def size(self) -> int:
+        ...
 
 
-class ClaimPool[T,Tc](Pool[T,Tc]):
+class ClaimPool[T,Tc](Pool[T]):
 
     @abc.abstractmethod
     def lock(self, i : int) -> T: 
@@ -359,36 +334,28 @@ class ClaimPool[T,Tc](Pool[T,Tc]):
 
     pass
 
-
-class Lock:
+class Lock(Protocol):
     """A mutex lock for coordinating access to shared resources.
     
-    This is a zuspec-aware wrapper around asyncio.Lock that can be
-    used in component fields and is properly handled by the data model.
+    This is a protocol defining the interface for lock objects.
+    The runtime implementation is provided by the ObjFactory.
     """
-    def __init__(self):
-        import asyncio
-        self._lock = asyncio.Lock()
     
     async def acquire(self):
         """Acquire the lock. Blocks until the lock is available."""
-        await self._lock.acquire()
+        ...
     
     def release(self):
         """Release the lock."""
-        self._lock.release()
-    
-    def locked(self) -> bool:
-        """Return True if the lock is currently held."""
-        return self._lock.locked()
-    
+        ...
+
     async def __aenter__(self):
-        await self.acquire()
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self.release()
-        return False
+        """Context manager to acquire the lock"""
+        ...
+
+    async def __aexit__(self, e, v, tb):
+        """Context manager exit"""
+        ...
 
 uint1_t = Annotated[int, U(1)]
 uint2_t = Annotated[int, U(2)]

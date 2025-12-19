@@ -12,6 +12,7 @@ from .memory_rt import MemoryRT
 from .address_space_rt import AddressSpaceRT
 from .regfile_rt import RegFileRT, RegRT
 from .channel_rt import ChannelRT, GetIFRT, PutIFRT
+from .lock_rt import LockRT
 
 class SignalDescriptor:
     """Property descriptor that intercepts signal access and routes to eval infrastructure."""
@@ -176,6 +177,10 @@ class ObjFactory(ObjFactoryP):
                     fields.append((f.name, object, dc.field(
                         default=None,
                         metadata=metadata)))
+                # Check for Lock type directly (before isclass check since Lock is a Protocol)
+                elif field_type is Lock:
+                    # Lock fields get auto-constructed with runtime implementation
+                    fields.append((f.name, object, dc.field(default_factory=LockRT)))
                 elif inspect.isclass(field_type):
                     if issubclass(field_type, Component):
                         if f.default_factory is dc.MISSING:
@@ -189,9 +194,6 @@ class ObjFactory(ObjFactoryP):
                         fields.append((f.name, object, dc.field(
                             default=None,
                             metadata=metadata)))
-                    elif issubclass(field_type, Lock):
-                        # Lock fields get auto-constructed
-                        fields.append((f.name, field_type, dc.field(default_factory=Lock)))
                     elif issubclass(field_type, RegFile):
                         # RegFile fields will be initialized in __comp_build__
                         metadata = dict(f.metadata) if f.metadata else {}

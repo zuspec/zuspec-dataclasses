@@ -48,6 +48,31 @@ class CompImplRT(object):
     def parent(self) -> Component:
         return self._parent
 
+    def handle_setattr(self, comp: Component, name: str, value):
+        """Handle attribute setting with evaluation awareness.
+        
+        This method implements the logic for intercepting writes to output fields
+        and routing them through the evaluation system.
+        """
+        # Check if this is an output field that needs special handling
+        if hasattr(self, '_eval_initialized') and self._eval_initialized:
+            # Check if this field is an output
+            from ..decorators import Output
+            
+            for field in dc.fields(comp):
+                if field.name == name:
+                    # Check if this is an output field
+                    if field.default_factory is Output:
+                        # Route output writes through evaluation system
+                        self.signal_write(comp, name, value)
+                        # Also update the actual field
+                        object.__setattr__(comp, name, value)
+                        return
+                    break
+        
+        # Normal assignment for inputs and non-evaluated fields
+        object.__setattr__(comp, name, value)
+
     def timebase(self) -> Timebase:
         """Return the timebase, inheriting from parent if not set."""
         if self._timebase_inst is not None:

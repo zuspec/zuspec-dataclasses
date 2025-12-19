@@ -465,11 +465,16 @@ class DataModelFactory(object):
             hints = {}
         
         for f in dc.fields(t):
-            # Skip internal fields (except Lock fields which are meaningful)
+            # Skip internal implementation fields
+            if f.name == '_impl':
+                continue
+            
+            # Skip internal fields (except Lock fields and explicitly typed internal fields)
             field_type = hints.get(f.name)
             if f.name.startswith('_'):
                 # Include Lock fields even if they start with _
-                if not (field_type is Lock):
+                # Also include fields explicitly marked with zdc.field() by checking if they have a datatype annotation
+                if not (field_type is Lock or field_type is not None):
                     continue
             
             # Check if this is an input or output port
