@@ -116,9 +116,9 @@ to the parent class `self` and a handle to the field
 The example above shows the method form of binding. The `__bind__`
 method returns a dict mapping ports.
 
-***********************
+***************************
 Memory and RegFile Binding
-***********************
+***************************
 
 AddressSpace fields can be bound to Memory and RegFile instances
 using the ``At`` helper to specify address offsets.
@@ -210,13 +210,15 @@ the `count` output increments by one on each active clock edge.
 Assignments are delayed, so only the last increment statement takes
 effect. The expected output is as follows:
 
-reset | clock | count
-------|-------|------
-1     | 1     | 0
-0     | 1     | 1
-0     | 1     | 2
-0     | 1     | 3
-0     | 1     | ...
+======  =======  =======
+reset   clock    count
+======  =======  =======
+1       1        0
+0       1        1
+0       1        2
+0       1        3
+0       1        ...
+======  =======  =======
 
 
 *********************************

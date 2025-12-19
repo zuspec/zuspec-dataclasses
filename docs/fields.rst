@@ -148,9 +148,9 @@ of the interface methods.
         async def do_write(self, addr: int, data: int):
             self._data[addr] = data
 
-*************
+**************
 Binding Helper
-*************
+**************
 
 bind[Ts,Ti]
 ===========

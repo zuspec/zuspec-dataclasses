@@ -40,12 +40,17 @@ Implementation: Transfer Function
 
 Implementation: Cycle Accurate
 ==============================
+
 - What are we 
+
 * Is this about operation granularity?
 * Is this assumption about how frequently the block is evaluated?
+
   * At operational boundaries
   * At implementation boundaries
+
     * Several levels of detail here
+
 * What does it say 
 
 Hardware Interface Level
