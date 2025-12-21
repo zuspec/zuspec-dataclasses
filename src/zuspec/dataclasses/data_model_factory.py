@@ -11,7 +11,11 @@ from .dm.data_type import (
     Function, Process
 )
 from .dm.fields import Field, FieldKind, Bind, FieldInOut
-from .dm.stmt import Stmt, Arguments, Arg, StmtFor, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf
+from .dm.stmt import (
+    Stmt, Arguments, Arg,
+    StmtFor, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
+    StmtAssert, StmtAssume, StmtCover,
+)
 from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript
 from .types import TypeBase, Component, Lock, Memory
 from .tlm import Channel, GetIF, PutIF
@@ -942,6 +946,35 @@ class DataModelFactory(object):
 
     def _convert_ast_stmt(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Stmt]:
         """Convert an AST statement to a data model statement."""
+
+        def is_call_named(call: ast.Call, name: str) -> bool:
+            # zdc.cover(...)
+            if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
+                return call.func.value.id == "zdc" and call.func.attr == name
+            # cover(...)
+            if isinstance(call.func, ast.Name):
+                return call.func.id == name
+            return False
+
+        if isinstance(node, ast.Assert):
+            return StmtAssert(
+                test=self._convert_ast_expr(node.test, scope),
+                msg=self._convert_ast_expr(node.msg, scope) if node.msg else None,
+            )
+
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            call = node.value
+            if is_call_named(call, "assume") and len(call.args) >= 1:
+                return StmtAssume(
+                    test=self._convert_ast_expr(call.args[0], scope),
+                    msg=self._convert_ast_expr(call.args[1], scope) if len(call.args) > 1 else None,
+                )
+            if is_call_named(call, "cover") and len(call.args) >= 1:
+                return StmtCover(
+                    test=self._convert_ast_expr(call.args[0], scope),
+                    msg=self._convert_ast_expr(call.args[1], scope) if len(call.args) > 1 else None,
+                )
+
         if isinstance(node, ast.Expr):
             expr = self._convert_ast_expr(node.value, scope)
             if expr is not None:

@@ -88,6 +88,18 @@ class StmtAssert(Stmt):
     test: Expr = dc.field()
     msg: Optional[Expr] = dc.field(default=None)
 
+@dc.dataclass(kw_only=True)
+class StmtAssume(Stmt):
+    """Represents an assumption (formal verification)"""
+    test: Expr = dc.field()
+    msg: Optional[Expr] = dc.field(default=None)
+
+@dc.dataclass(kw_only=True)
+class StmtCover(Stmt):
+    """Represents a coverage goal (formal verification)"""
+    test: Expr = dc.field()
+    msg: Optional[Expr] = dc.field(default=None)
+
 # Phase3: With/Try/Except + Phase2 module-level nodes
 @dc.dataclass(kw_only=True)
 class WithItem(Base):

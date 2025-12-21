@@ -47,13 +47,13 @@ def json_converter(pmod, *args, **kwargs):
 
 
 # Re-export data model types
-from .fields import Bind, BindSet, Field, FieldInOut, FieldKind
+from .fields import Bind, BindSet, Field, FieldInOut, FieldKind, SignalDirection
 from .data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent,
     DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
     DataTypeGetIF, DataTypePutIF, DataTypeChannel,
-    Function, Process
+    Function, Process, ProcessKind
 )
 from .expr import (
     Expr, BinOp, UnaryOp, BoolOp, CmpOp, AugOp,
@@ -70,24 +70,25 @@ from .expr_phase2 import (
 from .stmt import (
     Stmt, StmtExpr, StmtAssign, StmtAugAssign, StmtReturn, StmtIf, StmtFor,
     StmtWhile, StmtBreak, StmtContinue, StmtPass, StmtRaise, StmtAssert, Alias, Arg, Arguments,
+    StmtAssume, StmtCover,
     WithItem, StmtWith, StmtExceptHandler, StmtTry, TypeIgnore, Module,
     StmtMatch, StmtMatchCase, Pattern, PatternValue, PatternAs, PatternOr, PatternSequence
 )
 
 __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
-    "Bind","BindSet","Field","FieldInOut","FieldKind",
+    "Bind","BindSet","Field","FieldInOut","FieldKind","SignalDirection",
     "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent",
     "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
     "DataTypeGetIF","DataTypePutIF","DataTypeChannel",
-    "Function","Process",
+    "Function","Process","ProcessKind",
     "Expr","BinOp","UnaryOp","BoolOp","CmpOp","AugOp","ExprBin","ExprRef","ExprConstant",
     "TypeExprRefSelf","ExprRefField","ExprRefParam","ExprRefLocal","ExprRefUnresolved",
     "ExprRefPy","ExprRefBottomUp","ExprUnary",
     "ExprBool","ExprCompare","ExprAttribute","ExprSlice","ExprSubscript","ExprCall","Keyword","ExprAwait",
     "Stmt","StmtExpr","StmtAssign","StmtAugAssign","StmtReturn","StmtIf","StmtFor","StmtWhile",
-    "StmtBreak","StmtContinue","StmtPass","StmtRaise","StmtAssert","Alias","Arg","Arguments",
+    "StmtBreak","StmtContinue","StmtPass","StmtRaise","StmtAssert","StmtAssume","StmtCover","Alias","Arg","Arguments",
 "ExprList","ExprTuple","ExprDict","ExprSet","Comprehension","ExprListComp","ExprDictComp",
 "ExprSetComp","ExprGeneratorExp","ExprIfExp","ExprLambda","ExprNamedExpr",
 "WithItem","StmtWith","StmtExceptHandler","StmtTry","TypeIgnore","Module",

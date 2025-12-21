@@ -2,7 +2,7 @@
 from __future__ import annotations
 import dataclasses as dc
 import enum
-from typing import List
+from typing import List, Optional
 from .base import Base
 from .data_type import DataType
 from .expr import Expr
@@ -12,6 +12,12 @@ class FieldKind(enum.Enum):
     Field = enum.auto()    # Regular field
     Port = enum.auto()     # Port (API consumer)
     Export = enum.auto()   # Export (API provider)
+
+class SignalDirection(enum.Enum):
+    """Direction of hardware signals"""
+    INPUT = enum.auto()
+    OUTPUT = enum.auto()
+    INOUT = enum.auto()
 
 @dc.dataclass
 class Bind(Base):
@@ -28,6 +34,9 @@ class Field(Base):
     datatype : DataType = dc.field()
     kind : FieldKind = dc.field(default=FieldKind.Field)
     bindset : BindSet = dc.field(default_factory=BindSet)
+    direction : Optional[SignalDirection] = dc.field(default=None)
+    clock : Optional[Expr] = dc.field(default=None)
+    initial_value : Optional[Expr] = dc.field(default=None)
 
 @dc.dataclass(kw_only=True)
 class FieldInOut(Field):

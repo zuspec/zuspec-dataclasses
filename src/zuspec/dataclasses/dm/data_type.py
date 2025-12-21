@@ -1,5 +1,6 @@
 from __future__ import annotations
 import dataclasses as dc
+import enum
 from typing import List, Optional, Protocol, TYPE_CHECKING, Iterator, Any
 from .base import Base
 from .expr import Expr
@@ -7,6 +8,11 @@ from .expr import Expr
 if TYPE_CHECKING:
     from .fields import Field
     from .stmt import Stmt, Arguments
+
+class ProcessKind(enum.Enum):
+    """Kind of hardware process"""
+    COMB = enum.auto()  # Combinational logic
+    SYNC = enum.auto()  # Synchronous (clocked) logic
 
 @dc.dataclass(kw_only=True)
 class DataType(Base):
@@ -101,6 +107,8 @@ class Function(Base):
     is_async : bool = dc.field(default=False)
     metadata : dict = dc.field(default_factory=dict)
     is_invariant : bool = dc.field(default=False)
+    process_kind : Optional[ProcessKind] = dc.field(default=None)
+    sensitivity_list : List[Expr] = dc.field(default_factory=list)
 
 @dc.dataclass(kw_only=True)
 class Process(Base):
