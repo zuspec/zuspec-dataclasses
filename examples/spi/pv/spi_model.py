@@ -28,15 +28,15 @@ class SpiCtrl(zdc.PackedStruct):
     - ASS[13]: Auto slave select
     - Reserved[31:14]: Reserved bits
     """
-    char_len : zdc.uint7_t = zdc.field()      # Bits [6:0]: Transfer character length
-    reserved0 : zdc.uint1_t = zdc.field()     # Bit [7]: Reserved
-    go_bsy : zdc.uint1_t = zdc.field()        # Bit [8]: Go/Busy flag
-    rx_neg : zdc.uint1_t = zdc.field()        # Bit [9]: Rx on negative edge
-    tx_neg : zdc.uint1_t = zdc.field()        # Bit [10]: Tx on negative edge
-    lsb : zdc.uint1_t = zdc.field()           # Bit [11]: LSB first
-    ie : zdc.uint1_t = zdc.field()            # Bit [12]: Interrupt enable
-    ass : zdc.uint1_t = zdc.field()           # Bit [13]: Auto slave select
-    reserved1 : zdc.uint32_t = zdc.field()    # Bits [31:14]: Reserved (using 32 for padding)
+    char_len : zdc.u7 = zdc.field()      # Bits [6:0]: Transfer character length
+    reserved0 : zdc.u1 = zdc.field()     # Bit [7]: Reserved
+    go_bsy : zdc.u1 = zdc.field()        # Bit [8]: Go/Busy flag
+    rx_neg : zdc.u1 = zdc.field()        # Bit [9]: Rx on negative edge
+    tx_neg : zdc.u1 = zdc.field()        # Bit [10]: Tx on negative edge
+    lsb : zdc.u1 = zdc.field()           # Bit [11]: LSB first
+    ie : zdc.u1 = zdc.field()            # Bit [12]: Interrupt enable
+    ass : zdc.u1 = zdc.field()           # Bit [13]: Auto slave select
+    reserved1 : zdc.u32 = zdc.field()    # Bits [31:14]: Reserved (using 32 for padding)
 
 
 @zdc.dataclass
@@ -46,8 +46,8 @@ class SpiDivider(zdc.PackedStruct):
     Reset value: 0x0000ffff
     f_sclk = f_wb_clk / ((DIVIDER + 1) * 2)
     """
-    divider : zdc.uint16_t = zdc.field()      # Bits [15:0]: Clock divider value
-    reserved : zdc.uint16_t = zdc.field()     # Bits [31:16]: Reserved
+    divider : zdc.u16 = zdc.field()      # Bits [15:0]: Clock divider value
+    reserved : zdc.u16 = zdc.field()     # Bits [31:16]: Reserved
 
 
 @zdc.dataclass
@@ -56,8 +56,8 @@ class SpiSS(zdc.PackedStruct):
     
     Controls which slave device is selected.
     """
-    ss : zdc.uint8_t = zdc.field()            # Bits [7:0]: Slave select lines
-    reserved : zdc.uint32_t = zdc.field()     # Bits [31:8]: Reserved (using 32 for padding)
+    ss : zdc.u8 = zdc.field()            # Bits [7:0]: Slave select lines
+    reserved : zdc.u32 = zdc.field()     # Bits [31:8]: Reserved (using 32 for padding)
 
 
 # =============================================================================
@@ -80,10 +80,10 @@ class SpiRegs(zdc.RegFile):
     Note: Rx and Tx registers share the same flip-flops
     """
     # Data registers (Rx/Tx share same FFs - write to Tx, read from Rx)
-    data0 : zdc.Reg[zdc.uint32_t] = zdc.field()    # Offset 0x00
-    data1 : zdc.Reg[zdc.uint32_t] = zdc.field()    # Offset 0x04
-    data2 : zdc.Reg[zdc.uint32_t] = zdc.field()    # Offset 0x08
-    data3 : zdc.Reg[zdc.uint32_t] = zdc.field()    # Offset 0x0C
+    data0 : zdc.Reg[zdc.u32] = zdc.field()    # Offset 0x00
+    data1 : zdc.Reg[zdc.u32] = zdc.field()    # Offset 0x04
+    data2 : zdc.Reg[zdc.u32] = zdc.field()    # Offset 0x08
+    data3 : zdc.Reg[zdc.u32] = zdc.field()    # Offset 0x0C
     
     # Control registers
     ctrl : zdc.Reg[SpiCtrl] = zdc.field()          # Offset 0x10

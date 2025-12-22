@@ -20,7 +20,7 @@ class Counter(zdc.Component):
     reset : zdc.bit = zdc.input()
     
     # Output ports
-    count : zdc.bit32 = zdc.output()
+    count : zdc.u32 = zdc.output()
     
     @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
     def _count_proc(self):

@@ -113,4 +113,23 @@ Constraints may be placed in all composite types.
   - Automatic?
 - Structs and Classes may be randomized using the 'randomize' statement
 
+# Roadmap
+
+## Introduction
+- Lock
+- API classes
+- Comb and Sync execs
+- Registers
+
+## Randomization and Coverage
+- Constraints
+- Randomization statement
+- Covergroups
+
+## 
+- Pool as a resource arbiter
+
+## Scenarios
+- Pool
+- Action
 

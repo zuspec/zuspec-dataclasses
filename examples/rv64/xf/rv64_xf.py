@@ -53,12 +53,12 @@ class Rv64XF(zdc.Component):
         halted: Flag indicating if EBREAK was executed
     """
     memif: zdc.MemIF = zdc.port()
-    reset_v: zdc.uint64_t = zdc.field(default=0x80000000)
+    reset_v: zdc.u64 = zdc.field(default=0x80000000)
     running: bool = zdc.field(default=False)
     halted: bool = zdc.field(default=False)
     
     # Program counter
-    _pc: zdc.uint64_t = zdc.field(default=0)
+    _pc: zdc.u64 = zdc.field(default=0)
     
     # General-purpose registers x0-x31 (x0 is always 0)
     _regs: list = zdc.field(default_factory=lambda: [0] * 32)

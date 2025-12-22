@@ -17,7 +17,7 @@ from spi_model_xf import SpiInitiatorXF, SpiTargetXF
 @zdc.dataclass
 class SpiTarget(zdc.Component):
     """Simple SPI target for benchmarking."""
-    sio : zdc.Transport[Tuple[zdc.uint8_t, zdc.uint128_t], zdc.uint128_t] = zdc.export()
+    sio : zdc.Transport[Tuple[zdc.u8, zdc.u128], zdc.u128] = zdc.export()
     
     rx_count : int = zdc.field(default=0)
     
@@ -25,7 +25,7 @@ class SpiTarget(zdc.Component):
         self.sio : self.rx
     }
     
-    def rx(self, args: Tuple[zdc.uint8_t, zdc.uint128_t]) -> zdc.uint128_t:
+    def rx(self, args: Tuple[zdc.u8, zdc.u128]) -> zdc.u128:
         """Handle incoming SPI transfer."""
         self.rx_count += 1
         tgt_sel, data = args

@@ -376,11 +376,30 @@ uint32_t = Annotated[int, U(32)]
 uint64_t = Annotated[int, U(64)]
 uint128_t = Annotated[int, U(128)]
 
+u1 = uint1_t
+u2 = uint2_t
+u3 = uint3_t
+u4 = uint4_t
+u5 = uint5_t
+u6 = uint6_t
+u7 = uint7_t
+u8 = uint8_t
+u16 = uint16_t
+u32 = uint32_t
+u64 = uint64_t
+u128 = uint128_t
+
 int8_t = Annotated[int, S(8)]
 int16_t = Annotated[int, S(16)]
 int32_t = Annotated[int, S(32)]
 int64_t = Annotated[int, S(64)]
 int128_t = Annotated[int, S(128)]
+
+i8 = int8_t
+i16 = int16_t
+i32 = int32_t
+i64 = int64_t
+i128 = int128_t
 
 # Bit type aliases
 bit = uint1_t
@@ -449,21 +468,21 @@ class Memory[T](TypeBase):
 
 class MemIF(Protocol):
 
-    async def read8(self, addr : int) -> uint8_t: ...
+    async def read8(self, addr : int) -> u8: ...
 
-    async def read16(self, addr : int) -> uint16_t: ...
+    async def read16(self, addr : int) -> u16: ...
 
-    async def read32(self, addr : int) -> uint32_t: ...
+    async def read32(self, addr : int) -> u32: ...
 
-    async def read64(self, addr : int) -> uint64_t: ...
+    async def read64(self, addr : int) -> u64: ...
 
-    async def write8(self, addr : int, data : uint8_t): ...
+    async def write8(self, addr : int, data : u8): ...
 
-    async def write16(self, addr : int, data : uint16_t): ...
+    async def write16(self, addr : int, data : u16): ...
 
-    async def write32(self, addr : int, data : uint32_t): ...
+    async def write32(self, addr : int, data : u32): ...
 
-    async def write64(self, addr : int, data : uint64_t): ...
+    async def write64(self, addr : int, data : u64): ...
 
 @dc.dataclass
 class At(object):

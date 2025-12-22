@@ -16,12 +16,12 @@ class SimpleALU(zdc.Component):
     """A simple ALU with XOR and ADD operations"""
     
     # Input ports
-    a : zdc.bit16 = zdc.input()
-    b : zdc.bit16 = zdc.input()
+    a : zdc.u16 = zdc.input()
+    b : zdc.u16 = zdc.input()
     op : zdc.bit = zdc.input()  # 0 = XOR, 1 = ADD
     
     # Output ports
-    result : zdc.bit16 = zdc.output()
+    result : zdc.u16 = zdc.output()
     
     @zdc.comb
     def _alu_logic(self):
@@ -47,15 +47,15 @@ class RegisteredALU(zdc.Component):
     # Input ports
     clock : zdc.bit = zdc.input()
     reset : zdc.bit = zdc.input()
-    a : zdc.bit16 = zdc.input()
-    b : zdc.bit16 = zdc.input()
+    a : zdc.u16 = zdc.input()
+    b : zdc.u16 = zdc.input()
     op : zdc.bit = zdc.input()
     
     # Output ports
-    result : zdc.bit16 = zdc.output()
+    result : zdc.u16 = zdc.output()
     
     # Internal signal
-    _alu_out : zdc.bit16 = zdc.field()
+    _alu_out : zdc.u16 = zdc.field()
     
     @zdc.comb
     def _alu_logic(self):
