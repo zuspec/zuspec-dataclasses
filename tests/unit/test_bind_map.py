@@ -1,6 +1,6 @@
 """Tests for bind-map datamodel extraction as described in intro.rst."""
 import zuspec.dataclasses as zdc
-import zuspec.dataclasses.dm as dm
+import zuspec.dataclasses.ir as dm
 from typing import Protocol
 
 

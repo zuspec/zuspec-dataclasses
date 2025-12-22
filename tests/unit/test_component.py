@@ -185,7 +185,7 @@ def test_top_if_with_impl():
 
 def test_component_datamodel():
     """Test that top-level ports can be bound via constructor argument."""
-    import zuspec.dataclasses.dm as dm
+    import zuspec.dataclasses.ir as dm
 
     class MemIF(Protocol):
         async def read(self, addr : int) -> int: ...
@@ -253,7 +253,7 @@ def test_component_datamodel():
         f"Field m0 should be Port, got {m0_field.kind}"
     assert isinstance(m0_field.datatype, dm.DataTypeRef), \
         f"Field m0 datatype should be DataTypeRef, got {type(m0_field.datatype).__name__}"
-    assert m0_field.datatype.ref_name == 'MemIF', \
+    assert m0_field.datatype.ref_name == memif_qualname, \
         f"Field m0 should reference MemIF, got {m0_field.datatype.ref_name}"
 
     # Verify MyC has a Process element named _run

@@ -6,7 +6,7 @@ from .base import Base
 
 class Visitor:
     _type_impl_m : Dict[Type[Visitor],Type[Visitor]] = {}
-    _log : ClassVar = logging.getLogger("zuspec.dm.Visitor")
+    _log : ClassVar = logging.getLogger("zuspec.ir.Visitor")
 
     def __new__(cls, pmod) -> Visitor:
         if pmod is None:

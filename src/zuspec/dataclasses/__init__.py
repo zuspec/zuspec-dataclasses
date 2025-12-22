@@ -28,7 +28,7 @@ from .decorators import (
 )
 from .types import *
 from .tlm import *
-from . import dm
+from . import ir
 from .data_model_factory import DataModelFactory
 
 type Event = aEvent

@@ -16,7 +16,7 @@ class Profile(object):
 
 class ProfileRgy(object):
     _profile_m : Dict[ModuleType, Profile] = {}
-    _log : ClassVar = logging.getLogger("zuspec.dm.ProfileRgy")
+    _log : ClassVar = logging.getLogger("zuspec.ir.ProfileRgy")
 
     @classmethod
     def register_profile(cls, modname, super):

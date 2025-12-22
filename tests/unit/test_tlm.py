@@ -132,7 +132,7 @@ def test_tlm_channel_try_methods():
 
 def test_tlm_channel_datamodel():
     """Test that TLM Channel types are properly represented in the datamodel."""
-    import zuspec.dataclasses.dm as dm
+    import zuspec.dataclasses.ir as dm
 
     @zdc.dataclass
     class Producer(zdc.Component):
@@ -227,7 +227,7 @@ def test_tlm_channel_datamodel():
 
 def test_tlm_channel_struct_datamodel():
     """Test that TLM Channel with struct types is properly represented in the datamodel."""
-    import zuspec.dataclasses.dm as dm
+    import zuspec.dataclasses.ir as dm
 
     @zdc.dataclass
     class Transaction:

@@ -223,8 +223,8 @@ def test_hierarchical_construction_datamodel():
             break
             
     assert child_field is not None
-    assert isinstance(child_field.datatype, zdc.dm.DataTypeRef)
-    assert child_field.datatype.ref_name == 'Child'
+    assert isinstance(child_field.datatype, zdc.ir.DataTypeRef)
+    assert child_field.datatype.ref_name == child_qualname
 
 
 def test_hierarchical_construction_with_explicit_default_factory():

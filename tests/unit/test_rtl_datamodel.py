@@ -2,7 +2,7 @@
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.data_model_factory import DataModelFactory
-from zuspec.dataclasses.dm.data_type import Function
+from zuspec.dataclasses.ir.data_type import Function
 
 
 def test_sync_process_datamodel_generation():

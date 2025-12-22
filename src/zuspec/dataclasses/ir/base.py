@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable, Optional, A
 if TYPE_CHECKING:
     from .visitor import Visitor
 
-_log = logging.getLogger("zuspec.dm.Base")
+_log = logging.getLogger("zuspec.ir.Base")
 
 @dc.dataclass
 class Loc(object):

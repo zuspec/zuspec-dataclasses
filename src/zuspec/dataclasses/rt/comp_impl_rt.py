@@ -163,7 +163,7 @@ class CompImplRT(object):
     
     def _get_signal_name(self, expr, comp):
         """Extract signal name from expression."""
-        from ..dm.expr import ExprRefField
+        from ..ir.expr import ExprRefField
         
         if isinstance(expr, ExprRefField):
             fields = [f for f in dc.fields(comp) if not f.name.startswith('_')]
@@ -373,7 +373,7 @@ class CompImplRT(object):
     
     def _get_field_path_from_expr(self, expr, comp):
         """Extract field path from expression."""
-        from ..dm.expr import ExprRefField
+        from ..ir.expr import ExprRefField
         
         if isinstance(expr, ExprRefField):
             fields = [f for f in dc.fields(comp) if not f.name.startswith('_')]

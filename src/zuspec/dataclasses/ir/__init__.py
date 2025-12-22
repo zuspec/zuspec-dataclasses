@@ -1,5 +1,5 @@
 """
-The zuspec.dm module defines a set of classes that provide a type model
+The zuspec.ir module defines a set of classes that provide a type model
 to represent time-consuming behaviors. The data model targets behavioral
 models of hardware-centric systems.
 
@@ -99,5 +99,5 @@ __all__ = [
 # Important to place after all data-model classes have been imported
 profile(__name__)
 
-# Note: 'fe' module is only available in the base zuspec.dm package, not zuspec.dataclasses.dm
+# Note: 'fe' module is only available in the base zuspec.ir package, not zuspec.dataclasses.ir
 # from . import fe

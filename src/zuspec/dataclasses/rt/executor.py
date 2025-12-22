@@ -18,13 +18,13 @@
 from __future__ import annotations
 import dataclasses as dc
 from typing import Any, Optional, TYPE_CHECKING
-from ..dm.stmt import Stmt, StmtAssign, StmtIf, StmtPass, StmtExpr
-from ..dm.expr import (
+from ..ir.stmt import Stmt, StmtAssign, StmtIf, StmtPass, StmtExpr
+from ..ir.expr import (
     Expr, ExprConstant, ExprRefField, ExprBin, ExprAttribute,
     BinOp, TypeExprRefSelf, ExprRefLocal, ExprRefUnresolved, ExprCall,
     ExprCompare, CmpOp, ExprSubscript, ExprBool, BoolOp
 )
-from ..dm.expr_phase2 import ExprIfExp
+from ..ir.expr_phase2 import ExprIfExp
 from .eval_state import EvalState
 
 if TYPE_CHECKING:
@@ -226,7 +226,7 @@ class Executor:
             return base[int(index)]
         
         # Handle phase2 expressions
-        from ..dm.expr_phase2 import ExprList
+        from ..ir.expr_phase2 import ExprList
         if isinstance(expr, ExprList):
             # Evaluate list literal
             return [self.evaluate_expr(elt) for elt in expr.elts]

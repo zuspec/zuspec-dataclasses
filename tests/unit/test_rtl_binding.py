@@ -18,7 +18,7 @@ def test_input_output_fields_create_fieldinout():
     dm = ctx.type_m[SimplePort.__qualname__]
     
     # Check that fields are FieldInOut
-    from zuspec.dataclasses.dm.fields import FieldInOut
+    from zuspec.dataclasses.ir.fields import FieldInOut
     
     clock_field = dm.fields[0]
     assert isinstance(clock_field, FieldInOut)

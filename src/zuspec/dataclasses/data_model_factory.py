@@ -3,20 +3,20 @@ from typing import Union, Iterator, Type, get_type_hints, Any, Optional, Protoco
 import dataclasses as dc
 import inspect
 import ast
-from .dm.context import Context
-from .dm.data_type import (
+from .ir.context import Context
+from .ir.data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, 
     DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
     DataTypeLock, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     Function, Process
 )
-from .dm.fields import Field, FieldKind, Bind, FieldInOut
-from .dm.stmt import (
+from .ir.fields import Field, FieldKind, Bind, FieldInOut
+from .ir.stmt import (
     Stmt, Arguments, Arg,
     StmtFor, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
     StmtAssert, StmtAssume, StmtCover,
 )
-from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript
+from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript
 from .types import TypeBase, Component, Extern, Lock, Memory
 from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
@@ -1120,20 +1120,20 @@ class DataModelFactory(object):
                 rhs=self._convert_ast_expr(node.right, scope)
             )
         elif isinstance(node, ast.Compare):
-            from .dm.expr import ExprCompare
+            from .ir.expr import ExprCompare
             return ExprCompare(
                 left=self._convert_ast_expr(node.left, scope),
                 ops=[self._convert_cmpop(op) for op in node.ops],
                 comparators=[self._convert_ast_expr(comp, scope) for comp in node.comparators]
             )
         elif isinstance(node, ast.BoolOp):
-            from .dm.expr import ExprBool
+            from .ir.expr import ExprBool
             return ExprBool(
                 op=self._convert_boolop(node.op),
                 values=[self._convert_ast_expr(v, scope) for v in node.values]
             )
         elif isinstance(node, ast.UnaryOp):
-            from .dm.expr import ExprUnary
+            from .ir.expr import ExprUnary
             return ExprUnary(
                 op=self._convert_unaryop(node.op),
                 operand=self._convert_ast_expr(node.operand, scope)
@@ -1145,7 +1145,7 @@ class DataModelFactory(object):
             )
         elif isinstance(node, ast.IfExp):
             # Handle ternary conditional expression (a if test else b)
-            from .dm.expr_phase2 import ExprIfExp
+            from .ir.expr_phase2 import ExprIfExp
             return ExprIfExp(
                 test=self._convert_ast_expr(node.test, scope),
                 body=self._convert_ast_expr(node.body, scope),
@@ -1166,7 +1166,7 @@ class DataModelFactory(object):
             if all(isinstance(e, ExprConstant) for e in elts):
                 return ExprConstant(value=[e.value for e in elts])
             # Otherwise use ExprList from phase2
-            from .dm.expr_phase2 import ExprList
+            from .ir.expr_phase2 import ExprList
             return ExprList(elts=elts)
         elif isinstance(node, ast.Subscript):
             # Handle subscript operations (e.g., array[index])
@@ -1196,7 +1196,7 @@ class DataModelFactory(object):
     
     def _convert_cmpop(self, op : ast.cmpop):
         """Convert AST comparison operator to data model CmpOp."""
-        from .dm.expr import CmpOp
+        from .ir.expr import CmpOp
         op_map = {
             ast.Eq: CmpOp.Eq,
             ast.NotEq: CmpOp.NotEq,
@@ -1213,7 +1213,7 @@ class DataModelFactory(object):
     
     def _convert_boolop(self, op : ast.boolop):
         """Convert AST boolean operator to data model BoolOp."""
-        from .dm.expr import BoolOp as DmBoolOp
+        from .ir.expr import BoolOp as DmBoolOp
         op_map = {
             ast.And: DmBoolOp.And,
             ast.Or: DmBoolOp.Or,
@@ -1222,7 +1222,7 @@ class DataModelFactory(object):
     
     def _convert_unaryop(self, op : ast.unaryop):
         """Convert AST unary operator to data model UnaryOp."""
-        from .dm.expr import UnaryOp
+        from .ir.expr import UnaryOp
         op_map = {
             ast.Invert: UnaryOp.Invert,
             ast.Not: UnaryOp.Not,
@@ -1233,7 +1233,7 @@ class DataModelFactory(object):
 
     def _convert_cmpop(self, op : ast.cmpop) -> 'CmpOp':
         """Convert AST comparison operator to data model CmpOp."""
-        from .dm.expr import CmpOp
+        from .ir.expr import CmpOp
         op_map = {
             ast.Eq: CmpOp.Eq,
             ast.NotEq: CmpOp.NotEq,

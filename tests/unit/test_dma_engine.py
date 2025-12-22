@@ -1,6 +1,6 @@
 import asyncio
 import zuspec.dataclasses as zdc
-import zuspec.dataclasses.dm as dm
+import zuspec.dataclasses.ir as dm
 from typing import Protocol, List
 
 

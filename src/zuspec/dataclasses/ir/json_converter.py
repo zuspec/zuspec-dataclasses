@@ -20,7 +20,7 @@ class JsonConverter:
     converter method available, falling back to default dataclass-based conversion.
     """
     _type_impl_m: Dict[Type['JsonConverter'], Type['JsonConverter']] = {}
-    _log: ClassVar = logging.getLogger("zuspec.dm.JsonConverter")
+    _log: ClassVar = logging.getLogger("zuspec.ir.JsonConverter")
 
     def __new__(cls, pmod) -> 'JsonConverter':
         if pmod is None:
