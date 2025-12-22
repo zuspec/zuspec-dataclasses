@@ -4,7 +4,7 @@ import inspect
 from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, TypeAliasType
 from ..config import ObjFactory as ObjFactoryP
 from ..decorators import ExecProc, ExecSync, ExecComb, Input, Output
-from ..types import Component, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
+from ..types import Component, Extern, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
 from ..tlm import Channel, GetIF, PutIF, Transport
 from .comp_impl_rt import CompImplRT
 from .timebase import Timebase
@@ -104,6 +104,11 @@ class ObjFactory(ObjFactoryP):
             for f in dc.fields(cls):
                 field_type = f.type
                 origin = get_origin(field_type)
+
+                if inspect.isclass(field_type) and Extern in getattr(field_type, '__mro__', ()):
+                    raise RuntimeError(
+                        f"Extern type '{field_type.__qualname__}' is not supported in rt"
+                    )
                 
                 # Check if this is an Input or Output field (marker via default_factory)
                 is_signal = False

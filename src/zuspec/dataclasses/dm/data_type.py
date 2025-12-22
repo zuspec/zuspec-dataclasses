@@ -58,6 +58,16 @@ class DataTypeComponent(DataTypeClass):
     sync_processes : List[Function] = dc.field(default_factory=list)
     comb_processes : List[Function] = dc.field(default_factory=list)
 
+
+@dc.dataclass(kw_only=True)
+class DataTypeExtern(DataTypeComponent):
+    """Extern component signature.
+
+    Represents an externally-implemented component/module.
+    """
+
+    extern_name: Optional[str] = dc.field(default=None)
+
 if TYPE_CHECKING:
     from .fields import Bind
 

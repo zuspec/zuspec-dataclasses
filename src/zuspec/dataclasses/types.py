@@ -220,6 +220,12 @@ class CompImpl(Protocol):
 
     def time(self) -> Time: ...
 
+class Extern[T](Protocol):
+    """Marks an extern ref. The type parameter specifies the
+    Zuspec type"""
+    annotations : Dict[str, object] = {}
+    ...
+
 class PackedStruct(TypeBase,SupportsInt):
 
     def __int__(self) -> int:

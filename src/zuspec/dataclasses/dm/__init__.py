@@ -49,7 +49,7 @@ def json_converter(pmod, *args, **kwargs):
 # Re-export data model types
 from .fields import Bind, BindSet, Field, FieldInOut, FieldKind, SignalDirection
 from .data_type import (
-    DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent,
+    DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent, DataTypeExtern,
     DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
     DataTypeGetIF, DataTypePutIF, DataTypeChannel,
@@ -78,7 +78,7 @@ from .stmt import (
 __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
     "Bind","BindSet","Field","FieldInOut","FieldKind","SignalDirection",
-    "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent",
+    "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent","DataTypeExtern",
     "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
     "DataTypeGetIF","DataTypePutIF","DataTypeChannel",

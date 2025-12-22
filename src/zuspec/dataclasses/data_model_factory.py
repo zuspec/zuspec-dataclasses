@@ -6,7 +6,7 @@ import ast
 from .dm.context import Context
 from .dm.data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, 
-    DataTypeComponent, DataTypeProtocol, DataTypeRef, DataTypeString,
+    DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
     DataTypeLock, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     Function, Process
 )
@@ -17,7 +17,7 @@ from .dm.stmt import (
     StmtAssert, StmtAssume, StmtCover,
 )
 from .dm.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript
-from .types import TypeBase, Component, Lock, Memory
+from .types import TypeBase, Component, Extern, Lock, Memory
 from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
 
@@ -82,7 +82,7 @@ def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types:
                     elif field_type is not None:
                         return _BindProxyMethod(new_expr, field_type)
                 
-                return new_expr
+                return _ExprRefWrapper(new_expr)
             else:
                 return _ExprRefWrapper(ExprRefPy(base=expr, ref=name))
         
@@ -157,7 +157,7 @@ class _BindProxy:
                     # Protocol or other type - allow method references via ExprRefPy
                     return _BindProxyMethod(new_expr, field_type)
             
-            return new_expr
+            return _ExprRefWrapper(new_expr)
         else:
             # For method references on self (or unknown attributes), return ExprRefPy wrapped
             return _ExprRefWrapper(ExprRefPy(base=expr, ref=name))
@@ -253,7 +253,9 @@ class DataModelFactory(object):
             return
         
         # Determine type kind and process accordingly
-        if self._is_protocol(t):
+        if self._is_extern(t):
+            dm = self._process_extern(t)
+        elif self._is_protocol(t):
             dm = self._process_protocol(t)
         elif self._is_component(t):
             dm = self._process_component(t)
@@ -270,8 +272,11 @@ class DataModelFactory(object):
 
     def _is_protocol(self, t : Type) -> bool:
         """Check if a type is a Protocol."""
-        return (hasattr(t, '__mro__') and 
-                any(getattr(b, '_is_protocol', False) for b in t.__mro__[1:]))
+        return bool(getattr(t, '_is_protocol', False))
+
+    def _is_extern(self, t: Type) -> bool:
+        """Check if a type inherits from Extern."""
+        return (hasattr(t, '__mro__') and Extern in t.__mro__ and t is not Extern)
 
     def _is_component(self, t : Type) -> bool:
         """Check if a type inherits from Component."""
@@ -374,8 +379,29 @@ class DataModelFactory(object):
             return DataTypeString()
         # For other types, create a reference
         if hasattr(annotation, '__name__'):
-            return DataTypeRef(ref_name=annotation.__name__)
+            return DataTypeRef(ref_name=self._get_type_name(annotation))
         return None
+
+    def _process_extern(self, t: Type) -> DataTypeExtern:
+        """Process an Extern signature type into DataTypeExtern."""
+        fields = self._extract_fields(t)
+
+        extern_name = t.__name__
+        attrs = getattr(t, 'attributes', None)
+        if not isinstance(attrs, dict):
+            attrs = getattr(t, 'annotations', None)
+        if isinstance(attrs, dict) and attrs.get('name'):
+            extern_name = attrs.get('name')
+
+        return DataTypeExtern(
+            super=None,
+            fields=fields,
+            functions=[],
+            bind_map=[],
+            sync_processes=[],
+            comb_processes=[],
+            extern_name=extern_name
+        )
 
     def _process_component(self, t : Type) -> DataTypeComponent:
         """Process a Component type into DataTypeComponent."""
@@ -508,7 +534,7 @@ class DataModelFactory(object):
             
             # Add referenced types to pending
             if field_type is not None and hasattr(field_type, '__mro__'):
-                if self._is_protocol(field_type) or self._is_component(field_type):
+                if self._is_protocol(field_type) or self._is_extern(field_type) or self._is_component(field_type):
                     self._add_pending(field_type)
             
             # Create FieldInOut for input/output ports, otherwise regular Field
@@ -575,7 +601,7 @@ class DataModelFactory(object):
                 return DataTypePutIF(element_type=element_type)
         
         if hasattr(field_type, '__name__'):
-            return DataTypeRef(ref_name=field_type.__name__)
+            return DataTypeRef(ref_name=self._get_type_name(field_type))
         return DataType()
 
     def _extract_bind_map(self, t: Type) -> list:
