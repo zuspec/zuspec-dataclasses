@@ -1,6 +1,6 @@
 import zuspec.dataclasses as zdc
 from typing import Tuple
-from ..sw_if import SpiInitiatorOpIF
+from .sw_if import SpiInitiatorOpIF
 
 a : Tuple[int,int]
 b : Tuple[zdc.u8,zdc.u8]

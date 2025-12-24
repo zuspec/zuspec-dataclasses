@@ -1,0 +1,26 @@
+	   src/zuspec/dataclasses/__init__.py
+	   src/zuspec/dataclasses/data_model_factory.py
+	    src/zuspec/dataclasses/dm/__init__.py
+	    src/zuspec/dataclasses/dm/base.py
+	    src/zuspec/dataclasses/dm/context.py
+	    src/zuspec/dataclasses/dm/data_type.py
+	    src/zuspec/dataclasses/dm/expr.py
+	    src/zuspec/dataclasses/dm/expr_phase2.py
+	    src/zuspec/dataclasses/dm/fields.py
+	    src/zuspec/dataclasses/dm/json_converter.py
+	    src/zuspec/dataclasses/dm/profile_rgy.py
+	    src/zuspec/dataclasses/dm/stmt.py
+	    src/zuspec/dataclasses/dm/visitor.py
+	   src/zuspec/dataclasses/rt/comp_impl_rt.py
+	   src/zuspec/dataclasses/rt/executor.py
+	   tests/unit/test_bind_map.py
+	   tests/unit/test_component.py
+	   tests/unit/test_dma_engine.py
+	   tests/unit/test_hierarchical_components.py
+	   tests/unit/test_json_converter.py
+	   tests/unit/test_rtl_binding.py
+	   tests/unit/test_rtl_datamodel.py
+	   tests/unit/test_tlm.py
+
+	src/zuspec/dataclasses/ir/
+

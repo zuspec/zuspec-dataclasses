@@ -5,13 +5,10 @@ Tests for the RV64I Transfer-Function Level Model
 These tests verify the correct functional behavior of all RV64I instructions.
 """
 
-import sys
-sys.path.insert(0, '../../../src')
-
 import asyncio
 import zuspec.dataclasses as zdc
 from typing import Dict
-from rv64_xf import Rv64XF, sign_extend, sign_extend_32
+from .rv64_xf import Rv64XF, sign_extend, sign_extend_32
 
 
 class SimpleMem:

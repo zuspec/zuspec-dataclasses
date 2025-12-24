@@ -18,7 +18,7 @@ class C(zdc.Component):
 """.lstrip()
     )
 
-    cfg = pathlib.Path("packages/zuspec-dataclasses/pyproject.toml")
+    cfg = pathlib.Path(__file__).parent.parent.parent / "pyproject.toml"
     out, err, status = api.run(["--config-file", str(cfg), str(p)])
 
     assert status != 0

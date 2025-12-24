@@ -4,13 +4,10 @@
 # Demonstrates SpiInitiatorXF and SpiTargetXF connected via Transport
 #****************************************************************************
 
-import sys
-sys.path.insert(0, '../../../src')
-
 import asyncio
 import zuspec.dataclasses as zdc
 from typing import Tuple
-from spi_model_xf import SpiInitiatorXF, SpiTargetXF
+from .spi_model_xf import SpiInitiatorXF, SpiTargetXF
 
 
 @zdc.dataclass
