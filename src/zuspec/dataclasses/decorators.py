@@ -19,24 +19,59 @@
 import dataclasses
 import dataclasses as dc
 import enum
-from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic
+from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic, Literal
 from typing import dataclass_transform
+
+if TYPE_CHECKING:
+    from .profiles import Profile
 
 
 @dataclass_transform()
-def dataclass(cls, **kwargs):
-    # TODO: Add type annotations to decorated methods
-    cls_annotations = cls.__annotations__
+def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
+    """Decorator for defining zuspec dataclasses with optional profile enforcement.
+    
+    Args:
+        cls: Class being decorated (when used without parameters)
+        profile: Profile class defining validation rules (defaults to RetargetableProfile)
+        **kwargs: Additional arguments passed to dataclasses.dataclass
+    
+    Example:
+        from zuspec.dataclasses import dataclass, profiles
+        
+        @dataclass(profile=profiles.PythonProfile)
+        class MyClass:
+            x: int  # Allowed with Python profile
+        
+        @dataclass(profile=profiles.RetargetableProfile)
+        class MyRetargetableClass:
+            x: uint32_t  # Width-annotated type required
+    """
+    def decorator(cls):
+        # Store profile information in class metadata for mypy plugin
+        # The profile attribute is used by the MyPy plugin to determine
+        # which validation rules to apply
+        if profile is not None:
+            cls.__profile__ = profile
+        # If no profile specified, MyPy plugin will use DEFAULT_PROFILE
+        
+        # TODO: Add type annotations to decorated methods
+        cls_annotations = cls.__annotations__
 
-    for name, value in cls.__dict__.items():
-#        print("Name: %s ; Value: %s" % (name, value))
-        if isinstance(value, dc.Field) and not name in cls_annotations:
-            print("TODO: annotate field")
-            cls_annotations[name] = int
+        for name, value in cls.__dict__.items():
+    #        print("Name: %s ; Value: %s" % (name, value))
+            if isinstance(value, dc.Field) and not name in cls_annotations:
+                print("TODO: annotate field")
+                cls_annotations[name] = int
 
-    cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
+        cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
-    return cls_t
+        return cls_t
+    
+    # Handle both @dataclass and @dataclass(...) syntax
+    if cls is None:
+        return decorator
+    else:
+        return decorator(cls)
 
 class bind[Ts,Ti]:
     """Helper class for specifying binds. Ensures that the parameter
@@ -83,7 +118,7 @@ class Output(object):
     """Marker type for 'output' dataclass fields"""
     ...
 
-def input(*args, **kwargs):
+def input(*args, **kwargs) -> Any:
     """
     Marks an input field. Input fields declared on a 
     top-level component are `bound` to an implicit output. Those
@@ -93,7 +128,7 @@ def input(*args, **kwargs):
     """
     return dataclasses.field(default_factory=Input)
 
-def output(*args, **kwargs):
+def output(*args, **kwargs) -> Any:
     """
     Marks an output field. Input fields that are bound to
     an output field always see its current output value 
@@ -112,6 +147,28 @@ def export():
     to implementations of the API class -- either per method 
     or on a whole-class basis."""
     return dc.field(init=False, metadata={"kind": "export"})
+
+def inst(default_factory=dc.MISSING):
+    """Instance attributes are automatically constructed based on
+    the annotated type.
+    """
+    return dc.field(
+        init=False, 
+        default_factory=default_factory,
+        metadata={"kind": "instance"})
+
+def tuple(size=0, elem_factory=None):
+    """Fixed-size tuple field.
+
+    Note: element construction is handled by the runtime.
+    """
+    metadata = {"kind": "tuple"}
+    if size is not None and size != 0:
+        metadata["size"] = size
+    if elem_factory is not None:
+        metadata["elem_factory"] = elem_factory
+    return dc.field(init=False, metadata=metadata)
+
 
 class ExecKind(enum.Enum):
     Comb = enum.auto()

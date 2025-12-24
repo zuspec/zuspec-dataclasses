@@ -1,7 +1,7 @@
 from __future__ import annotations
 import dataclasses as dc
 import inspect
-from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, TypeAliasType
+from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, get_type_hints, TypeAliasType
 from ..config import ObjFactory as ObjFactoryP
 from ..decorators import ExecProc, ExecSync, ExecComb, Input, Output
 from ..types import Component, Extern, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
@@ -62,6 +62,31 @@ class InterfaceImpl:
     def __init__(self):
         pass
 
+
+class TupleRT:
+    """Runtime wrapper for fixed-size tuple fields.
+
+    Behaves like a tuple for indexing/iteration, and forwards attribute access
+    (eg `.m2m`) to element 0 for convenience.
+    """
+
+    def __init__(self, elems):
+        self._elems = tuple(elems)
+
+    def __len__(self):
+        return len(self._elems)
+
+    def __iter__(self):
+        return iter(self._elems)
+
+    def __getitem__(self, idx):
+        return self._elems[idx]
+
+    def __getattr__(self, name):
+        if len(self._elems) == 0:
+            raise AttributeError(name)
+        return getattr(self._elems[0], name)
+
 class BindProxy:
     """Proxy object that records attribute access for binding"""
     def __init__(self, comp):
@@ -100,9 +125,15 @@ class ObjFactory(ObjFactoryP):
 #            if "__post_init__" in cls.__dict__.keys():
 #                namespace["__post_init__"] = cls.__dict__["__post_init__"]
 
+            # Resolve annotations to handle postponed evaluation (from __future__ import annotations)
+            try:
+                type_hints = get_type_hints(cls, include_extras=True)
+            except Exception:
+                type_hints = {}
+
             field_names = set()
             for f in dc.fields(cls):
-                field_type = f.type
+                field_type = type_hints.get(f.name, f.type)
                 origin = get_origin(field_type)
 
                 if inspect.isclass(field_type) and Extern in getattr(field_type, '__mro__', ()):
@@ -146,8 +177,60 @@ class ObjFactory(ObjFactoryP):
                     signal_fields.append((f.name, field_type, is_input, default_value))
                     continue
                 
+                field_kind = f.metadata.get('kind') if f.metadata else None
+
+                # Handle instance fields (auto-constructed)
+                if field_kind == 'instance':
+                    if field_type is Lock:
+                        fields.append((f.name, object, dc.field(default_factory=LockRT)))
+                    elif inspect.isclass(field_type):
+                        fields.append((f.name, field_type, dc.field(default_factory=field_type)))
+                    elif getattr(field_type, '_is_protocol', False):
+                        raise RuntimeError(
+                            f"Cannot auto-construct Protocol type '{getattr(field_type, '__qualname__', str(field_type))}' for field '{f.name}'"
+                        )
+                    else:
+                        fields.append((f.name, object, dc.field(default=None, metadata=f.metadata)))
+
+                # Handle fixed-size tuple fields
+                elif field_kind == 'tuple':
+                    size = 0
+                    if f.metadata and 'size' in f.metadata:
+                        size = f.metadata['size']
+                    elem_factory = f.metadata.get('elem_factory') if f.metadata else None
+
+                    # Derive element type from annotation Tuple[T]
+                    elem_t = None
+                    if origin is tuple:
+                        args = get_args(field_type)
+                        if args:
+                            elem_t = args[0]
+
+                    if elem_factory is None:
+                        elem_factory = elem_t
+
+                    if size == 0:
+                        raise RuntimeError(f"Tuple field '{f.name}' must specify a non-zero size")
+                    if elem_factory is None:
+                        raise RuntimeError(f"Tuple field '{f.name}' missing element type")
+                    if getattr(elem_factory, '_is_protocol', False):
+                        raise RuntimeError(
+                            f"Tuple field '{f.name}' element type is a Protocol; specify elem_factory"
+                        )
+
+                    def _mk_tuple(_t=elem_factory, _sz=size):
+                        def _mk_elem():
+                            if _t is Lock:
+                                return LockRT()
+                            if inspect.isclass(_t):
+                                return _t()
+                            raise RuntimeError(f"Cannot construct tuple element type '{_t}'")
+                        return TupleRT(_mk_elem() for _ in range(_sz))
+
+                    fields.append((f.name, object, dc.field(default_factory=_mk_tuple, metadata=f.metadata)))
+
                 # Check if this is a Memory field
-                if origin is not None and origin is Memory:
+                elif origin is not None and origin is Memory:
                     # Memory fields will be initialized in __comp_build__
                     # Store the original type in metadata for later use
                     metadata = dict(f.metadata) if f.metadata else {}
@@ -339,6 +422,14 @@ class ObjFactory(ObjFactoryP):
             fo = getattr(comp, f.name)
             if isinstance(fo, Component):
                 ObjFactory.__comp_build__(fo, comp, f.name, timebase)
+            elif isinstance(fo, TupleRT):
+                for i, e in enumerate(fo):
+                    if isinstance(e, Component):
+                        ObjFactory.__comp_build__(e, comp, f"{f.name}[{i}]", timebase)
+            elif isinstance(fo, tuple) or isinstance(fo, list):
+                for i, e in enumerate(fo):
+                    if isinstance(e, Component):
+                        ObjFactory.__comp_build__(e, comp, f"{f.name}[{i}]", timebase)
         
         # Initialize Memory fields
         ObjFactory.__init_memory_fields__(comp)

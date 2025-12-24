@@ -145,6 +145,15 @@ class DataTypePutIF(DataType):
 
 
 @dc.dataclass(kw_only=True)
+class DataTypeTuple(DataType):
+    """Represents a fixed-size Tuple field."""
+    element_type : Optional[DataType] = dc.field(default=None)
+    size : int = dc.field(default=0)
+    # Optional implementation/factory type to construct elements
+    elem_factory : Optional['DataType'] = dc.field(default=None)
+
+
+@dc.dataclass(kw_only=True)
 class DataTypeChannel(DataType):
     """Represents a TLM Channel - bidirectional communication channel"""
     element_type : Optional[DataType] = dc.field(default=None)

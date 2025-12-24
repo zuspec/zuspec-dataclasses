@@ -48,7 +48,7 @@ class ProfileRgy(object):
             pkg, 
             list([e[1] for e in profile_t.items()]))
 
-        print("Profile: %s" % str(profile_t))
+        cls._log.debug("Profile: %s", str(profile_t))
 
 
     @classmethod

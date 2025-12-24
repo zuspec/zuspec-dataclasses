@@ -5,9 +5,10 @@ import inspect
 import ast
 from .ir.context import Context
 from .ir.data_type import (
-    DataType, DataTypeInt, DataTypeStruct, DataTypeClass, 
+    DataType, DataTypeInt, DataTypeStruct, DataTypeClass,
     DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
     DataTypeLock, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
+    DataTypeTuple,
     Function, Process
 )
 from .ir.fields import Field, FieldKind, Bind, FieldInOut
@@ -526,16 +527,45 @@ class DataModelFactory(object):
                     kind = FieldKind.Export
             
             # Get field type
-            datatype = self._resolve_field_type(field_type)
-            
-            # For Memory fields, extract size from metadata
-            if isinstance(datatype, DataTypeMemory) and f.metadata and 'size' in f.metadata:
-                datatype.size = f.metadata['size']
-            
-            # Add referenced types to pending
-            if field_type is not None and hasattr(field_type, '__mro__'):
-                if self._is_protocol(field_type) or self._is_extern(field_type) or self._is_component(field_type):
-                    self._add_pending(field_type)
+            origin = get_origin(field_type)
+            if origin is tuple:
+                args = get_args(field_type)
+                elem_py_t = args[0] if args else None
+                elem_dt = self._resolve_field_type(elem_py_t)
+
+                size = 0
+                if f.metadata and 'size' in f.metadata:
+                    size = f.metadata['size']
+                else:
+                    # Support explicit fixed-length Tuple[T0,T1,...]
+                    if args and len(args) > 1 and args[-1] is not Ellipsis:
+                        size = len(args)
+
+                elem_factory_dt = None
+                if f.metadata and 'elem_factory' in f.metadata:
+                    ef_t = f.metadata['elem_factory']
+                    elem_factory_dt = DataTypeRef(ref_name=self._get_type_name(ef_t))
+                    # Ensure factory type is processed
+                    if hasattr(ef_t, '__mro__') and (self._is_protocol(ef_t) or self._is_extern(ef_t) or self._is_component(ef_t)):
+                        self._add_pending(ef_t)
+
+                datatype = DataTypeTuple(element_type=elem_dt, size=size, elem_factory=elem_factory_dt)
+
+                # Add referenced element type to pending
+                if elem_py_t is not None and hasattr(elem_py_t, '__mro__'):
+                    if self._is_protocol(elem_py_t) or self._is_extern(elem_py_t) or self._is_component(elem_py_t):
+                        self._add_pending(elem_py_t)
+            else:
+                datatype = self._resolve_field_type(field_type)
+
+                # For Memory fields, extract size from metadata
+                if isinstance(datatype, DataTypeMemory) and f.metadata and 'size' in f.metadata:
+                    datatype.size = f.metadata['size']
+
+                # Add referenced types to pending
+                if field_type is not None and hasattr(field_type, '__mro__'):
+                    if self._is_protocol(field_type) or self._is_extern(field_type) or self._is_component(field_type):
+                        self._add_pending(field_type)
             
             # Create FieldInOut for input/output ports, otherwise regular Field
             if is_input_port or is_output_port:
@@ -584,11 +614,13 @@ class DataModelFactory(object):
             # Fall back to resolving the base type
             return self._resolve_field_type(base_type)
         
-        # Check for generic types (Memory[T], Channel[T], GetIF[T], PutIF[T])
+        # Check for generic types (Memory[T], Channel[T], GetIF[T], PutIF[T], Tuple[T])
         if origin is not None:
             args = get_args(field_type)
             element_type = self._resolve_field_type(args[0]) if args else None
-            
+
+            if origin is tuple:
+                return DataTypeTuple(element_type=element_type, size=0)
             if origin is Memory:
                 # Extract size from field metadata if available
                 # Size will be handled during field extraction where we have access to metadata

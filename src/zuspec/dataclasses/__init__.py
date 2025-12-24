@@ -24,11 +24,13 @@ from asyncio import Event as aEvent
 from .decorators import (
     dataclass, field, process, input, output, 
     port, export, bind, Exec, ExecKind, ExecProc,
-    Input, Output, sync, comb, ExecSync, ExecComb, invariant
+    Input, Output, sync, comb, ExecSync, ExecComb, invariant,
+    inst, tuple
 )
 from .types import *
 from .tlm import *
 from . import ir
+from . import profiles
 from .data_model_factory import DataModelFactory
 
 type Event = aEvent
