@@ -28,9 +28,7 @@ package:
           #        src: pypi
 
     - name: default
-      deps:
-      - name: pyvsc-dataclasses
-        src: pypi
+      deps: []
 
 
 
