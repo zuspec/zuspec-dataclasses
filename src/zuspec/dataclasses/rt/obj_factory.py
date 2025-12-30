@@ -1,5 +1,8 @@
 from __future__ import annotations
+import asyncio
+import contextvars
 import dataclasses as dc
+import functools
 import inspect
 from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, get_type_hints, TypeAliasType, TYPE_CHECKING
 from ..config import ObjFactory as ObjFactoryP
@@ -17,6 +20,10 @@ from .event_rt import EventRT
 
 if TYPE_CHECKING:
     from .. import Event
+    from .tracer import Tracer, Thread
+
+# Context variable to track the current thread
+_current_thread: contextvars.ContextVar[Optional['Thread']] = contextvars.ContextVar('_current_thread', default=None)
 
 class SignalDescriptor:
     """Property descriptor that intercepts signal access and routes to eval infrastructure."""
@@ -110,13 +117,21 @@ class BindProxy:
 class ObjFactory(ObjFactoryP):
     comp_type_m : Dict[Type[Component],Type[Component]] = dc.field(default_factory=dict)
     comp_s : List[Component] = dc.field(default_factory=list)
+    tracer : Optional['Tracer'] = dc.field(default=None)
     _inst : ClassVar = None
+    _next_tid : int = dc.field(default=0)
 
     @classmethod
     def inst(cls):
         if cls._inst is None:
             cls._inst = ObjFactory()
         return cls._inst
+    
+    def _get_tid(self) -> int:
+        """Get next task ID for tracing."""
+        tid = self._next_tid
+        self._next_tid += 1
+        return tid
 
     def mkComponent(self, cls : Type[Component], **kwargs) -> Component:
         if cls in self.comp_type_m.keys():
@@ -318,6 +333,10 @@ class ObjFactory(ObjFactoryP):
                 descriptor = SignalDescriptor(sig_name, sig_type, is_input, default_value)
                 setattr(cls_rt, sig_name, descriptor)
 
+            # Wrap async methods for tracing if tracer is enabled
+            if self.tracer is not None:
+                self._wrap_async_methods(cls_rt)
+
             # Only set up __init__ wrapper once when creating the class
             setattr(cls_rt, "__dc_init__", getattr(cls_rt, "__init__"))
             setattr(cls_rt, "__init__", self.__comp_init__)
@@ -328,6 +347,90 @@ class ObjFactory(ObjFactoryP):
         comp = Component.__new__(cls_rt, **kwargs)
         
         return cast(Component, comp)
+    
+    def _wrap_async_methods(self, cls_rt: Type[Component]):
+        """Wrap async methods for tracing.
+        
+        Only wraps user-defined async methods (not inherited from Component base class).
+        """
+        # Get methods from the original class (before runtime wrapping)
+        for name in dir(cls_rt):
+            if name.startswith('_'):
+                continue
+            
+            attr = getattr(cls_rt, name)
+            if not inspect.iscoroutinefunction(attr):
+                continue
+            
+            # Skip methods inherited from Component base class
+            if hasattr(Component, name):
+                continue
+            
+            # Create wrapped version
+            original_method = attr
+            
+            @functools.wraps(original_method)
+            async def wrapped_method(self, *args, _original=original_method, _method_name=name, **kwargs):
+                tracer = self._impl._tracer if self._impl else None
+                
+                # If no tracer, just call original method
+                if tracer is None:
+                    return await _original(self, *args, **kwargs)
+                
+                from .tracer import Thread
+                
+                timebase = self._impl.timebase() if self._impl else None
+                
+                # Get parameter names for building args dict
+                sig = inspect.signature(_original)
+                bound_args = sig.bind(self, *args, **kwargs)
+                bound_args.apply_defaults()
+                
+                # Build args dict excluding 'self'
+                args_dict = {k: v for k, v in bound_args.arguments.items() if k != 'self'}
+                
+                # Get or create thread context
+                current_thread = _current_thread.get()
+                if current_thread is None:
+                    # This is a top-level call - create a new thread
+                    tid = ObjFactory.inst()._get_tid()
+                    thread = Thread(tid=tid, parent=None, component=None)
+                else:
+                    # This is a nested call - reuse the current thread
+                    thread = current_thread
+                
+                # Get current time for enter event
+                if timebase:
+                    enter_time_ns = timebase.time().as_ns()
+                else:
+                    enter_time_ns = 0
+                
+                tracer.enter(_method_name, thread, enter_time_ns, args_dict)
+                
+                # Set this thread as the current context for nested calls
+                token = _current_thread.set(thread)
+                
+                exc = None
+                ret = None
+                try:
+                    ret = await _original(self, *args, **kwargs)
+                    return ret
+                except Exception as e:
+                    exc = e
+                    raise
+                finally:
+                    # Restore previous context
+                    _current_thread.reset(token)
+                    
+                    # Get current time for leave event
+                    if timebase:
+                        leave_time_ns = timebase.time().as_ns()
+                    else:
+                        leave_time_ns = enter_time_ns
+                    
+                    tracer.leave(_method_name, thread, leave_time_ns, ret, exc)
+            
+            setattr(cls_rt, name, wrapped_method)
     
     def mkEvent(self, cls : Type['Event'], **kwargs) -> 'Event':
         """Create an Event instance with runtime implementation."""
@@ -406,7 +509,9 @@ class ObjFactory(ObjFactoryP):
 
     @staticmethod
     def __comp_build__(comp, parent, name, timebase: Timebase, port_bindings: Dict[str, Any] = None):
-        comp._impl = CompImplRT(_factory=None, _name=name, _parent=parent)
+        factory = ObjFactory.inst()
+        tracer = factory.tracer
+        comp._impl = CompImplRT(_factory=None, _name=name, _parent=parent, _tracer=tracer)
         
         # Set timebase on root component
         if parent is None:

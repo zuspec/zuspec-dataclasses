@@ -25,6 +25,7 @@ class CompImplRT(object):
     _name : str = dc.field()
     _parent : Component = dc.field()
     _timebase_inst : Optional[Timebase] = dc.field(default=None)
+    _tracer : Optional[Any] = dc.field(default=None)  # Tracer instance for this component
     _processes : List[Tuple[str, ExecProc]] = dc.field(default_factory=list)
     _tasks : List[asyncio.Task] = dc.field(default_factory=list)
     _processes_started : bool = dc.field(default=False)
