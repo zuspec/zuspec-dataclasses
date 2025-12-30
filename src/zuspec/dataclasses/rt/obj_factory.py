@@ -1,7 +1,7 @@
 from __future__ import annotations
 import dataclasses as dc
 import inspect
-from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, get_type_hints, TypeAliasType
+from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, get_type_hints, TypeAliasType, TYPE_CHECKING
 from ..config import ObjFactory as ObjFactoryP
 from ..decorators import ExecProc, ExecSync, ExecComb, Input, Output
 from ..types import Component, Extern, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
@@ -13,6 +13,10 @@ from .address_space_rt import AddressSpaceRT
 from .regfile_rt import RegFileRT, RegRT
 from .channel_rt import ChannelRT, GetIFRT, PutIFRT
 from .lock_rt import LockRT
+from .event_rt import EventRT
+
+if TYPE_CHECKING:
+    from .. import Event
 
 class SignalDescriptor:
     """Property descriptor that intercepts signal access and routes to eval infrastructure."""
@@ -324,6 +328,11 @@ class ObjFactory(ObjFactoryP):
         comp = Component.__new__(cls_rt, **kwargs)
         
         return cast(Component, comp)
+    
+    def mkEvent(self, cls : Type['Event'], **kwargs) -> 'Event':
+        """Create an Event instance with runtime implementation."""
+        event_rt = EventRT()
+        return cast('Event', event_rt)
 
     def mkRegFile(self, cls : Type[RegFile], **kwargs) -> RegFile:
         """Create a standalone RegFile instance."""
@@ -589,15 +598,20 @@ class ObjFactory(ObjFactoryP):
         - Targets: Port, ExportMethod (fields or methods that need assignment)
         - Sources: Export, Method (fields or methods to be assigned from)
         - Special case: AddressSpace.mmap targets get At() objects for memory mapping
+        - Special case: Event.at targets get callbacks bound
         """
-        # Process AddressSpace.mmap bindings first
+        # Process AddressSpace.mmap and Event.at bindings first
         aspace_bindings = []
+        event_bindings = []
         other_bindings = {}
         
         for target, source in bindmap.items():
             # Check if target is a path to .mmap attribute
             if isinstance(target, BindPath) and len(target._path) >= 2 and target._path[-1] == 'mmap':
                 aspace_bindings.append((target, source))
+            # Check if target is a path to .at attribute (Event callback)
+            elif isinstance(target, BindPath) and len(target._path) >= 2 and target._path[-1] == 'at':
+                event_bindings.append((target, source))
             else:
                 other_bindings[target] = source
         
@@ -620,6 +634,18 @@ class ObjFactory(ObjFactoryP):
                         
                         # Add the mapping to the address space
                         aspace.add_mapping(at_obj.offset, storage)
+        
+        # Handle Event.at bindings (callback binding)
+        for target, source in event_bindings:
+            # Get the Event object
+            event_path = target._path[:-1]  # Remove 'at' from path
+            event = ObjFactory.__resolve_bind_path__(comp, BindPath(comp, event_path))
+            
+            if isinstance(event, EventRT):
+                # Get the callback (source should be a method reference)
+                callback = ObjFactory.__resolve_bind_path__(comp, source)
+                # Bind the callback to the event
+                event.bind_callback(callback)
         
         # Sort bindmap entries: prioritize entries where source is available
         # Process in order: Export->Port, Method->ExportMethod, Port->ExportMethod

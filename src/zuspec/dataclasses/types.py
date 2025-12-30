@@ -371,7 +371,29 @@ uint5_t = Annotated[int, U(5)]
 uint6_t = Annotated[int, U(6)]
 uint7_t = Annotated[int, U(7)]
 uint8_t = Annotated[int, U(8)]
+uint9_t = Annotated[int, U(9)]
+uint10_t = Annotated[int, U(10)]
+uint11_t = Annotated[int, U(11)]
+uint12_t = Annotated[int, U(12)]
+uint13_t = Annotated[int, U(13)]
+uint14_t = Annotated[int, U(14)]
+uint15_t = Annotated[int, U(15)]
 uint16_t = Annotated[int, U(16)]
+uint17_t = Annotated[int, U(17)]
+uint18_t = Annotated[int, U(18)]
+uint19_t = Annotated[int, U(19)]
+uint20_t = Annotated[int, U(20)]
+uint21_t = Annotated[int, U(21)]
+uint22_t = Annotated[int, U(22)]
+uint23_t = Annotated[int, U(23)]
+uint24_t = Annotated[int, U(24)]
+uint25_t = Annotated[int, U(25)]
+uint26_t = Annotated[int, U(26)]
+uint27_t = Annotated[int, U(27)]
+uint28_t = Annotated[int, U(28)]
+uint29_t = Annotated[int, U(29)]
+uint30_t = Annotated[int, U(30)]
+uint31_t = Annotated[int, U(31)]
 uint32_t = Annotated[int, U(32)]
 uint64_t = Annotated[int, U(64)]
 uint128_t = Annotated[int, U(128)]
@@ -384,7 +406,29 @@ u5 = uint5_t
 u6 = uint6_t
 u7 = uint7_t
 u8 = uint8_t
+u9 = uint9_t
+u10 = uint10_t
+u11 = uint11_t
+u12 = uint12_t
+u13 = uint13_t
+u14 = uint14_t
+u15 = uint15_t
 u16 = uint16_t
+u17 = uint17_t
+u18 = uint18_t
+u19 = uint19_t
+u20 = uint20_t
+u21 = uint21_t
+u22 = uint22_t
+u23 = uint23_t
+u24 = uint24_t
+u25 = uint25_t
+u26 = uint26_t
+u27 = uint27_t
+u28 = uint28_t
+u29 = uint29_t
+u30 = uint30_t
+u31 = uint31_t
 u32 = uint32_t
 u64 = uint64_t
 u128 = uint128_t
@@ -443,7 +487,13 @@ class Reg[T](TypeBase):
 
     async def read(self) -> T: ...
 
-    async def write(self, val : Union[T,int]): ...
+    async def write(self, val : Union[T,dict,int]): 
+        """Register write accepts:
+
+        * whole-register write by integer value or reg-type
+        * read-modify-write by dict of {reg-field : value}
+        """
+        ...
 
     async def when(self, cond : Callable[[T],bool]): 
         """Performs a single-register conditioned wait."""

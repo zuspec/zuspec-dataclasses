@@ -21,6 +21,7 @@ Docstring for src.zuspec.dataclasses
 # 
 
 from asyncio import Event as aEvent
+from typing import Callable
 from .decorators import (
     dataclass, field, process, input, output, 
     port, export, bind, Exec, ExecKind, ExecProc,
@@ -32,8 +33,22 @@ from .tlm import *
 from . import ir
 from . import profiles
 from .data_model_factory import DataModelFactory
+from typing import Type
 
-type Event = aEvent
+@dc.dataclass
+class Event(aEvent):
+    """Supports interrupt functionality in Zuspec"""
+
+    # Specifies a method that is invoked when the event is set.
+    # Use 'bind' to associate a callback with this
+    at : Callable = dc.field(init=False)
+    
+    def __new__(cls, **kwargs):
+        from .config import Config
+        ret = Config.inst().factory.mkEvent(cls, **kwargs)
+        return ret
+
+
 
 
 

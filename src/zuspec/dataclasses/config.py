@@ -1,11 +1,17 @@
 from __future__ import annotations
 import dataclasses as dc
-from typing import ClassVar, List, Optional, Protocol, Type
+from typing import ClassVar, List, Optional, Protocol, Type, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import Event
+
 from .types import Component, Timebase
 
 class ObjFactory(Protocol):
 
     def mkComponent(self, cls : Type[Component], **kwargs) -> Component: ...
+    
+    def mkEvent(self, cls : Type['Event'], **kwargs) -> 'Event': ...
 
 @dc.dataclass
 class Config(object):

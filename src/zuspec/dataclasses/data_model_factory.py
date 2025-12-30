@@ -7,7 +7,7 @@ from .ir.context import Context
 from .ir.data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass,
     DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
-    DataTypeLock, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
+    DataTypeLock, DataTypeEvent, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     DataTypeTuple,
     Function, Process
 )
@@ -19,6 +19,11 @@ from .ir.stmt import (
 )
 from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript
 from .types import TypeBase, Component, Extern, Lock, Memory
+
+# Import Event at runtime to avoid circular dependency
+def _get_event_type():
+    from . import Event
+    return Event
 from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
 
@@ -595,6 +600,11 @@ class DataModelFactory(object):
             return DataTypeString()
         if field_type is Lock:
             return DataTypeLock()
+        
+        # Check for Event type
+        Event = _get_event_type()
+        if field_type is Event or (inspect.isclass(field_type) and issubclass(field_type, Event)):
+            return DataTypeEvent()
         
         # Check for Annotated types (e.g., Annotated[int, U(32)])
         origin = get_origin(field_type)

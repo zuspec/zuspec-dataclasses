@@ -86,6 +86,10 @@ class DataTypeLock(DataType):
     """Represents a Lock (mutex) type for synchronization"""
     pass
 
+class DataTypeEvent(DataType):
+    """Represents an Event type for interrupt/callback handling"""
+    pass
+
 @dc.dataclass(kw_only=True)
 class DataTypeMemory(DataType):
     """Represents a Memory type - storage for data elements"""
