@@ -20,6 +20,7 @@ import enum
 from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, Self
 from .decorators import dataclass, field
 
+
 @dc.dataclass
 class TypeBase(object):
     """Marker for all Zuspec types"""
@@ -283,7 +284,7 @@ class Component(TypeBase):
         assert self._impl is not None
         return self._impl.parent()
 
-    def __bind__(self) -> Optional[Dict]: 
+    def __bind__(self) -> Optional[Union[Dict,Tuple]]: 
         pass
 
     async def wait(self, amt : Time = None):
@@ -464,6 +465,11 @@ class MyE(enum.IntEnum):
     b = 2
 
 width = Annotated[MyE, U(16)]
+
+# bitv is a special marker type for variable-width unsigned bit vectors.
+# The actual width must be supplied via input(width=...) / output(width=...).
+bitv = Annotated[int, U(-1)]
+bv = Annotated[int, U(-1)]
 
 class RegFile(TypeBase):
     regwidth : Optional[int] = None

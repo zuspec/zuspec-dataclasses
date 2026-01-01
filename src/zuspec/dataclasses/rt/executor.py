@@ -140,6 +140,14 @@ class Executor:
             return None
         
         elif isinstance(expr, ExprAttribute):
+            # Prefer interpreting attribute access as a signal path (eg io.req)
+            if not self.use_eval_state:
+                try:
+                    field_path = self.get_field_path(expr)
+                    return self._read_signal(field_path)
+                except Exception:
+                    pass
+
             # Handle self.field_name or method calls
             base = self.evaluate_expr(expr.value)
             if base is None and isinstance(expr.value, TypeExprRefSelf):

@@ -17,6 +17,7 @@ from .regfile_rt import RegFileRT, RegRT
 from .channel_rt import ChannelRT, GetIFRT, PutIFRT
 from .lock_rt import LockRT
 from .event_rt import EventRT
+from ._bundle_proxy import BundleProxy
 
 if TYPE_CHECKING:
     from .. import Event
@@ -158,6 +159,12 @@ class ObjFactory(ObjFactoryP):
                 type_hints = {}
 
             field_names = set()
+
+            const_defaults = {}
+            for cf in dc.fields(cls):
+                if cf.metadata and cf.metadata.get('kind') == 'const':
+                    const_defaults[cf.name] = cf.default if cf.default is not dc.MISSING else 0
+
             for f in dc.fields(cls):
                 field_type = type_hints.get(f.name, f.type)
                 origin = get_origin(field_type)
@@ -201,8 +208,17 @@ class ObjFactory(ObjFactoryP):
                     # Store signal field metadata including default value - don't add to dataclass fields
                     default_value = f.default if f.default is not dc.MISSING else 0
                     
-                    # Extract width from type annotation
+                    # Extract width from metadata/type annotation
                     width = 32  # default
+
+                    if f.metadata and 'width' in f.metadata:
+                        spec = f.metadata.get('width')
+                        if callable(spec):
+                            tmp = type('Tmp', (), const_defaults)()
+                            width = int(spec(tmp))
+                        else:
+                            width = int(spec)
+
                     from typing import Annotated
                     if origin is not None and origin is Annotated:
                         args = get_args(field_type)
@@ -602,6 +618,9 @@ class ObjFactory(ObjFactoryP):
         
         # Initialize Channel fields
         ObjFactory.__init_channel_fields__(comp)
+
+        # Initialize Bundle fields
+        ObjFactory.__init_bundle_fields__(comp)
         
         # Apply port bindings provided at construction (for top-level ports)
         if port_bindings:
@@ -612,7 +631,7 @@ class ObjFactory(ObjFactoryP):
         if hasattr(comp, "__bind__"):
             # Create a proxy for binding that captures paths
             proxy = BindProxy(comp)
-            
+
             # Call __bind__ with the proxy as self to capture paths
             bind_method = comp.__bind__
             if bind_method.__code__.co_argcount > 0:
@@ -622,8 +641,15 @@ class ObjFactory(ObjFactoryP):
                 bindmap = bound_method()
             else:
                 bindmap = bind_method()
-                
+
             if bindmap is not None:
+                # Allow returning either a dict or an iterable of (lhs,rhs) pairs
+                if not isinstance(bindmap, dict):
+                    if isinstance(bindmap, (tuple, list)) and len(bindmap) == 2 and not (
+                        isinstance(bindmap[0], (tuple, list)) and len(bindmap[0]) == 2
+                    ):
+                        bindmap = (bindmap,)
+                    bindmap = dict(bindmap)
                 ObjFactory.__apply_bindmap__(comp, bindmap)
 
     @staticmethod
@@ -777,6 +803,57 @@ class ObjFactory(ObjFactoryP):
                 setattr(comp, f.name, channel_rt)
 
     @staticmethod
+    def __init_bundle_fields__(comp):
+        """Initialize bundle/mirror fields by creating BundleProxy objects."""
+        for f in dc.fields(comp):
+            kind = f.metadata.get('kind') if f.metadata else None
+            if kind not in ('bundle', 'mirror'):
+                continue
+
+            bundle_t = f.type
+            is_mirror = (kind == 'mirror')
+
+            const_fields = {}
+            signal_dirs = {}
+            signal_widths = {}
+
+            # Helper for evaluating lambda widths against const fields
+            def _eval_width(spec):
+                if spec is None:
+                    return 32
+                if callable(spec):
+                    tmp = type('Tmp', (), const_fields)()
+                    return int(spec(tmp))
+                return int(spec)
+
+            if hasattr(bundle_t, '__dataclass_fields__'):
+                for bf in dc.fields(bundle_t):
+                    bf_kind = bf.metadata.get('kind') if bf.metadata else None
+                    if bf_kind == 'const':
+                        const_fields[bf.name] = bf.default if bf.default is not dc.MISSING else 0
+                        continue
+
+                    # Determine signal direction from input()/output()
+                    is_in = (bf.default_factory is Input) if bf.default_factory is not dc.MISSING else False
+                    is_out = (bf.default_factory is Output) if bf.default_factory is not dc.MISSING else False
+
+                    if is_mirror:
+                        is_in, is_out = is_out, is_in
+
+                    if is_in or is_out:
+                        signal_dirs[bf.name] = 'in' if is_in else 'out'
+                        width = _eval_width(bf.metadata.get('width') if bf.metadata else None)
+                        signal_widths[bf.name] = width
+
+                        sig_full = f"{f.name}.{bf.name}"
+                        if sig_full not in comp._impl._signal_values:
+                            default_v = bf.default if bf.default is not dc.MISSING else 0
+                            comp._impl._signal_values[sig_full] = default_v
+                        comp._impl._signal_widths[sig_full] = width
+
+            setattr(comp, f.name, BundleProxy(comp, f.name, const_fields, signal_dirs, signal_widths))
+
+    @staticmethod
     def __apply_bindmap__(comp, bindmap):
         """Apply bindmap entries by setting target values to source values.
         
@@ -841,6 +918,35 @@ class ObjFactory(ObjFactoryP):
         for target, source in ordered_entries:
             # Get source value by traversing from comp
             source_value = ObjFactory.__resolve_bind_path__(comp, source)
+
+            # Bundle-to-bundle binding: connect signals based on direction
+            if isinstance(target, BindPath) and isinstance(source, BindPath):
+                target_value = ObjFactory.__resolve_bind_path__(comp, target)
+                if isinstance(target_value, BundleProxy) and isinstance(source_value, BundleProxy):
+                    # Resolve owning components
+                    def _owner_and_field(p: BindPath):
+                        o = comp
+                        for part in p._path[:-1]:
+                            o = getattr(o, part)
+                        return o, p._path[-1]
+
+                    a_comp, a_field = _owner_and_field(target)
+                    b_comp, b_field = _owner_and_field(source)
+
+                    a_dirs = object.__getattribute__(target_value, '_signal_dirs')
+                    b_dirs = object.__getattribute__(source_value, '_signal_dirs')
+
+                    for sig in set(a_dirs.keys()) & set(b_dirs.keys()):
+                        a_dir = a_dirs[sig]
+                        b_dir = b_dirs[sig]
+
+                        if a_dir == 'out' and b_dir == 'in':
+                            a_comp._impl.add_signal_binding(f"{a_field}.{sig}", b_comp, f"{b_field}.{sig}")
+                        elif b_dir == 'out' and a_dir == 'in':
+                            b_comp._impl.add_signal_binding(f"{b_field}.{sig}", a_comp, f"{a_field}.{sig}")
+
+                    # Do not overwrite bundle proxies with setattr
+                    continue
             
             # Set target to source value by traversing from comp
             ObjFactory.__set_bind_path_value__(comp, target, source_value)

@@ -127,6 +127,9 @@ class CompImplRT(object):
         # Store processes
         self._sync_processes = datamodel.sync_processes
         self._comb_processes = datamodel.comb_processes
+
+        # Field-name mapping (datamodel index -> name)
+        self._dm_field_names = [f.name for f in getattr(datamodel, 'fields', [])]
         
         # Build sensitivity map (signal_name -> set of comb process indices)
         for idx, comb_func in enumerate(self._comb_processes):
@@ -165,14 +168,56 @@ class CompImplRT(object):
             self._eval_mode = EvalMode.IDLE
     
     def _get_signal_name(self, expr, comp):
-        """Extract signal name from expression."""
-        from ..ir.expr import ExprRefField
-        
-        if isinstance(expr, ExprRefField):
-            fields = [f for f in dc.fields(comp) if not f.name.startswith('_')]
-            if expr.index < len(fields):
-                return fields[expr.index].name
-        return None
+        """Extract signal name/path from an expression.
+
+        Uses datamodel field ordering to map ExprRefField indices, since the
+        runtime dataclass may not contain signal fields as dataclass fields.
+        """
+        from ..ir.expr import ExprRefField, ExprAttribute, TypeExprRefSelf
+
+        def _fields_for_obj(o):
+            try:
+                return [f for f in dc.fields(o) if not f.name.startswith('_')]
+            except Exception:
+                return None
+
+        def _field_name_for_index(o, idx: int):
+            if isinstance(o, Component):
+                names = getattr(self, '_dm_field_names', None)
+                if names is not None and idx < len(names):
+                    return names[idx]
+            fs = _fields_for_obj(o)
+            if fs is not None and idx < len(fs):
+                return fs[idx].name
+            return None
+
+        def _path_expr(e, o):
+            if isinstance(e, TypeExprRefSelf):
+                return ""
+            if isinstance(e, ExprRefField):
+                if isinstance(e.base, TypeExprRefSelf):
+                    n = _field_name_for_index(o, e.index)
+                    return n
+                base_p = _path_expr(e.base, o)
+                if base_p is None:
+                    return None
+                # Try to resolve base object to map nested indices
+                base_o = o
+                if base_p != "":
+                    for part in base_p.split('.'):
+                        base_o = getattr(base_o, part)
+                n = _field_name_for_index(base_o, e.index)
+                if n is None:
+                    return None
+                return n if base_p == "" else f"{base_p}.{n}"
+            if isinstance(e, ExprAttribute):
+                base_p = _path_expr(e.value, o)
+                if base_p is None:
+                    return None
+                return e.attr if base_p == "" else f"{base_p}.{e.attr}"
+            return None
+
+        return _path_expr(expr, comp)
     
     def signal_write(self, comp: Component, name: str, value: Any, width: int = 32):
         """Handle signal write with mode-aware semantics.
@@ -206,6 +251,11 @@ class CompImplRT(object):
             if old_value != value:
                 self._notify_signal_tracer(comp, name, old_value, value, width)
             
+            # Propagate to bound signals (eg parent/child bindings, bundle bindings)
+            if old_value != value and name in self._signal_bindings:
+                for target_comp, target_signal in self._signal_bindings[name]:
+                    target_comp._impl.signal_write(target_comp, target_signal, value, width)
+
             # Schedule dependent comb processes if value changed
             if old_value != value and name in self._sensitivity:
                 for proc_idx in self._sensitivity[name]:
@@ -318,6 +368,12 @@ class CompImplRT(object):
                     width = self._signal_widths.get(sig_name, 32)
                     self._notify_signal_tracer(comp, sig_name, old_value, val, width)
                 
+                # Propagate to bound signals (eg parent/child bindings, bundle bindings)
+                if old_value != val and sig_name in self._signal_bindings:
+                    width = self._signal_widths.get(sig_name, 32)
+                    for target_comp, target_signal in self._signal_bindings[sig_name]:
+                        target_comp._impl.signal_write(target_comp, target_signal, val, width)
+
                 # Schedule dependent comb processes if value changed
                 if old_value != val and sig_name in self._sensitivity:
                     for proc_idx in self._sensitivity[sig_name]:

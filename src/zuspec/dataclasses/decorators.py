@@ -118,23 +118,47 @@ class Output(object):
     """Marker type for 'output' dataclass fields"""
     ...
 
-def input(*args, **kwargs) -> Any:
-    """
-    Marks an input field. Input fields declared on a 
-    top-level component are `bound` to an implicit output. Those
-    on non-top-level components must explicitly be `bound` to an 
-    output. An input field sees the value of the output field 
-    to which it is bound with no delay
-    """
-    return dataclasses.field(default_factory=Input)
+def input(*args, width=None, **kwargs) -> Any:
+    """Marks an input field.
 
-def output(*args, **kwargs) -> Any:
+    Args:
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+               May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
     """
-    Marks an output field. Input fields that are bound to
-    an output field always see its current output value 
-    with no delay.
+    metadata = {}
+    if width is not None:
+        metadata["width"] = width
+    return dataclasses.field(default_factory=Input, metadata=metadata if metadata else None)
+
+def output(*args, width=None, **kwargs) -> Any:
+    """Marks an output field.
+
+    Args:
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+               May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
     """
-    return dc.field(default_factory=Output)
+    metadata = {}
+    if width is not None:
+        metadata["width"] = width
+    return dc.field(default_factory=Output, metadata=metadata if metadata else None)
+
+
+def const(default=None) -> Any:
+    """Marks a post-construction constant.
+
+    Used primarily for configuration and bundle/interface parameters.
+    """
+    return dc.field(default=default, metadata={"kind": "const"})
+
+
+def bundle(default_factory=dc.MISSING) -> Any:
+    """Marks a field as a bundle/interface with declared directionality."""
+    return dc.field(init=False, default_factory=default_factory, metadata={"kind": "bundle"})
+
+
+def mirror(default_factory=dc.MISSING) -> Any:
+    """Marks a field as a bundle/interface with flipped directionality."""
+    return dc.field(init=False, default_factory=default_factory, metadata={"kind": "mirror"})
 
 def port():
     """A 'port' field is an API consumer. It must be bound

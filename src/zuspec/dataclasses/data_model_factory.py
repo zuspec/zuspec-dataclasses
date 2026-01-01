@@ -17,7 +17,7 @@ from .ir.stmt import (
     StmtFor, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
     StmtAssert, StmtAssume, StmtCover,
 )
-from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript
+from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
 from .types import TypeBase, Component, Extern, Lock, Memory
 
 # Import Event at runtime to avoid circular dependency
@@ -690,22 +690,46 @@ class DataModelFactory(object):
         
         try:
             result = bind_method(proxy)
-            if result is not None and isinstance(result, dict):
-                for lhs, rhs in result.items():
-                    # Convert proxy results to Bind entries
-                    lhs_expr = self._normalize_bind_expr(lhs)
-                    rhs_expr = self._normalize_bind_expr(rhs)
-                    if lhs_expr is not None and rhs_expr is not None:
-                        bind = Bind(lhs=lhs_expr, rhs=rhs_expr)
-                        # Validate binding rules (if this component has sync/comb processes)
-                        self._validate_bind(t, bind, field_indices, field_types)
-                        bind_map.append(bind)
+
+            if result is None:
+                return bind_map
+
+            items = None
+            if isinstance(result, dict):
+                items = result.items()
+            elif isinstance(result, (tuple, list)):
+                # Allow returning a single pair: (lhs, rhs)
+                if len(result) == 2 and not (
+                    isinstance(result[0], (tuple, list)) and len(result[0]) == 2
+                ):
+                    items = (result,)
+                else:
+                    items = result
+            else:
+                raise RuntimeError(
+                    f"__bind__ must return a dict or an iterable of (lhs,rhs) pairs; got {type(result).__name__}")
+
+            for e in items:
+                try:
+                    lhs, rhs = e
+                except Exception:
+                    raise RuntimeError(
+                        f"__bind__ iterable entries must be (lhs,rhs) pairs; got {e!r}")
+
+                # Convert proxy results to Bind entries
+                lhs_expr = self._normalize_bind_expr(lhs)
+                rhs_expr = self._normalize_bind_expr(rhs)
+                if lhs_expr is not None and rhs_expr is not None:
+                    bind = Bind(lhs=lhs_expr, rhs=rhs_expr)
+                    # Validate binding rules (if this component has sync/comb processes)
+                    self._validate_bind(t, bind, field_indices, field_types)
+                    bind_map.append(bind)
         except Exception as e:
             # __bind__ method execution failed - this indicates a user error in the bind method
             raise RuntimeError(
                 f"Failed to evaluate __bind__ method for class '{t.__name__}': {e}\n"
-                f"The __bind__ method should return a dict mapping port/export expressions. "
-                f"Example: return {{self.producer.output: self.consumer.input}}"
+                f"The __bind__ method should return either a dict mapping (lhs->rhs), or an iterable of (lhs,rhs) pairs. "
+                f"Example: return {{self.producer.output: self.consumer.input}} or return ((self.producer.output, self.consumer.input),)"
             ) from e
         
         return bind_map
@@ -901,6 +925,12 @@ class DataModelFactory(object):
                     self.visit_stmt_assign(stmt)
                 elif isinstance(stmt, StmtExpr):
                     self.visit_expr(stmt.expr)
+                elif isinstance(stmt, StmtIf):
+                    self.visit_expr(stmt.test)
+                    for s in stmt.body:
+                        self.visit_stmt(s)
+                    for s in stmt.orelse:
+                        self.visit_stmt(s)
                 elif isinstance(stmt, StmtFor):
                     self.visit_expr(stmt.iter)
                     for s in stmt.body:
@@ -914,10 +944,10 @@ class DataModelFactory(object):
             def visit_stmt_assign(self, stmt):
                 # Track write targets
                 for target in stmt.targets:
-                    if isinstance(target, ExprRefField):
-                        # Compute a unique key for the field reference
+                    if isinstance(target, (ExprRefField, ExprAttribute)):
                         field_key = self._field_key(target)
-                        self.writes.add(field_key)
+                        if field_key is not None:
+                            self.writes.add(field_key)
                 # Visit RHS for reads
                 self.visit_expr(stmt.value)
             
@@ -925,25 +955,36 @@ class DataModelFactory(object):
                 if expr is None:
                     return
                 
-                if isinstance(expr, ExprRefField):
+                if isinstance(expr, (ExprRefField, ExprAttribute)):
                     # Track reads (but we'll filter out writes later)
                     self.reads.append(expr)
                 elif isinstance(expr, ExprCall):
                     self.visit_expr(expr.func)
                     for arg in expr.args:
                         self.visit_expr(arg)
-                elif isinstance(expr, ExprAttribute):
-                    self.visit_expr(expr.value)
                 elif isinstance(expr, ExprBin):
                     self.visit_expr(expr.lhs)
                     self.visit_expr(expr.rhs)
+                elif isinstance(expr, ExprCompare):
+                    self.visit_expr(expr.left)
+                    for c in expr.comparators:
+                        self.visit_expr(c)
+                elif isinstance(expr, ExprBool):
+                    for v in expr.values:
+                        self.visit_expr(v)
                 # Add more expression types as needed
             
-            def _field_key(self, field_ref: ExprRefField) -> str:
-                """Generate a unique key for a field reference."""
-                # Simple approach: just use the field index
-                # More sophisticated approach would walk the base chain
-                return str(field_ref.index)
+            def _field_key(self, expr) -> Optional[str]:
+                """Generate a unique key for a field/path reference."""
+                if isinstance(expr, ExprRefField):
+                    base_k = self._field_key(expr.base)
+                    return f"{base_k}[{expr.index}]" if base_k is not None else str(expr.index)
+                if isinstance(expr, ExprAttribute):
+                    base_k = self._field_key(expr.value)
+                    return f"{base_k}.{expr.attr}" if base_k is not None else expr.attr
+                if isinstance(expr, TypeExprRefSelf):
+                    return "self"
+                return None
         
         visitor = SensitivityVisitor()
         for stmt in body:
