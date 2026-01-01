@@ -7,4 +7,5 @@ from .address_space_rt import AddressSpaceRT
 from .channel_rt import ChannelRT, GetIFRT, PutIFRT
 from .lock_rt import LockRT
 from .event_rt import EventRT
-from .tracer import Tracer, Thread, with_tracer
+from .tracer import Tracer, SignalTracer, Thread, with_tracer
+from .vcd_tracer import VCDTracer

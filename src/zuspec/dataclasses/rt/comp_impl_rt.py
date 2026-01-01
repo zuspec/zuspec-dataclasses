@@ -26,6 +26,7 @@ class CompImplRT(object):
     _parent : Component = dc.field()
     _timebase_inst : Optional[Timebase] = dc.field(default=None)
     _tracer : Optional[Any] = dc.field(default=None)  # Tracer instance for this component
+    _enable_signal_tracing : bool = dc.field(default=False)  # Whether to trace signal changes
     _processes : List[Tuple[str, ExecProc]] = dc.field(default_factory=list)
     _tasks : List[asyncio.Task] = dc.field(default_factory=list)
     _processes_started : bool = dc.field(default=False)
@@ -33,6 +34,7 @@ class CompImplRT(object):
     # Evaluation state
     _eval_mode : EvalMode = dc.field(default=EvalMode.IDLE)
     _signal_values : Dict[str, Any] = dc.field(default_factory=dict)
+    _signal_widths : Dict[str, int] = dc.field(default_factory=dict)  # signal -> width for tracing
     _deferred_writes : Dict[str, Any] = dc.field(default_factory=dict)
     _sensitivity : Dict[str, Set] = dc.field(default_factory=dict)  # signal -> set of comb processes
     _sync_processes : List = dc.field(default_factory=list)
@@ -172,14 +174,24 @@ class CompImplRT(object):
                 return fields[expr.index].name
         return None
     
-    def signal_write(self, comp: Component, name: str, value: Any):
+    def signal_write(self, comp: Component, name: str, value: Any, width: int = 32):
         """Handle signal write with mode-aware semantics.
         
         - IDLE: Direct write + schedule dependent processes on timebase
         - SYNC_EVAL: Deferred write (applied after delta cycle)
         - COMB_EVAL: Immediate write + schedule dependent comb processes
+        
+        Args:
+            comp: Component instance
+            name: Signal name
+            value: New value
+            width: Bit width of the signal (for tracing)
         """
         self._init_eval(comp)
+        
+        # Store width for tracing
+        if name not in self._signal_widths:
+            self._signal_widths[name] = width
         
         if self._eval_mode == EvalMode.SYNC_EVAL:
             # Deferred write - store for later
@@ -189,6 +201,10 @@ class CompImplRT(object):
             # Immediate write
             old_value = self._signal_values.get(name)
             self._signal_values[name] = value
+            
+            # Notify tracer if enabled and value changed
+            if old_value != value:
+                self._notify_signal_tracer(comp, name, old_value, value, width)
             
             # Schedule dependent comb processes if value changed
             if old_value != value and name in self._sensitivity:
@@ -205,13 +221,17 @@ class CompImplRT(object):
             old_value = self._signal_values.get(name)
             self._signal_values[name] = value
             
+            # Notify tracer if enabled and value changed
+            if old_value != value:
+                self._notify_signal_tracer(comp, name, old_value, value, width)
+            
             if old_value != value:
                 # Propagate to bound signals FIRST (before scheduling processes)
                 if name in self._signal_bindings:
                     for target_comp, target_signal in self._signal_bindings[name]:
                         # Write to bound component's signal
                         # This will recursively trigger that component's processes
-                        target_comp._impl.signal_write(target_comp, target_signal, value)
+                        target_comp._impl.signal_write(target_comp, target_signal, value, width)
                 
                 # Schedule dependent processes on timebase at delta (0) time
                 tb = self.timebase()
@@ -244,6 +264,37 @@ class CompImplRT(object):
                 if events_scheduled and not tb._running:
                     tb.advance()
     
+    def _get_component_path(self, comp: Component) -> str:
+        """Get the hierarchical path to this component."""
+        parts = []
+        c = comp
+        while c is not None:
+            impl = c._impl
+            if impl._name:
+                parts.append(impl._name)
+            else:
+                parts.append(type(c).__name__)
+            c = impl._parent
+        parts.reverse()
+        return ".".join(parts) if parts else type(comp).__name__
+    
+    def _notify_signal_tracer(self, comp: Component, name: str, old_value: Any, new_value: Any, width: int):
+        """Notify the signal tracer of a value change if signal tracing is enabled."""
+        if not self._enable_signal_tracing or self._tracer is None:
+            return
+        
+        from .tracer import SignalTracer
+        if isinstance(self._tracer, SignalTracer):
+            # Get current time
+            try:
+                tb = self.timebase()
+                time_ns = tb.time().as_ns()
+            except RuntimeError:
+                time_ns = 0.0
+            
+            comp_path = self._get_component_path(comp)
+            self._tracer.signal_change(comp_path, name, time_ns, old_value, new_value, width)
+    
     def signal_read(self, comp: Component, name: str) -> Any:
         """Read signal value."""
         self._init_eval(comp)
@@ -261,6 +312,11 @@ class CompImplRT(object):
             for sig_name, val in self._deferred_writes.items():
                 old_value = self._signal_values.get(sig_name)
                 self._signal_values[sig_name] = val
+                
+                # Notify tracer if enabled and value changed
+                if old_value != val:
+                    width = self._signal_widths.get(sig_name, 32)
+                    self._notify_signal_tracer(comp, sig_name, old_value, val, width)
                 
                 # Schedule dependent comb processes if value changed
                 if old_value != val and sig_name in self._sensitivity:

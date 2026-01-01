@@ -27,11 +27,12 @@ _current_thread: contextvars.ContextVar[Optional['Thread']] = contextvars.Contex
 
 class SignalDescriptor:
     """Property descriptor that intercepts signal access and routes to eval infrastructure."""
-    def __init__(self, name: str, field_type: type, is_input: bool, default_value: int = 0):
+    def __init__(self, name: str, field_type: type, is_input: bool, default_value: int = 0, width: int = 32):
         self.name = name
         self.field_type = field_type
         self.is_input = is_input
         self.default_value = default_value
+        self.width = width
     
     def __get__(self, obj, objtype=None):
         if obj is None:
@@ -51,10 +52,15 @@ class SignalDescriptor:
         # Use signal_write if eval is initialized
         if hasattr(obj, '_impl') and obj._impl:
             if obj._impl._eval_initialized:
-                obj._impl.signal_write(obj, self.name, value)
+                obj._impl.signal_write(obj, self.name, value, self.width)
             else:
-                # During construction, just store directly
+                # During construction or for simple components, store directly
+                old_value = obj._impl._signal_values.get(self.name)
                 obj._impl._signal_values[self.name] = value
+                
+                # Still notify tracer if signal tracing is enabled
+                if old_value != value and obj._impl._enable_signal_tracing:
+                    obj._impl._notify_signal_tracer(obj, self.name, old_value, value, self.width)
 
 class BindPath:
     """Represents a path in the binding system (e.g., self.cons.call or self.p.prod)"""
@@ -118,6 +124,7 @@ class ObjFactory(ObjFactoryP):
     comp_type_m : Dict[Type[Component],Type[Component]] = dc.field(default_factory=dict)
     comp_s : List[Component] = dc.field(default_factory=list)
     tracer : Optional['Tracer'] = dc.field(default=None)
+    enable_signal_tracing : bool = dc.field(default=False)
     _inst : ClassVar = None
     _next_tid : int = dc.field(default=0)
 
@@ -193,7 +200,35 @@ class ObjFactory(ObjFactoryP):
                 if is_signal:
                     # Store signal field metadata including default value - don't add to dataclass fields
                     default_value = f.default if f.default is not dc.MISSING else 0
-                    signal_fields.append((f.name, field_type, is_input, default_value))
+                    
+                    # Extract width from type annotation
+                    width = 32  # default
+                    from typing import Annotated
+                    if origin is not None and origin is Annotated:
+                        args = get_args(field_type)
+                        if args and len(args) > 1:
+                            for meta in args[1:]:
+                                if isinstance(meta, (U, S)):
+                                    width = meta.width
+                                    break
+                    elif hasattr(field_type, '__metadata__'):
+                        for meta in field_type.__metadata__:
+                            if isinstance(meta, (U, S)):
+                                width = meta.width
+                                break
+                    elif hasattr(field_type, '__name__'):
+                        # Try to parse width from type name (e.g., bit8, uint16_t)
+                        type_name = field_type.__name__
+                        if type_name.startswith('bit') and type_name[3:].isdigit():
+                            width = int(type_name[3:])
+                        elif type_name.startswith('uint') and type_name.endswith('_t'):
+                            mid = type_name[4:-2]
+                            if mid.isdigit():
+                                width = int(mid)
+                        elif type_name == 'bit':
+                            width = 1
+                    
+                    signal_fields.append((f.name, field_type, is_input, default_value, width))
                     continue
                 
                 field_kind = f.metadata.get('kind') if f.metadata else None
@@ -329,8 +364,8 @@ class ObjFactory(ObjFactoryP):
             self.comp_type_m[cls] = cls_rt
             
             # Add signal properties after class creation
-            for sig_name, sig_type, is_input, default_value in signal_fields:
-                descriptor = SignalDescriptor(sig_name, sig_type, is_input, default_value)
+            for sig_name, sig_type, is_input, default_value, width in signal_fields:
+                descriptor = SignalDescriptor(sig_name, sig_type, is_input, default_value, width)
                 setattr(cls_rt, sig_name, descriptor)
 
             # Wrap async methods for tracing if tracer is enabled
@@ -511,7 +546,18 @@ class ObjFactory(ObjFactoryP):
     def __comp_build__(comp, parent, name, timebase: Timebase, port_bindings: Dict[str, Any] = None):
         factory = ObjFactory.inst()
         tracer = factory.tracer
-        comp._impl = CompImplRT(_factory=None, _name=name, _parent=parent, _tracer=tracer)
+        enable_signal_tracing = factory.enable_signal_tracing
+        comp._impl = CompImplRT(
+            _factory=None, 
+            _name=name, 
+            _parent=parent, 
+            _tracer=tracer,
+            _enable_signal_tracing=enable_signal_tracing
+        )
+        
+        # Register signals with tracer if signal tracing is enabled
+        if enable_signal_tracing and tracer is not None:
+            ObjFactory.__register_signals_with_tracer__(comp, tracer, parent)
         
         # Set timebase on root component
         if parent is None:
@@ -579,6 +625,42 @@ class ObjFactory(ObjFactoryP):
                 
             if bindmap is not None:
                 ObjFactory.__apply_bindmap__(comp, bindmap)
+
+    @staticmethod
+    def __register_signals_with_tracer__(comp, tracer, parent):
+        """Register all signals on a component with the tracer.
+        
+        This allows the tracer to know about all signals before value changes occur,
+        which is needed for VCD header generation.
+        """
+        from .tracer import SignalTracer
+        if not isinstance(tracer, SignalTracer):
+            return
+        
+        # Build component path
+        parts = []
+        c = comp
+        while c is not None:
+            impl = c._impl if hasattr(c, '_impl') and c._impl else None
+            if impl is not None:
+                if impl._name:
+                    parts.append(impl._name)
+                else:
+                    parts.append(type(c).__name__)
+                c = impl._parent
+            else:
+                parts.append(type(c).__name__)
+                break
+        parts.reverse()
+        comp_path = ".".join(parts) if parts else type(comp).__name__
+        
+        # Register signals from SignalDescriptor properties
+        for attr_name in dir(type(comp)):
+            if attr_name.startswith('_'):
+                continue
+            attr = getattr(type(comp), attr_name, None)
+            if isinstance(attr, SignalDescriptor):
+                tracer.register_signal(comp_path, attr.name, attr.width, attr.is_input)
 
     @staticmethod
     def __init_memory_fields__(comp):
