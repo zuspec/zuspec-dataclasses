@@ -251,16 +251,27 @@ class ObjFactory(ObjFactoryP):
 
                 # Handle instance fields (auto-constructed)
                 if field_kind == 'instance':
+                    metadata = dict(f.metadata) if f.metadata else {}
+                    ctor_kwargs = metadata.get('kwargs')
+
                     if field_type is Lock:
-                        fields.append((f.name, object, dc.field(default_factory=LockRT)))
+                        fields.append((f.name, object, dc.field(default_factory=LockRT, metadata=metadata)))
                     elif inspect.isclass(field_type):
-                        fields.append((f.name, field_type, dc.field(default_factory=field_type)))
+                        if callable(ctor_kwargs):
+                            # Needs parent instance to evaluate
+                            fields.append((f.name, field_type, dc.field(default=None, metadata=metadata)))
+                        elif isinstance(ctor_kwargs, dict):
+                            def _mk_inst(_t=field_type, _kw=dict(ctor_kwargs)):
+                                return _t(**_kw)
+                            fields.append((f.name, field_type, dc.field(default_factory=_mk_inst, metadata=metadata)))
+                        else:
+                            fields.append((f.name, field_type, dc.field(default_factory=field_type, metadata=metadata)))
                     elif getattr(field_type, '_is_protocol', False):
                         raise RuntimeError(
                             f"Cannot auto-construct Protocol type '{getattr(field_type, '__qualname__', str(field_type))}' for field '{f.name}'"
                         )
                     else:
-                        fields.append((f.name, object, dc.field(default=None, metadata=f.metadata)))
+                        fields.append((f.name, object, dc.field(default=None, metadata=metadata)))
 
                 # Handle fixed-size tuple fields
                 elif field_kind == 'tuple':
@@ -593,6 +604,9 @@ class ObjFactory(ObjFactoryP):
         if has_eval:
             comp._impl._init_eval(comp)
 
+        # Initialize instance fields that require parent context before discovering children
+        ObjFactory.__init_instance_fields__(comp)
+
         # Build child components first (bottom-up)
         for f in dc.fields(comp):
             fo = getattr(comp, f.name)
@@ -803,11 +817,39 @@ class ObjFactory(ObjFactoryP):
                 setattr(comp, f.name, channel_rt)
 
     @staticmethod
+    def __init_instance_fields__(comp):
+        """Initialize instance fields that require evaluating kwargs against the parent instance."""
+        factory = ObjFactory.inst()
+        factory.comp_s.append(comp)
+        try:
+            for f in dc.fields(comp):
+                kind = f.metadata.get('kind') if f.metadata else None
+                if kind != 'instance':
+                    continue
+                ctor_kwargs = f.metadata.get('kwargs') if f.metadata else None
+                if not callable(ctor_kwargs):
+                    continue
+                if getattr(comp, f.name) is not None:
+                    continue
+
+                field_type = f.type
+                kw = ctor_kwargs(comp)
+                if kw is not None and not isinstance(kw, dict):
+                    raise RuntimeError(f"Field '{f.name}' kwargs must be dict or callable returning dict")
+
+                if field_type is Lock:
+                    setattr(comp, f.name, LockRT())
+                elif inspect.isclass(field_type):
+                    setattr(comp, f.name, field_type(**(kw or {})))
+        finally:
+            factory.comp_s.pop()
+
+    @staticmethod
     def __init_bundle_fields__(comp):
-        """Initialize bundle/mirror fields by creating BundleProxy objects."""
+        """Initialize bundle/mirror/monitor fields by creating BundleProxy objects."""
         for f in dc.fields(comp):
             kind = f.metadata.get('kind') if f.metadata else None
-            if kind not in ('bundle', 'mirror'):
+            if kind not in ('bundle', 'mirror', 'monitor'):
                 continue
 
             bundle_t = f.type
@@ -827,10 +869,24 @@ class ObjFactory(ObjFactoryP):
                 return int(spec)
 
             if hasattr(bundle_t, '__dataclass_fields__'):
+                # Pass 1: collect const defaults
                 for bf in dc.fields(bundle_t):
                     bf_kind = bf.metadata.get('kind') if bf.metadata else None
                     if bf_kind == 'const':
                         const_fields[bf.name] = bf.default if bf.default is not dc.MISSING else 0
+
+                # Apply field-level ctor kwargs overrides
+                ctor_kwargs = f.metadata.get('kwargs') if f.metadata else None
+                ctor_kwargs = ctor_kwargs(comp) if callable(ctor_kwargs) else ctor_kwargs
+                if ctor_kwargs:
+                    if not isinstance(ctor_kwargs, dict):
+                        raise RuntimeError(f"Field '{f.name}' kwargs must be dict or callable returning dict")
+                    const_fields.update(ctor_kwargs)
+
+                # Pass 2: build signal directions and widths
+                for bf in dc.fields(bundle_t):
+                    bf_kind = bf.metadata.get('kind') if bf.metadata else None
+                    if bf_kind == 'const':
                         continue
 
                     # Determine signal direction from input()/output()
@@ -921,7 +977,10 @@ class ObjFactory(ObjFactoryP):
 
             # Bundle-to-bundle binding: connect signals based on direction
             if isinstance(target, BindPath) and isinstance(source, BindPath):
-                target_value = ObjFactory.__resolve_bind_path__(comp, target)
+                try:
+                    target_value = ObjFactory.__resolve_bind_path__(comp, target)
+                except AttributeError:
+                    target_value = None
                 if isinstance(target_value, BundleProxy) and isinstance(source_value, BundleProxy):
                     # Resolve owning components
                     def _owner_and_field(p: BindPath):
@@ -948,6 +1007,83 @@ class ObjFactory(ObjFactoryP):
                     # Do not overwrite bundle proxies with setattr
                     continue
             
+            # Bundle-signal / signal binding: bind at the signal layer (no setattr on BundleProxy)
+            if isinstance(target, BindPath) and isinstance(source, BindPath):
+                def _signal_endpoint(p: BindPath):
+                    # Bundle signal reference: <bundle>.<sig>
+                    if len(p._path) >= 2:
+                        owner = comp
+                        for part in p._path[:-2]:
+                            owner = getattr(owner, part)
+                        bundle_field = p._path[-2]
+                        sig = p._path[-1]
+                        try:
+                            bundle = getattr(owner, bundle_field)
+                        except Exception:
+                            bundle = None
+                        if isinstance(bundle, BundleProxy):
+                            dirs = object.__getattribute__(bundle, '_signal_dirs')
+                            if sig in dirs:
+                                widths = object.__getattribute__(bundle, '_signal_widths')
+                                return (owner, f"{bundle_field}.{sig}", dirs.get(sig), len(p._path), True, widths.get(sig, 32))
+
+                    # Scalar signal reference: <sig>
+                    owner = comp
+                    if len(p._path) > 1:
+                        for part in p._path[:-1]:
+                            owner = getattr(owner, part)
+                    if len(p._path) == 0:
+                        return None
+                    sig = p._path[-1]
+                    desc = getattr(type(owner), sig, None)
+                    if isinstance(desc, SignalDescriptor):
+                        return (owner, sig, ('in' if desc.is_input else 'out'), len(p._path), False, getattr(desc, 'width', 32))
+                    return None
+
+                t_ep = _signal_endpoint(target)
+                s_ep = _signal_endpoint(source)
+                if t_ep is not None and s_ep is not None:
+                    # Default: explicit (target <- source)
+                    src_ep = s_ep
+                    dst_ep = t_ep
+
+                    s_dir = s_ep[2]
+                    t_dir = t_ep[2]
+                    s_depth = s_ep[3]
+                    t_depth = t_ep[3]
+                    s_is_bundle = s_ep[4]
+                    t_is_bundle = t_ep[4]
+
+                    # Prefer out->in based on direction
+                    if t_dir == 'out' and s_dir == 'in':
+                        src_ep, dst_ep = t_ep, s_ep
+                    # For input-input, prefer parent/bundle driving child
+                    elif s_dir == t_dir == 'in':
+                        if s_is_bundle != t_is_bundle:
+                            src_ep = s_ep if s_is_bundle else t_ep
+                            dst_ep = t_ep if s_is_bundle else s_ep
+                        elif s_depth != t_depth:
+                            src_ep = s_ep if s_depth < t_depth else t_ep
+                            dst_ep = t_ep if s_depth < t_depth else s_ep
+                    # For output-output, prefer child driving parent/bundle
+                    elif s_dir == t_dir == 'out':
+                        if s_is_bundle != t_is_bundle:
+                            src_ep = s_ep if not s_is_bundle else t_ep
+                            dst_ep = t_ep if not s_is_bundle else s_ep
+                        elif s_depth != t_depth:
+                            src_ep = s_ep if s_depth > t_depth else t_ep
+                            dst_ep = t_ep if s_depth > t_depth else s_ep
+
+                    src_comp, src_sig, _src_dir, _src_depth, _src_is_bundle, src_w = src_ep
+                    dst_comp, dst_sig, _dst_dir, _dst_depth, _dst_is_bundle, _dst_w = dst_ep
+
+                    if hasattr(src_comp, '_impl') and src_comp._impl and hasattr(dst_comp, '_impl') and dst_comp._impl:
+                        src_comp._impl.add_signal_binding(src_sig, dst_comp, dst_sig)
+                        # Ensure no extra latency: initialize target to current source value
+                        dst_comp._impl._signal_values[dst_sig] = src_comp._impl._signal_values.get(src_sig, 0)
+                        dst_comp._impl._signal_widths[dst_sig] = src_comp._impl._signal_widths.get(src_sig, src_w)
+                        continue
+
             # Set target to source value by traversing from comp
             ObjFactory.__set_bind_path_value__(comp, target, source_value)
             

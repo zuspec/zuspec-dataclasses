@@ -151,14 +151,37 @@ def const(default=None) -> Any:
     return dc.field(default=default, metadata={"kind": "const"})
 
 
-def bundle(default_factory=dc.MISSING) -> Any:
+def bundle(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+    ) -> Any:
     """Marks a field as a bundle/interface with declared directionality."""
-    return dc.field(init=False, default_factory=default_factory, metadata={"kind": "bundle"})
+    metadata = {"kind": "bundle"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
+    return dc.field(init=False, default_factory=default_factory, metadata=metadata)
 
 
-def mirror(default_factory=dc.MISSING) -> Any:
+def mirror(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+    ) -> Any:
     """Marks a field as a bundle/interface with flipped directionality."""
-    return dc.field(init=False, default_factory=default_factory, metadata={"kind": "mirror"})
+    metadata = {"kind": "mirror"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
+    return dc.field(init=False, default_factory=default_factory, metadata=metadata)
+
+
+def monitor(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+    ) -> Any:
+    """Marks a field as a bundle/interface for passive monitoring."""
+    metadata = {"kind": "monitor"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
+    return dc.field(init=False, default_factory=default_factory, metadata=metadata)
 
 def port():
     """A 'port' field is an API consumer. It must be bound
@@ -172,14 +195,18 @@ def export():
     or on a whole-class basis."""
     return dc.field(init=False, metadata={"kind": "export"})
 
-def inst(default_factory=dc.MISSING):
-    """Instance attributes are automatically constructed based on
-    the annotated type.
-    """
+def inst(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+    ):
+    """Instance attributes are automatically constructed based on the annotated type."""
+    metadata = {"kind": "instance"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
     return dc.field(
-        init=False, 
+        init=False,
         default_factory=default_factory,
-        metadata={"kind": "instance"})
+        metadata=metadata)
 
 def tuple(size=0, elem_factory=None):
     """Fixed-size tuple field.

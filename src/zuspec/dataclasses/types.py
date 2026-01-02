@@ -18,7 +18,7 @@ import abc
 import dataclasses as dc
 import enum
 from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, Self
-from .decorators import dataclass, field
+from .decorators import dataclass, field, export
 
 
 @dc.dataclass
@@ -302,6 +302,12 @@ class Component(TypeBase):
         else:
             ret = object.__new__(cls)
         return ret
+
+@dc.dataclass
+class XtorComponent[T](Component):
+    """A Transactor component has a single-level interface and an 
+    operation-level interface"""
+    xtor_if : T = export()
 
 class Pool[T](Protocol):
     pass

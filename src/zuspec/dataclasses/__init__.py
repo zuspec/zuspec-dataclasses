@@ -24,7 +24,7 @@ from asyncio import Event as aEvent
 from typing import Callable
 from .decorators import (
     dataclass, field, process, input, output,
-    const, bundle, mirror,
+    const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple

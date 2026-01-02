@@ -56,14 +56,18 @@ def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types:
             object.__setattr__(self, '_expr', expr if expr is not None else TypeExprRefSelf())
         
         def __getattribute__(self, name: str):
-            # Handle our internal attributes
-            if name.startswith('_'):
+            # Always allow access to proxy-internal attributes
+            if name in ('_field_indices', '_field_types', '_expr') or name.startswith('__'):
                 return object.__getattribute__(self, name)
-            
+
             field_indices = object.__getattribute__(self, '_field_indices')
             field_types = object.__getattribute__(self, '_field_types')
             expr = object.__getattribute__(self, '_expr')
-            
+
+            # Allow binding to dataclass fields that start with '_' (eg internal sub-instances)
+            if name.startswith('_') and name not in field_indices:
+                return object.__getattribute__(self, name)
+
             if name in field_indices:
                 index = field_indices[name]
                 new_expr = ExprRefField(base=expr, index=index)
@@ -678,7 +682,10 @@ class DataModelFactory(object):
             
             idx = 0
             for f in dc.fields(t):
-                if f.name.startswith('_'):
+                if f.name == '_impl':
+                    continue
+                # Allow underscore-prefixed fields if they are explicitly typed
+                if f.name.startswith('_') and hints.get(f.name) is None:
                     continue
                 field_indices[f.name] = idx
                 field_type = hints.get(f.name)
