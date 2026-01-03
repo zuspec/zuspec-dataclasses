@@ -14,7 +14,7 @@ from .ir.data_type import (
 from .ir.fields import Field, FieldKind, Bind, FieldInOut
 from .ir.stmt import (
     Stmt, Arguments, Arg,
-    StmtFor, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
+    StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
     StmtAssert, StmtAssume, StmtCover,
 )
 from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
@@ -511,6 +511,9 @@ class DataModelFactory(object):
             
             # Skip internal fields (except Lock fields and explicitly typed internal fields)
             field_type = hints.get(f.name)
+            # Fallback to field.type if get_type_hints failed (e.g., for generic types like XtorComponent[T])
+            if field_type is None and hasattr(f, 'type'):
+                field_type = f.type
             if f.name.startswith('_'):
                 # Include Lock fields even if they start with _
                 # Also include fields explicitly marked with zdc.field() by checking if they have a datatype annotation
@@ -688,7 +691,12 @@ class DataModelFactory(object):
                 if f.name.startswith('_') and hints.get(f.name) is None:
                     continue
                 field_indices[f.name] = idx
+                # Try to get type from hints first, fall back to field.type
                 field_type = hints.get(f.name)
+                if field_type is None and hasattr(f, 'type'):
+                    # Use field.type as fallback when get_type_hints fails
+                    # This handles generic types like XtorComponent[T] where T isn't in scope
+                    field_type = f.type
                 field_types[f.name] = (hints, field_type)
                 idx += 1
         
@@ -1104,6 +1112,12 @@ class DataModelFactory(object):
                 iter=self._convert_ast_expr(node.iter, scope),
                 body=self._convert_ast_body(node.body, scope),
                 orelse=self._convert_ast_body(node.orelse, scope)
+            )
+        elif isinstance(node, ast.While):
+            return StmtWhile(
+                test=self._convert_ast_expr(node.test, scope),
+                body=self._convert_ast_body(node.body, scope),
+                orelse=self._convert_ast_body(node.orelse, scope) if node.orelse else []
             )
         elif isinstance(node, ast.If):
             return StmtIf(
