@@ -346,9 +346,29 @@ class CompImplRT(object):
             self._tracer.signal_change(comp_path, name, time_ns, old_value, new_value, width)
     
     def signal_read(self, comp: Component, name: str) -> Any:
-        """Read signal value."""
+        """Read signal value, handling nested component paths."""
         self._init_eval(comp)
-        return self._signal_values.get(name, 0)
+        
+        # First check if the full path exists directly (e.g., bundle signals like "io.req")
+        if name in self._signal_values:
+            return self._signal_values[name]
+        
+        # Handle nested paths like "child.count_out" by navigating to child component
+        if '.' in name:
+            parts = name.split('.', 1)
+            child_name = parts[0]
+            rest_path = parts[1]
+            
+            # Get the child component
+            child = self._signal_values.get(child_name)
+            if child is None:
+                child = getattr(comp, child_name, None)
+            
+            if child is not None and hasattr(child, '_impl'):
+                # Recursively read from child component
+                return child._impl.signal_read(child, rest_path)
+        
+        return 0
     
     def _schedule_sync_eval(self, comp: Component, sync_func, timebase):
         """Schedule sync process evaluation on timebase at delta (0) time."""
