@@ -1,6 +1,7 @@
 """Performance test for Component.wait() with standard asyncio."""
 
 import asyncio
+import pytest
 import sys
 import os
 import time
@@ -9,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
 import zuspec.dataclasses as zdc
 
 
+@pytest.mark.asyncio
 async def test_component_wait_many_tasks_asyncio():
     """Benchmark many concurrent tasks with simulated time delays."""
     num_tasks = 1000
@@ -50,6 +52,7 @@ async def test_component_wait_many_tasks_asyncio():
     }
 
 
+@pytest.mark.asyncio
 async def test_component_wait_varied_delays_asyncio():
     """Benchmark tasks with varied simulation delays."""
     num_tasks = 500
@@ -89,6 +92,7 @@ async def test_component_wait_varied_delays_asyncio():
     }
 
 
+@pytest.mark.asyncio
 async def test_component_wait_sequential_waves_asyncio():
     """Benchmark sequential waves of concurrent tasks."""
     num_waves = 10

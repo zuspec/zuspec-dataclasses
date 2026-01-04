@@ -91,33 +91,39 @@ def test_event_callback_sync_only():
     assert ic.callback_count == 1
 
 
-@pytest.mark.asyncio
-async def test_event_wait_and_callback():
+def test_event_wait_and_callback():
     """Test that both wait() and callback work together."""
-    ic = InterruptController()
-    eu = EventUser()
+    async def run_test():
+        ic = InterruptController()
+        eu = EventUser()
+        
+        # Share the same event between components
+        eu.evt = ic.irq
+        
+        # Create a simple waiter task instead of using process decorator
+        async def wait_on_event():
+            await eu.evt.wait()
+            eu.wait_completed = True
+        
+        wait_task = asyncio.create_task(wait_on_event())
+        
+        # Give it a moment to start waiting
+        await asyncio.sleep(0.01)
+        
+        assert not eu.wait_completed
+        assert ic.callback_count == 0
+        
+        # Trigger the interrupt
+        ic.trigger_irq()
+        
+        # Wait for the waiter to complete
+        await asyncio.wait_for(wait_task, timeout=1.0)
+        
+        # Both callback and waiter should have been triggered
+        assert eu.wait_completed
+        assert ic.callback_count == 1
     
-    # Share the same event between components
-    eu.evt = ic.irq
-    
-    # Start the waiter process
-    wait_task = asyncio.create_task(eu.wait_for_event())
-    
-    # Give it a moment to start waiting
-    await asyncio.sleep(0.01)
-    
-    assert not eu.wait_completed
-    assert ic.callback_count == 0
-    
-    # Trigger the interrupt
-    ic.trigger_irq()
-    
-    # Wait for the waiter to complete
-    await asyncio.wait_for(wait_task, timeout=1.0)
-    
-    # Both callback and waiter should have been triggered
-    assert eu.wait_completed
-    assert ic.callback_count == 1
+    asyncio.run(run_test())
 
 
 def test_event_without_callback():
@@ -133,22 +139,24 @@ def test_event_without_callback():
     assert not evt.is_set()
 
 
-@pytest.mark.asyncio
-async def test_event_wait_without_callback():
+def test_event_wait_without_callback():
     """Test Event.wait() works without callback."""
-    evt = zdc.Event()
+    async def run_test():
+        evt = zdc.Event()
+        
+        async def waiter():
+            await evt.wait()
+            return True
+        
+        task = asyncio.create_task(waiter())
+        await asyncio.sleep(0.01)
+        
+        evt.set()
+        result = await asyncio.wait_for(task, timeout=1.0)
+        
+        assert result is True
     
-    async def waiter():
-        await evt.wait()
-        return True
-    
-    task = asyncio.create_task(waiter())
-    await asyncio.sleep(0.01)
-    
-    evt.set()
-    result = await asyncio.wait_for(task, timeout=1.0)
-    
-    assert result is True
+    asyncio.run(run_test())
 
 
 @zdc.dataclass

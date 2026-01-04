@@ -8,7 +8,7 @@ class EventRT:
     """Runtime implementation of Event with callback support.
     
     Supports the 'at' bind site where a callback can be bound that
-    gets invoked when the event is set. Callback MUST be async.
+    gets invoked when the event is set. Callback can be sync or async.
     """
     _event: asyncio.Event = dc.field(default_factory=asyncio.Event)
     _callback: Optional[Callable] = dc.field(default=None)
@@ -17,14 +17,13 @@ class EventRT:
         """Set the event and invoke the callback if bound."""
         self._event.set()
         if self._callback is not None:
-            # Callback must be async - schedule it as a task
+            # Support both async and sync callbacks
             if asyncio.iscoroutinefunction(self._callback):
+                # Async callback - schedule it as a task
                 asyncio.create_task(self._callback())
             else:
-                raise RuntimeError(
-                    f"Event callback must be async, not sync. "
-                    f"Got sync function: {self._callback.__name__}"
-                )
+                # Sync callback - call directly
+                self._callback()
     
     def clear(self):
         """Clear the event."""
@@ -45,15 +44,7 @@ class EventRT:
         a callback is bound to the event's 'at' field.
         
         Args:
-            callback: Must be an async callable (coroutine function)
-            
-        Raises:
-            TypeError: If callback is not a coroutine function
+            callback: Can be either sync or async callable. Async callbacks
+                     are scheduled as tasks, sync callbacks are called directly.
         """
-        if not asyncio.iscoroutinefunction(callback):
-            raise TypeError(
-                f"Event callback must be async (coroutine function), not sync. "
-                f"Got: {callback.__name__ if hasattr(callback, '__name__') else callback}. "
-                f"Use 'async def' to define the callback."
-            )
         self._callback = callback

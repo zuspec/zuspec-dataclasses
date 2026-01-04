@@ -87,7 +87,14 @@ def field(
         default : Optional[Any] = None,
         metadata : Optional[Dict[str,object]]=None,
         size : Optional[int]=None,
-        bounds : Optional[tuple]=None):
+        bounds : Optional[tuple]=None,
+        width=None):
+    """Field declaration for structs and bundles.
+    
+    Args:
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+               May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
+    """
     args = {}
 
     if default_factory is not None:
@@ -104,6 +111,10 @@ def field(
     if bounds is not None:
         metadata = {} if metadata is None else metadata
         metadata["bounds"] = bounds
+    
+    if width is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["width"] = width
 
     if metadata is not None:
         args["metadata"] = metadata
@@ -197,12 +208,25 @@ def export():
 
 def inst(
         default_factory=dc.MISSING,
-        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None,
+        elem_factory: Optional[Union[type, Callable[[object], Any]]] = None,
+        size: Optional[int] = None
     ):
-    """Instance attributes are automatically constructed based on the annotated type."""
+    """Instance attributes are automatically constructed based on the annotated type.
+    
+    Args:
+        default_factory: Factory function to create the instance
+        kwargs: Dict or lambda returning dict with constructor arguments
+        elem_factory: For container types, factory for creating elements
+        size: For container types, size of the container
+    """
     metadata = {"kind": "instance"}
     if kwargs is not None:
         metadata["kwargs"] = kwargs
+    if elem_factory is not None:
+        metadata["elem_factory"] = elem_factory
+    if size is not None:
+        metadata["size"] = size
     return dc.field(
         init=False,
         default_factory=default_factory,

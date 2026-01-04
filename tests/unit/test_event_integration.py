@@ -68,76 +68,89 @@ class InterruptController:
         print(f"  → IRQ Controller: System acknowledged interrupt")
 
 
-async def test_simple_interrupt_flow():
+def test_simple_interrupt_flow():
     """Test basic interrupt flow from device to handler."""
-    print("\n=== Test 1: Simple Interrupt Flow ===")
+    async def run_test():
+        print("\n=== Test 1: Simple Interrupt Flow ===")
+        
+        device = SimpleDevice()
+        
+        print("Initial state:")
+        print(f"  data_ready_count = {device.data_ready_count}")
+        
+        print("\nTriggering interrupt:")
+        device.trigger_interrupt()
+        
+        # Wait for async callback to complete
+        await asyncio.sleep(0.01)
+        
+        print("\nFinal state:")
+        print(f"  data_ready_count = {device.data_ready_count}")
+        
+        assert device.data_ready_count == 1
+        print("✓ Test passed")
     
-    device = SimpleDevice()
-    
-    print("Initial state:")
-    print(f"  data_ready_count = {device.data_ready_count}")
-    
-    print("\nTriggering interrupt:")
-    device.trigger_interrupt()
-    
-    # Wait for async callback to complete
-    await asyncio.sleep(0.01)
-    
-    print("\nFinal state:")
-    print(f"  data_ready_count = {device.data_ready_count}")
-    
-    assert device.data_ready_count == 1
-    print("✓ Test passed")
+    asyncio.run(run_test())
 
 
-async def test_interrupt_controller_flow():
+def test_interrupt_controller_flow():
     """Test interrupt routing through controller."""
-    print("\n=== Test 2: Interrupt Controller Flow ===")
-    print("(Each event can have one callback; controller has its own event)")
+    async def run_test():
+        print("\n=== Test 2: Interrupt Controller Flow ===")
+        print("(Each event can have one callback; controller has its own event)")
+        
+        device = SimpleDevice()
+        controller = InterruptController(device)
+        
+        print("Initial state:")
+        print(f"  device.data_ready_count = {device.data_ready_count}")
+        print(f"  controller.irq_count = {controller.irq_count}")
+        
+        print("\nTriggering device interrupt:")
+        device.trigger_interrupt()
+        
+        # Wait for device callback
+        await asyncio.sleep(0.01)
+        
+        # Device handler fires, now controller forwards
+        print("\nController forwarding interrupt:")
+        controller.forward_interrupt()
+        
+        await asyncio.sleep(0.01)  # Wait for controller callback
+        
+        print("\nFinal state:")
+        print(f"  device.data_ready_count = {device.data_ready_count}")
+        print(f"  controller.irq_count = {controller.irq_count}")
+        
+        assert device.data_ready_count == 1
+        assert controller.irq_count == 1
+        print("✓ Test passed")
     
-    device = SimpleDevice()
-    controller = InterruptController(device)
-    
-    print("Initial state:")
-    print(f"  device.data_ready_count = {device.data_ready_count}")
-    print(f"  controller.irq_count = {controller.irq_count}")
-    
-    print("\nTriggering device interrupt:")
-    device.trigger_interrupt()
-    
-    # Wait for device callback
-    await asyncio.sleep(0.01)
-    
-    # Device handler fires, now controller forwards
-    print("\nController forwarding interrupt:")
-    controller.forward_interrupt()
-    
-    await asyncio.sleep(0.01)  # Wait for controller callback
-    
-    print("\nFinal state:")
-    print(f"  device.data_ready_count = {device.data_ready_count}")
-    print(f"  controller.irq_count = {controller.irq_count}")
-    
-    assert device.data_ready_count == 1
-    assert controller.irq_count == 1
-    print("✓ Test passed")
+    asyncio.run(run_test())
 
 
-def test_callback_must_be_async():
-    """Test that sync callbacks are rejected."""
-    print("\n=== Test 3: Callback Must Be Async ===")
+def test_callback_sync_and_async():
+    """Test that both sync and async callbacks are supported."""
+    print("\n=== Test 3: Callback Sync and Async Support ===")
     
     evt = EventRT()
     
+    # Sync callback should be accepted
     def sync_callback():
         pass
     
-    print("Attempting to bind sync callback...")
-    try:
-        evt.bind_callback(sync_callback)
-        assert False, "Should have raised TypeError"
-    except TypeError as e:
-        print(f"  → Correctly rejected: {e}")
+    print("Binding sync callback...")
+    evt.bind_callback(sync_callback)
+    print("  → Sync callback bound successfully")
+    
+    # Async callback should also be accepted
+    async def async_callback():
+        pass
+    
+    evt2 = EventRT()
+    print("Binding async callback...")
+    evt2.bind_callback(async_callback)
+    print("  → Async callback bound successfully")
     
     print("✓ Test passed")
 
@@ -171,37 +184,40 @@ class WaitAndCallbackDevice:
         self.irq.set()
 
 
-async def test_wait_and_callback():
+def test_wait_and_callback():
     """Test that both wait() and callback work together."""
-    print("\n=== Test 4: Wait and Callback Together ===")
+    async def run_test():
+        print("\n=== Test 4: Wait and Callback Together ===")
+        
+        device = WaitAndCallbackDevice()
+        
+        print("Initial state:")
+        print(f"  callback_handled = {device.callback_handled}")
+        print(f"  wait_handled = {device.wait_handled}")
+        
+        # Start background waiter
+        print("\nStarting background waiter...")
+        wait_task = asyncio.create_task(device.wait_for_interrupt())
+        await asyncio.sleep(0.01)
+        
+        print("\nTriggering interrupt:")
+        device.trigger_interrupt()
+        
+        # Wait for background task
+        await asyncio.wait_for(wait_task, timeout=1.0)
+        
+        # Give callback time to complete (it's scheduled as a task)
+        await asyncio.sleep(0.01)
+        
+        print("\nFinal state:")
+        print(f"  callback_handled = {device.callback_handled}")
+        print(f"  wait_handled = {device.wait_handled}")
+        
+        assert device.callback_handled
+        assert device.wait_handled
+        print("✓ Test passed")
     
-    device = WaitAndCallbackDevice()
-    
-    print("Initial state:")
-    print(f"  callback_handled = {device.callback_handled}")
-    print(f"  wait_handled = {device.wait_handled}")
-    
-    # Start background waiter
-    print("\nStarting background waiter...")
-    wait_task = asyncio.create_task(device.wait_for_interrupt())
-    await asyncio.sleep(0.01)
-    
-    print("\nTriggering interrupt:")
-    device.trigger_interrupt()
-    
-    # Wait for background task
-    await asyncio.wait_for(wait_task, timeout=1.0)
-    
-    # Give callback time to complete
-    await asyncio.sleep(0.01)
-    
-    print("\nFinal state:")
-    print(f"  callback_handled = {device.callback_handled}")
-    print(f"  wait_handled = {device.wait_handled}")
-    
-    assert device.callback_handled
-    assert device.wait_handled
-    print("✓ Test passed")
+    asyncio.run(run_test())
 
 
 async def main():

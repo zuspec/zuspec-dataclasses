@@ -1,6 +1,7 @@
 """Performance test for Component.wait() with uvloop."""
 
 import asyncio
+import pytest
 import sys
 import os
 import time
@@ -16,6 +17,7 @@ except ImportError:
     sys.exit(1)
 
 
+@pytest.mark.asyncio
 async def test_component_wait_many_tasks_uvloop():
     """Benchmark many concurrent tasks with simulated time delays."""
     num_tasks = 1000
@@ -57,6 +59,7 @@ async def test_component_wait_many_tasks_uvloop():
     }
 
 
+@pytest.mark.asyncio
 async def test_component_wait_varied_delays_uvloop():
     """Benchmark tasks with varied simulation delays."""
     num_tasks = 500
@@ -96,6 +99,7 @@ async def test_component_wait_varied_delays_uvloop():
     }
 
 
+@pytest.mark.asyncio
 async def test_component_wait_sequential_waves_uvloop():
     """Benchmark sequential waves of concurrent tasks."""
     num_waves = 10

@@ -156,3 +156,16 @@ class ExprAwait(Expr):
     value: Expr = dc.field()
 
 
+@dc.dataclass(kw_only=True)
+class ExprLambda(Expr):
+    """Represents a lambda/callable expression stored for later evaluation.
+    
+    Used for width specifications and kwargs that reference const fields.
+    The callable is stored as-is and can be evaluated at instantiation time.
+    
+    Example:
+        width=lambda s:s.DATA_WIDTH  -> ExprLambda(callable=<lambda>)
+    """
+    callable: object = dc.field()  # The actual Python callable
+
+

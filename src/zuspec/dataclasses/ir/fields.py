@@ -37,6 +37,9 @@ class Field(Base):
     direction : Optional[SignalDirection] = dc.field(default=None)
     clock : Optional[Expr] = dc.field(default=None)
     initial_value : Optional[Expr] = dc.field(default=None)
+    width_expr : Optional[Expr] = dc.field(default=None)  # Width expression (e.g., lambda s:s.WIDTH)
+    kwargs_expr : Optional[Expr] = dc.field(default=None)  # Kwargs for instantiation (e.g., lambda s:dict(W=s.WIDTH))
+    is_const : bool = dc.field(default=False)  # True for const fields (structural type parameters)
 
 @dc.dataclass(kw_only=True)
 class FieldInOut(Field):

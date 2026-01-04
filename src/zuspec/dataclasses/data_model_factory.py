@@ -15,7 +15,7 @@ from .ir.fields import Field, FieldKind, Bind, FieldInOut
 from .ir.stmt import (
     Stmt, Arguments, Arg,
     StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
-    StmtAssert, StmtAssume, StmtCover,
+    StmtAssert, StmtAssume, StmtCover, StmtMatch, StmtMatchCase,
 )
 from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
 from .types import TypeBase, Component, Extern, Lock, Memory
@@ -514,6 +514,14 @@ class DataModelFactory(object):
             # Fallback to field.type if get_type_hints failed (e.g., for generic types like XtorComponent[T])
             if field_type is None and hasattr(f, 'type'):
                 field_type = f.type
+                # If field_type is a string (forward reference), try to resolve it
+                if isinstance(field_type, str):
+                    # Try to resolve in the class's module namespace
+                    if hasattr(t, '__module__'):
+                        import sys
+                        module = sys.modules.get(t.__module__)
+                        if module and hasattr(module, field_type):
+                            field_type = getattr(module, field_type)
             if f.name.startswith('_'):
                 # Include Lock fields even if they start with _
                 # Also include fields explicitly marked with zdc.field() by checking if they have a datatype annotation
@@ -579,19 +587,46 @@ class DataModelFactory(object):
                     if self._is_protocol(field_type) or self._is_extern(field_type) or self._is_component(field_type):
                         self._add_pending(field_type)
             
+            # Check if this is a const field
+            is_const = False
+            if f.metadata and f.metadata.get('kind') == 'const':
+                is_const = True
+            
+            # Extract width expression if present
+            width_expr = None
+            if f.metadata and 'width' in f.metadata:
+                width_val = f.metadata['width']
+                if callable(width_val):
+                    from .ir.expr import ExprLambda
+                    width_expr = ExprLambda(callable=width_val)
+            
+            # Extract kwargs expression if present
+            kwargs_expr = None
+            if f.metadata and 'kwargs' in f.metadata:
+                kwargs_val = f.metadata['kwargs']
+                if callable(kwargs_val):
+                    from .ir.expr import ExprLambda
+                    kwargs_expr = ExprLambda(callable=kwargs_val)
+            
             # Create FieldInOut for input/output ports, otherwise regular Field
             if is_input_port or is_output_port:
                 field_dm = FieldInOut(
                     name=f.name,
                     datatype=datatype,
                     kind=kind,
-                    is_out=is_output_port  # True for output, False for input
+                    is_out=is_output_port,  # True for output, False for input
+                    width_expr=width_expr,
+                    kwargs_expr=kwargs_expr,
+                    is_const=is_const
                 )
             else:
                 field_dm = Field(
                     name=f.name,
                     datatype=datatype,
-                    kind=kind
+                    kind=kind,
+                    width_expr=width_expr,
+                    kwargs_expr=kwargs_expr,
+                    is_const=is_const
                 )
             fields.append(field_dm)
         
@@ -601,6 +636,13 @@ class DataModelFactory(object):
         """Resolve a field type annotation to a DataType."""
         if field_type is None:
             return DataType()
+        
+        # Handle string annotations (forward references)
+        if isinstance(field_type, str):
+            # String annotations will be resolved when the referenced type is processed
+            # For now, return bare DataType
+            return DataType()
+        
         if field_type is int:
             return DataTypeInt()
         if field_type is str:
@@ -1163,6 +1205,22 @@ class DataModelFactory(object):
             return StmtReturn(
                 value=self._convert_ast_expr(node.value, scope) if node.value else None
             )
+        elif isinstance(node, ast.Match):
+            # Handle match/case statement (Python 3.10+)
+            cases = []
+            for case in node.cases:
+                pattern = self._convert_ast_pattern(case.pattern, scope)
+                guard = self._convert_ast_expr(case.guard, scope) if case.guard else None
+                body = self._convert_ast_body(case.body, scope)
+                cases.append(StmtMatchCase(
+                    pattern=pattern,
+                    guard=guard,
+                    body=body
+                ))
+            return StmtMatch(
+                subject=self._convert_ast_expr(node.subject, scope),
+                cases=cases
+            )
         return None
 
     def _convert_ast_expr(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Any]:
@@ -1278,9 +1336,45 @@ class DataModelFactory(object):
                 value=self._convert_ast_expr(node.value, scope),
                 slice=self._convert_ast_expr(node.slice, scope)
             )
+        elif isinstance(node, ast.Tuple):
+            # Handle tuple literals (a, b, c) or return (x, y)
+            from .ir.expr_phase2 import ExprTuple
+            return ExprTuple(
+                elts=[self._convert_ast_expr(elt, scope) for elt in node.elts]
+            )
         
         # Fallback: store as constant with the AST node type
         return ExprConstant(value=f"<{type(node).__name__}>")
+
+    def _convert_ast_pattern(self, node: ast.pattern, scope: ConversionScope = None):
+        """Convert AST match pattern to data model Pattern."""
+        from .ir.stmt import PatternValue, PatternAs, PatternOr, PatternSequence
+        
+        if isinstance(node, ast.MatchValue):
+            # Literal value pattern: case 0:, case "hello":
+            return PatternValue(
+                value=self._convert_ast_expr(node.value, scope)
+            )
+        elif isinstance(node, ast.MatchAs):
+            # Wildcard pattern: case _:
+            # Or capture pattern: case x:
+            return PatternAs(
+                pattern=self._convert_ast_pattern(node.pattern, scope) if node.pattern else None,
+                name=node.name
+            )
+        elif isinstance(node, ast.MatchOr):
+            # Or pattern: case 1 | 2:
+            return PatternOr(
+                patterns=[self._convert_ast_pattern(p, scope) for p in node.patterns]
+            )
+        elif isinstance(node, ast.MatchSequence):
+            # Sequence pattern: case [x, y]:
+            return PatternSequence(
+                patterns=[self._convert_ast_pattern(p, scope) for p in node.patterns]
+            )
+        else:
+            # Fallback for unsupported patterns - treat as wildcard
+            return PatternAs(pattern=None, name=None)
 
     def _convert_binop(self, op : ast.operator) -> BinOp:
         """Convert AST binary operator to data model BinOp."""

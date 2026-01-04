@@ -237,6 +237,21 @@ class PackedStruct(TypeBase,SupportsInt):
 class Struct(TypeBase):
     pass
 
+class Bundle(TypeBase):
+    """Bundle base class for interface/port collections with directionality.
+    
+    Bundles are used to group related signals (inputs/outputs) that form
+    a coherent interface. They support parameterization via const fields.
+    
+    Example:
+        @zdc.dataclass
+        class MyBus(zdc.Bundle):
+            WIDTH : zdc.u32 = zdc.const(default=32)
+            data : zdc.bitv = zdc.output(width=lambda s:s.WIDTH)
+            valid : zdc.bit = zdc.output()
+    """
+    pass
+
 
 @dc.dataclass
 class Component(TypeBase):
