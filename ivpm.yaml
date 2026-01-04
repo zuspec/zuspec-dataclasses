@@ -16,7 +16,7 @@ package:
           #branch: mballance/simplify
       - name: pytest
         src: pypi
-      - name: mypy
+      - name: flake8
         src: pypi
       - name: sphinx
         src: pypi
