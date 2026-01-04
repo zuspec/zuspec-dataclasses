@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Runtime Implementation (Developer) &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Abstraction Levels" href="abstraction_levels.html" />
+    <link rel="prev" title="Core Types" href="types.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="runtime-implementation-developer">
+<h1>Runtime Implementation (Developer)<a class="headerlink" href="#runtime-implementation-developer" title="Link to this heading">¶</a></h1>
+<p>The <code class="docutils literal notranslate"><span class="pre">zuspec.dataclasses.rt</span></code> module provides the pure-Python runtime
+implementation of Zuspec semantics. This module is primarily of interest
+to developers extending or integrating Zuspec.</p>
+<section id="objfactory">
+<h2>ObjFactory<a class="headerlink" href="#objfactory" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ObjFactory</span></code> is responsible for creating runtime instances of Zuspec types.
+It handles component construction, field initialization, and binding resolution.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.rt</span><span class="w"> </span><span class="kn">import</span> <span class="n">ObjFactory</span>
+
+<span class="c1"># Get the singleton factory instance</span>
+<span class="n">factory</span> <span class="o">=</span> <span class="n">ObjFactory</span><span class="o">.</span><span class="n">inst</span><span class="p">()</span>
+</pre></div>
+</div>
+<section id="key-methods">
+<h3>Key Methods<a class="headerlink" href="#key-methods" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">mkComponent(cls,</span> <span class="pre">**kwargs)</span> <span class="pre">-&gt;</span> <span class="pre">Component</span></code></dt><dd><p>Creates a runtime component instance. Automatically called when
+instantiating a Component subclass.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">mkRegFile(cls,</span> <span class="pre">**kwargs)</span> <span class="pre">-&gt;</span> <span class="pre">RegFile</span></code></dt><dd><p>Creates a standalone register file instance.</p>
+</dd>
+</dl>
+</section>
+<section id="component-lifecycle">
+<h3>Component Lifecycle<a class="headerlink" href="#component-lifecycle" title="Link to this heading">¶</a></h3>
+<p>When a component is instantiated, the factory orchestrates:</p>
+<ol class="arabic simple">
+<li><p><strong>Construction</strong> - <code class="docutils literal notranslate"><span class="pre">__new__</span></code> intercepts and delegates to factory</p></li>
+<li><p><strong>__comp_init__</strong> - Wrapper around dataclass <code class="docutils literal notranslate"><span class="pre">__init__</span></code></p></li>
+<li><p><strong>__comp_build__</strong> - Recursive tree initialization:</p>
+<ul class="simple">
+<li><p>Creates <code class="docutils literal notranslate"><span class="pre">CompImplRT</span></code> for each component</p></li>
+<li><p>Sets timebase on root component</p></li>
+<li><p>Discovers <code class="docutils literal notranslate"><span class="pre">&#64;process</span></code> decorated methods</p></li>
+<li><p>Initializes Memory, RegFile, and AddressSpace fields</p></li>
+<li><p>Applies <code class="docutils literal notranslate"><span class="pre">__bind__</span></code> mappings</p></li>
+</ul>
+</li>
+<li><p><strong>Validation</strong> - Top-level ports must be bound</p></li>
+<li><p><strong>Process Start</strong> - Processes start lazily when <code class="docutils literal notranslate"><span class="pre">wait()</span></code> is called</p></li>
+</ol>
+</section>
+<section id="binding-system">
+<h3>Binding System<a class="headerlink" href="#binding-system" title="Link to this heading">¶</a></h3>
+<p>The factory uses proxy objects to capture binding relationships:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">BindPath</span></code></dt><dd><p>Represents a path in the binding system (e.g., <code class="docutils literal notranslate"><span class="pre">self.p.prod</span></code>)</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">BindProxy</span></code></dt><dd><p>Proxy object that records attribute access during <code class="docutils literal notranslate"><span class="pre">__bind__</span></code> evaluation</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">InterfaceImpl</span></code></dt><dd><p>Dynamic object that holds bound methods for exports/ports</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="timebase">
+<h2>Timebase<a class="headerlink" href="#timebase" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">Timebase</span></code> implements synthetic simulation time using an event queue.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.rt</span><span class="w"> </span><span class="kn">import</span> <span class="n">Timebase</span>
+
+<span class="n">tb</span> <span class="o">=</span> <span class="n">Timebase</span><span class="p">()</span>
+
+<span class="c1"># In async context</span>
+<span class="k">await</span> <span class="n">tb</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">100</span><span class="p">))</span>  <span class="c1"># Wait 100ns</span>
+<span class="n">tb</span><span class="o">.</span><span class="n">after</span><span class="p">(</span><span class="n">Time</span><span class="o">.</span><span class="n">us</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">callback</span><span class="p">)</span>  <span class="c1"># Schedule callback</span>
+<span class="n">current</span> <span class="o">=</span> <span class="n">tb</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>  <span class="c1"># Get current time</span>
+</pre></div>
+</div>
+<section id="internal-representation">
+<h3>Internal Representation<a class="headerlink" href="#internal-representation" title="Link to this heading">¶</a></h3>
+<p>Time is tracked internally in femtoseconds for maximum precision.
+The event queue uses a min-heap for efficient event scheduling.</p>
+</section>
+<section id="id1">
+<h3>Key Methods<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">wait(amt:</span> <span class="pre">Time)</span></code></dt><dd><p>Suspend calling coroutine until specified time elapses.
+Creates a future and adds it to the event queue.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">after(amt:</span> <span class="pre">Time,</span> <span class="pre">call:</span> <span class="pre">Callable)</span></code></dt><dd><p>Schedule a callback to be invoked at a future time.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">advance()</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></dt><dd><p>Advance simulation to next event and wake waiters.
+Returns True if more events remain.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">run_until(amt:</span> <span class="pre">Time)</span></code></dt><dd><p>Run simulation until specified time, then return.
+Main simulation loop driver.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">stop()</span></code></dt><dd><p>Stop the simulation loop.</p>
+</dd>
+</dl>
+</section>
+<section id="properties">
+<h3>Properties<a class="headerlink" href="#properties" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">current_time:</span> <span class="pre">int</span></code></dt><dd><p>Current simulation time in femtoseconds.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">time()</span> <span class="pre">-&gt;</span> <span class="pre">Time</span></code></dt><dd><p>Current time as a Time object (nanoseconds).</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="compimplrt">
+<h2>CompImplRT<a class="headerlink" href="#compimplrt" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">CompImplRT</span></code> is the runtime implementation backing each Component instance.
+It manages processes, timebase inheritance, and simulation control.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Accessed via component._impl (internal use)</span>
+<span class="n">comp</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span>       <span class="c1"># Instance name</span>
+<span class="n">comp</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent</span>     <span class="c1"># Parent component</span>
+<span class="n">comp</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">timebase</span><span class="p">()</span> <span class="c1"># Get timebase (inherits from parent)</span>
+</pre></div>
+</div>
+<section id="id2">
+<h3>Key Methods<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">add_process(name,</span> <span class="pre">proc)</span></code></dt><dd><p>Register a <code class="docutils literal notranslate"><span class="pre">&#64;process</span></code> decorated method.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">start_processes(comp)</span></code></dt><dd><p>Start all registered processes for a component.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">start_all_processes(comp)</span></code></dt><dd><p>Recursively start processes in the component tree.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">set_timebase(tb)</span></code></dt><dd><p>Set the timebase for this component (root only).</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">timebase()</span> <span class="pre">-&gt;</span> <span class="pre">Timebase</span></code></dt><dd><p>Get timebase, inheriting from parent if not set locally.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">wait(comp,</span> <span class="pre">amt)</span></code></dt><dd><p>Wait implementation. If simulation not running, starts it.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">shutdown()</span></code></dt><dd><p>Cancel all running process tasks.</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="memoryrt">
+<h2>MemoryRT<a class="headerlink" href="#memoryrt" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">MemoryRT</span></code> provides the runtime implementation of <code class="docutils literal notranslate"><span class="pre">Memory[T]</span></code>.
+Uses sparse dictionary storage for efficiency.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.rt</span><span class="w"> </span><span class="kn">import</span> <span class="n">MemoryRT</span>
+
+<span class="n">mem</span> <span class="o">=</span> <span class="n">MemoryRT</span><span class="p">(</span><span class="n">_size</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">_width</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">_element_type</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+<span class="n">mem</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mh">0xDEADBEEF</span><span class="p">)</span>
+<span class="n">val</span> <span class="o">=</span> <span class="n">mem</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="id3">
+<h3>Properties<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">_size</span></code> - Number of elements</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_width</span></code> - Bits per element</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_element_type</span></code> - Python type of elements</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_data</span></code> - Sparse storage dictionary</p></li>
+</ul>
+</section>
+<section id="methods">
+<h3>Methods<a class="headerlink" href="#methods" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">read(addr)</span> <span class="pre">-&gt;</span> <span class="pre">T</span></code></dt><dd><p>Read element at address. Returns 0 for unwritten locations.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">write(addr,</span> <span class="pre">data)</span></code></dt><dd><p>Write element to address. Value masked to element width.</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="regfilert">
+<h2>RegFileRT<a class="headerlink" href="#regfilert" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">RegFileRT</span></code> provides the runtime implementation of <code class="docutils literal notranslate"><span class="pre">RegFile</span></code>.
+Manages a collection of registers with address-based access.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.rt</span><span class="w"> </span><span class="kn">import</span> <span class="n">RegFileRT</span><span class="p">,</span> <span class="n">RegRT</span>
+
+<span class="n">regfile</span> <span class="o">=</span> <span class="n">RegFileRT</span><span class="p">()</span>
+<span class="n">reg</span> <span class="o">=</span> <span class="n">RegRT</span><span class="p">(</span><span class="n">_value</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">_width</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+<span class="n">regfile</span><span class="o">.</span><span class="n">add_register</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="n">reg</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="id4">
+<h3>Key Methods<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">add_register(name,</span> <span class="pre">reg,</span> <span class="pre">offset)</span></code></dt><dd><p>Add a register at the specified byte offset.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">read(addr)</span> <span class="pre">-&gt;</span> <span class="pre">int</span></code></dt><dd><p>Read register at byte offset.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">write(addr,</span> <span class="pre">data)</span></code></dt><dd><p>Write register at byte offset.</p>
+</dd>
+</dl>
+</section>
+<section id="id5">
+<h3>Properties<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">size</span></code> - Total size in bytes</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">width</span></code> - Access width (32 bits)</p></li>
+</ul>
+</section>
+</section>
+<section id="regrt">
+<h2>RegRT<a class="headerlink" href="#regrt" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">RegRT</span></code> implements individual register behavior with async access.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">reg</span> <span class="o">=</span> <span class="n">RegRT</span><span class="p">(</span><span class="n">_value</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">_width</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">_element_type</span><span class="o">=</span><span class="n">MyPackedStruct</span><span class="p">)</span>
+
+<span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">reg</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>   <span class="c1"># Returns unpacked struct if applicable</span>
+<span class="k">await</span> <span class="n">reg</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="mh">0x1234</span><span class="p">)</span>    <span class="c1"># Accepts int or PackedStruct</span>
+</pre></div>
+</div>
+<section id="packedstruct-support">
+<h3>PackedStruct Support<a class="headerlink" href="#packedstruct-support" title="Link to this heading">¶</a></h3>
+<p>When <code class="docutils literal notranslate"><span class="pre">_element_type</span></code> is a <code class="docutils literal notranslate"><span class="pre">PackedStruct</span></code>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">read()</span></code> unpacks the integer value into struct fields</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">write()</span></code> accepts either int or struct, packing as needed</p></li>
+</ul>
+</section>
+</section>
+<section id="addressspacert">
+<h2>AddressSpaceRT<a class="headerlink" href="#addressspacert" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">AddressSpaceRT</span></code> implements address space with memory mapping.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.rt</span><span class="w"> </span><span class="kn">import</span> <span class="n">AddressSpaceRT</span><span class="p">,</span> <span class="n">MemoryRT</span>
+
+<span class="n">aspace</span> <span class="o">=</span> <span class="n">AddressSpaceRT</span><span class="p">()</span>
+<span class="n">mem</span> <span class="o">=</span> <span class="n">MemoryRT</span><span class="p">(</span><span class="n">_size</span><span class="o">=</span><span class="mi">4096</span><span class="p">,</span> <span class="n">_width</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">_element_type</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+<span class="n">aspace</span><span class="o">.</span><span class="n">add_mapping</span><span class="p">(</span><span class="mh">0x0000</span><span class="p">,</span> <span class="n">mem</span><span class="p">)</span>
+
+<span class="n">val</span> <span class="o">=</span> <span class="k">await</span> <span class="n">aspace</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mh">0x100</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>  <span class="c1"># Read 4 bytes at 0x100</span>
+<span class="k">await</span> <span class="n">aspace</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="mh">0x100</span><span class="p">,</span> <span class="mh">0x1234</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>  <span class="c1"># Write 4 bytes</span>
+</pre></div>
+</div>
+<section id="id6">
+<h3>Key Methods<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">add_mapping(base_addr,</span> <span class="pre">storage)</span></code></dt><dd><p>Map storage (MemoryRT or RegFileRT) at base address.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">read(addr,</span> <span class="pre">size)</span> <span class="pre">-&gt;</span> <span class="pre">int</span></code></dt><dd><p>Async read from mapped storage.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">write(addr,</span> <span class="pre">data,</span> <span class="pre">size)</span></code></dt><dd><p>Async write to mapped storage.</p>
+</dd>
+</dl>
+</section>
+<section id="storage-resolution">
+<h3>Storage Resolution<a class="headerlink" href="#storage-resolution" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">_find_storage()</span></code> method locates the appropriate storage
+for an address, returning the storage object and offset within it.
+Raises <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> for unmapped addresses or cross-boundary accesses.</p>
+</section>
+</section>
+<section id="addrhandlert">
+<h2>AddrHandleRT<a class="headerlink" href="#addrhandlert" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">AddrHandleRT</span></code> implements the <code class="docutils literal notranslate"><span class="pre">MemIF</span></code> protocol for an address space.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.rt</span><span class="w"> </span><span class="kn">import</span> <span class="n">AddrHandleRT</span>
+
+<span class="n">handle</span> <span class="o">=</span> <span class="n">aspace</span><span class="o">.</span><span class="n">base</span>  <span class="c1"># Get handle from AddressSpace</span>
+
+<span class="n">val</span> <span class="o">=</span> <span class="k">await</span> <span class="n">handle</span><span class="o">.</span><span class="n">read32</span><span class="p">(</span><span class="mh">0x1000</span><span class="p">)</span>
+<span class="k">await</span> <span class="n">handle</span><span class="o">.</span><span class="n">write32</span><span class="p">(</span><span class="mh">0x1000</span><span class="p">,</span> <span class="mh">0xABCD</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Provides convenience methods for sized accesses:
+<code class="docutils literal notranslate"><span class="pre">read8</span></code>, <code class="docutils literal notranslate"><span class="pre">read16</span></code>, <code class="docutils literal notranslate"><span class="pre">read32</span></code>, <code class="docutils literal notranslate"><span class="pre">read64</span></code>,
+<code class="docutils literal notranslate"><span class="pre">write8</span></code>, <code class="docutils literal notranslate"><span class="pre">write16</span></code>, <code class="docutils literal notranslate"><span class="pre">write32</span></code>, <code class="docutils literal notranslate"><span class="pre">write64</span></code></p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Runtime Implementation (Developer)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#objfactory">ObjFactory</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#timebase">Timebase</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#compimplrt">CompImplRT</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#memoryrt">MemoryRT</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#regfilert">RegFileRT</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#regrt">RegRT</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#addressspacert">AddressSpaceRT</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#addrhandlert">AddrHandleRT</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="types.html" title="previous chapter">Core Types</a></li>
+      <li>Next: <a href="abstraction_levels.html" title="next chapter">Abstraction Levels</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/runtime.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

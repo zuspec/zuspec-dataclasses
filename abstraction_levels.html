@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Abstraction Levels &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Zuspec IR Checker" href="checker.html" />
+    <link rel="prev" title="Runtime Implementation (Developer)" href="runtime.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="abstraction-levels">
+<h1>Abstraction Levels<a class="headerlink" href="#abstraction-levels" title="Link to this heading">¶</a></h1>
+<section id="software-interface-operation">
+<h2>Software Interface: Operation<a class="headerlink" href="#software-interface-operation" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Focuses on key device operations.</p></li>
+<li><p>Implements those operations as async methods</p></li>
+<li><p>Effectively driver-level</p></li>
+<li><p>In cases where the hardware supports independent concurrent operation,
+create ‘Protocol’-class groupings.</p></li>
+</ul>
+</section>
+<section id="software-interface-mmio">
+<h2>Software Interface: MMIO<a class="headerlink" href="#software-interface-mmio" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Focuses on memory and registers</p></li>
+<li><p>Ideally, the operation level methods end up being implemented in terms of this interface</p></li>
+<li><p>Interface is the register file. Memory-based descriptors are considered implied
+* Actually, may need register file and notification (ie interrupt)
+* Use ‘wait-for’?
+* Must effectively capture an interrupt protocol - ISR logic?
+* Only one listener at a time -&gt; runtime error checked</p>
+<ul>
+<li><p>Can a coroutine be converted to event-driven?</p></li>
+</ul>
+</li>
+</ul>
+<p>Event Test: Consider a software interface</p>
+<p>The Interface <em>becomes</em> the PSS component</p>
+<p>Public Interface: Test Scenario</p>
+<p>Public Interface: Action</p>
+<p>Real-World Interface: How does the outside world interact with us?</p>
+</section>
+<section id="hierarchical-organization-of-mmio-interfaces">
+<h2>Hierarchical Organization of MMIO Interfaces<a class="headerlink" href="#hierarchical-organization-of-mmio-interfaces" title="Link to this heading">¶</a></h2>
+<p>When creating MMIO-level models, organize related registers and events together
+using hierarchical Protocol classes. This creates cohesive interfaces where
+functionality is grouped logically rather than flattened into a single structure.</p>
+<section id="key-principles">
+<h3>Key Principles<a class="headerlink" href="#key-principles" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p><strong>Group related functionality</strong>: Keep registers and events for the same logical
+unit together in a Protocol class</p></li>
+<li><p><strong>Respect device architecture</strong>: If the hardware has multiple identical channels,
+units, or ports, create a Protocol class representing one instance</p></li>
+<li><p><strong>Separate global from per-unit</strong>: Global control registers should be separate
+from per-unit (per-channel, per-port) registers</p></li>
+<li><p><strong>Co-locate registers and events</strong>: Events should be in the same Protocol as the
+registers that configure and report them</p></li>
+</ol>
+</section>
+<section id="anti-pattern-flat-structure">
+<h3>Anti-Pattern: Flat Structure<a class="headerlink" href="#anti-pattern-flat-structure" title="Link to this heading">¶</a></h3>
+<p><strong>❌ WRONG: Flattened registers with separated events</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;All registers in one flat structure&quot;&quot;&quot;</span>
+    <span class="n">global_csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">GlobalCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch0_csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">ChannelCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch0_addr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">Address</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch1_csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">ChannelCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch1_addr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">Address</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch2_csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">ChannelCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch2_addr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">Address</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceEvents</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Events separated from registers&quot;&quot;&quot;</span>
+    <span class="n">ch0_done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch1_done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ch2_done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceMMIO</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">regs</span> <span class="p">:</span> <span class="n">DeviceRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">events</span> <span class="p">:</span> <span class="n">DeviceEvents</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">irq</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><strong>Problems with this approach:</strong></p>
+<ul class="simple">
+<li><p>Channel 0’s registers (ch0_csr, ch0_addr) are not grouped together</p></li>
+<li><p>Events are disconnected from the registers they relate to</p></li>
+<li><p>Hard to reference: <code class="docutils literal notranslate"><span class="pre">device.regs.ch0_csr</span></code> and <code class="docutils literal notranslate"><span class="pre">device.events.ch0_done</span></code> are in different places</p></li>
+<li><p>Doesn’t scale well: Adding a 4th channel requires changes in multiple places</p></li>
+<li><p>Not discoverable: Can’t easily find all parts of “channel 0” interface</p></li>
+</ul>
+</section>
+<section id="using-tuple-for-fixed-size-arrays">
+<h3>Using Tuple for Fixed-Size Arrays<a class="headerlink" href="#using-tuple-for-fixed-size-arrays" title="Link to this heading">¶</a></h3>
+<p>When a device has multiple identical units (channels, ports, etc.), use Python’s
+<code class="docutils literal notranslate"><span class="pre">Tuple</span></code> type with <code class="docutils literal notranslate"><span class="pre">zdc.tuple(size=N)</span></code> to create fixed-size arrays:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tuple</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceMMIO</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="c1"># Fixed-size array of 4 channels</span>
+    <span class="n">channels</span> <span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Channel</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">tuple</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Why use Tuple?</strong></p>
+<ul class="simple">
+<li><p><strong>Type safety</strong>: <code class="docutils literal notranslate"><span class="pre">Tuple[Channel,</span> <span class="pre">...]</span></code> indicates a fixed-size collection</p></li>
+<li><p><strong>Clear intent</strong>: Size is explicitly declared in the model</p></li>
+<li><p><strong>Iteration support</strong>: Can iterate over all channels: <code class="docutils literal notranslate"><span class="pre">for</span> <span class="pre">ch</span> <span class="pre">in</span> <span class="pre">device.channels</span></code></p></li>
+<li><p><strong>Index access</strong>: Direct access by index: <code class="docutils literal notranslate"><span class="pre">device.channels[0]</span></code></p></li>
+<li><p><strong>Structured data</strong>: Better than separate <code class="docutils literal notranslate"><span class="pre">ch0</span></code>, <code class="docutils literal notranslate"><span class="pre">ch1</span></code>, <code class="docutils literal notranslate"><span class="pre">ch2</span></code> fields</p></li>
+</ul>
+<p><strong>When to use Tuple vs individual fields:</strong></p>
+<ul class="simple">
+<li><p>✓ Use <code class="docutils literal notranslate"><span class="pre">Tuple</span></code> when you have 3+ identical units that are accessed programmatically</p></li>
+<li><p>✓ Use <code class="docutils literal notranslate"><span class="pre">Tuple</span></code> when the number of units is fixed but might change in variants</p></li>
+<li><p>✗ Avoid individual fields (<code class="docutils literal notranslate"><span class="pre">ch0</span></code>, <code class="docutils literal notranslate"><span class="pre">ch1</span></code>, etc.) for more than 2-3 identical units</p></li>
+</ul>
+</section>
+<section id="correct-pattern-hierarchical-organization">
+<h3>Correct Pattern: Hierarchical Organization<a class="headerlink" href="#correct-pattern-hierarchical-organization" title="Link to this heading">¶</a></h3>
+<p><strong>✓ CORRECT: Hierarchical grouping of related functionality</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ChannelRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Registers for one channel&quot;&quot;&quot;</span>
+    <span class="n">csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">ChannelCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">addr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">Address</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">size</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">Size</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Channel</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Complete interface for one channel: registers + events&quot;&quot;&quot;</span>
+    <span class="n">regs</span> <span class="p">:</span> <span class="n">ChannelRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">error</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GlobalRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Global control registers&quot;&quot;&quot;</span>
+    <span class="n">csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">GlobalCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">int_mask</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">IntMask</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceMMIO</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">global_regs</span> <span class="p">:</span> <span class="n">GlobalRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">channels</span> <span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Channel</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">tuple</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">irq</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><strong>Benefits of this approach:</strong></p>
+<ul class="simple">
+<li><p>All channel 0 functionality: <code class="docutils literal notranslate"><span class="pre">device.channels[0].regs.csr</span></code>, <code class="docutils literal notranslate"><span class="pre">device.channels[0].done</span></code></p></li>
+<li><p>Clear grouping: Everything for channel 0 is under <code class="docutils literal notranslate"><span class="pre">device.channels[0]</span></code></p></li>
+<li><p>Easy to add channels: Just change the <code class="docutils literal notranslate"><span class="pre">size</span></code> parameter in <code class="docutils literal notranslate"><span class="pre">zdc.tuple()</span></code></p></li>
+<li><p>Reusable: <code class="docutils literal notranslate"><span class="pre">Channel</span></code> Protocol can be used for all channels</p></li>
+<li><p>Self-documenting: Structure mirrors hardware architecture</p></li>
+<li><p>Discoverable: IDE autocomplete shows all parts of a channel together</p></li>
+<li><p>Tuple typing: Using <code class="docutils literal notranslate"><span class="pre">Tuple[Channel,</span> <span class="pre">...]</span></code> captures fixed-size lists of channels</p></li>
+</ul>
+</section>
+<section id="usage-comparison">
+<h3>Usage Comparison<a class="headerlink" href="#usage-comparison" title="Link to this heading">¶</a></h3>
+<p><strong>Flat structure (anti-pattern):</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Configure channel 0 - scattered references</span>
+<span class="k">await</span> <span class="n">device</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">ch0_csr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="k">await</span> <span class="n">device</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">ch0_addr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="k">await</span> <span class="n">device</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">ch0_done</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>  <span class="c1"># Wait in different namespace</span>
+
+<span class="c1"># Hard to work with programmatically</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="k">await</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">device</span><span class="o">.</span><span class="n">regs</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;ch</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">_csr&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>  <span class="c1"># Awkward</span>
+    <span class="k">await</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">device</span><span class="o">.</span><span class="n">events</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;ch</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">_done&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><strong>Hierarchical structure (correct):</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Configure channel 0 - cohesive interface</span>
+<span class="k">await</span> <span class="n">device</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">csr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="k">await</span> <span class="n">device</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">addr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="k">await</span> <span class="n">device</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">done</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>  <span class="c1"># Wait in same namespace</span>
+
+<span class="c1"># Easy to work with programmatically</span>
+<span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">device</span><span class="o">.</span><span class="n">channels</span><span class="p">:</span>
+    <span class="k">await</span> <span class="n">ch</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">csr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+    <span class="k">await</span> <span class="n">ch</span><span class="o">.</span><span class="n">done</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="example-dma-controller">
+<h3>Example: DMA Controller<a class="headerlink" href="#example-dma-controller" title="Link to this heading">¶</a></h3>
+<p>The WISHBONE DMA/Bridge demonstrates hierarchical organization:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DmaChannelRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;8 registers per channel&quot;&quot;&quot;</span>
+    <span class="n">csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">sz</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelSZ</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">a0</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelAddr</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">am0</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelAddrMask</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">a1</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelAddr</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">am1</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelAddrMask</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">desc</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelDesc</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">swptr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaChannelSWPtr</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DmaChannel</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Complete channel interface: registers + 3 events&quot;&quot;&quot;</span>
+    <span class="n">regs</span> <span class="p">:</span> <span class="n">DmaChannelRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">error</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">chunk_done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DmaGlobalRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Global DMA control&quot;&quot;&quot;</span>
+    <span class="n">csr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">DmaMainCSR</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">int_msk_a</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">int_msk_b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">int_src_a</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">int_src_b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DmaMMIO</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">global_regs</span> <span class="p">:</span> <span class="n">DmaGlobalRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">channels</span> <span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">DmaChannel</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">tuple</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+    <span class="n">irq_a</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">irq_b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><strong>Usage:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Start DMA transfer on channel 0</span>
+<span class="k">await</span> <span class="n">dma</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">a0</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">src_addr</span><span class="p">)</span>
+<span class="k">await</span> <span class="n">dma</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">a1</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">dst_addr</span><span class="p">)</span>
+<span class="k">await</span> <span class="n">dma</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">sz</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">DmaChannelSZ</span><span class="p">(</span><span class="n">tot_sz</span><span class="o">=</span><span class="mi">256</span><span class="p">))</span>
+<span class="k">await</span> <span class="n">dma</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">csr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">DmaChannelCSR</span><span class="p">(</span><span class="n">ch_en</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">inc_src</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">inc_dst</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+
+<span class="c1"># Wait for completion</span>
+<span class="k">await</span> <span class="n">dma</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">done</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+
+<span class="c1"># Check for errors</span>
+<span class="n">csr</span> <span class="o">=</span> <span class="k">await</span> <span class="n">dma</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">csr</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<span class="k">if</span> <span class="n">csr</span><span class="o">.</span><span class="n">err</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Transfer error&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Why this structure:</strong></p>
+<ul class="simple">
+<li><p>All channel 0 operations use <code class="docutils literal notranslate"><span class="pre">dma.channels[0].*</span></code> prefix</p></li>
+<li><p>Registers (<code class="docutils literal notranslate"><span class="pre">dma.channels[0].regs.*</span></code>) and events (<code class="docutils literal notranslate"><span class="pre">dma.channels[0].done</span></code>) are co-located</p></li>
+<li><p>Global interrupt routing is separate (<code class="docutils literal notranslate"><span class="pre">dma.global_regs.int_msk_a</span></code>)</p></li>
+<li><p>Physical interrupts are at top level (<code class="docutils literal notranslate"><span class="pre">dma.irq_a</span></code>, <code class="docutils literal notranslate"><span class="pre">dma.irq_b</span></code>)</p></li>
+<li><p>Each channel is self-contained and reusable</p></li>
+<li><p>Fixed-size tuple captures all 4 channels: <code class="docutils literal notranslate"><span class="pre">channels</span> <span class="pre">:</span> <span class="pre">Tuple[DmaChannel,</span> <span class="pre">...]</span> <span class="pre">=</span> <span class="pre">zdc.tuple(size=4)</span></code></p></li>
+</ul>
+</section>
+<section id="design-guidelines">
+<h3>Design Guidelines<a class="headerlink" href="#design-guidelines" title="Link to this heading">¶</a></h3>
+<p>When designing MMIO interfaces:</p>
+<ol class="arabic simple">
+<li><p><strong>Identify repetition</strong>: Look for multiple identical units (channels, ports, banks)</p>
+<ul class="simple">
+<li><p>Create a Protocol class for one unit</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">Tuple</span></code> and <code class="docutils literal notranslate"><span class="pre">zdc.tuple(size=N)</span></code> to instantiate multiple instances</p></li>
+</ul>
+</li>
+<li><p><strong>Group registers</strong>: Keep related registers together in RegFile classes</p>
+<ul class="simple">
+<li><p>Per-channel registers → ChannelRegs</p></li>
+<li><p>Global registers → GlobalRegs</p></li>
+<li><p>Configuration vs status → separate if they serve different purposes</p></li>
+</ul>
+</li>
+<li><p><strong>Co-locate events</strong>: Put events in the same Protocol as their related registers</p>
+<ul class="simple">
+<li><p>Channel done event → in Channel Protocol</p></li>
+<li><p>Global interrupt → in top-level Protocol</p></li>
+</ul>
+</li>
+<li><p><strong>Separate concerns</strong>: Keep global and per-unit functionality distinct</p>
+<ul class="simple">
+<li><p>Global control → separate from per-channel control</p></li>
+<li><p>Interrupt routing (global) vs interrupt source (per-channel)</p></li>
+</ul>
+</li>
+<li><p><strong>Think about usage</strong>: Design for how the interface will be used</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">device.channels[0].done</span></code> is clearer than <code class="docutils literal notranslate"><span class="pre">device.events.ch0_done</span></code></p></li>
+<li><p>Enables list comprehensions: <code class="docutils literal notranslate"><span class="pre">[ch.done</span> <span class="pre">for</span> <span class="pre">ch</span> <span class="pre">in</span> <span class="pre">device.channels]</span></code></p></li>
+<li><p>Fixed-size tuples provide type safety and structured access</p></li>
+</ul>
+</li>
+</ol>
+</section>
+</section>
+<section id="identifying-logical-events-in-mmio-abstraction">
+<h2>Identifying Logical Events in MMIO Abstraction<a class="headerlink" href="#identifying-logical-events-in-mmio-abstraction" title="Link to this heading">¶</a></h2>
+<p>When creating an MMIO-level model, you must identify and expose all <strong>logical events</strong>
+that the device generates, not just the physical interrupt signals.</p>
+<section id="physical-vs-logical-events">
+<h3>Physical vs Logical Events<a class="headerlink" href="#physical-vs-logical-events" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong>Physical Events</strong>: Actual interrupt pins (irq, inta_o, intb_o, intr, etc.)</p>
+<ul>
+<li><p>These are what connect to interrupt controllers</p></li>
+<li><p>Often aggregated/ORed combinations of multiple sources</p></li>
+<li><p>May be routed through mask/enable registers</p></li>
+</ul>
+</li>
+<li><p><strong>Logical Events</strong>: Individual event sources within the device</p>
+<ul>
+<li><p>Specific conditions like error, done, timeout, overflow, etc.</p></li>
+<li><p>Each has its own enable bit and status/source bit</p></li>
+<li><p>Multiple logical events combine to create physical interrupts</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="logical-event-identification-checklist">
+<h3>Logical Event Identification Checklist<a class="headerlink" href="#logical-event-identification-checklist" title="Link to this heading">¶</a></h3>
+<p>When analyzing a hardware specification, look for:</p>
+<ol class="arabic simple">
+<li><p><strong>Interrupt enable bits</strong> (INE_*, IE, <a href="#id1"><span class="problematic" id="id2">*</span></a>_IE, etc.)</p>
+<ul class="simple">
+<li><p>Each enable bit typically corresponds to a logical event</p></li>
+<li><p>Example: <code class="docutils literal notranslate"><span class="pre">INE_ERR</span></code>, <code class="docutils literal notranslate"><span class="pre">INE_DONE</span></code>, <code class="docutils literal notranslate"><span class="pre">INE_CHK_DONE</span></code></p></li>
+<li><p>Multiple enable bits → multiple logical events</p></li>
+</ul>
+</li>
+<li><p><strong>Interrupt source/status bits</strong> (INT_*, IS_*, <a href="#id3"><span class="problematic" id="id4">*</span></a>_IS, etc.)</p>
+<ul class="simple">
+<li><p>These indicate which logical event occurred</p></li>
+<li><p>Often Read-On-Clear (ROC) or Write-1-to-Clear (W1C)</p></li>
+<li><p>Example: <code class="docutils literal notranslate"><span class="pre">INT_ERR</span></code>, <code class="docutils literal notranslate"><span class="pre">INT_DONE</span></code>, <code class="docutils literal notranslate"><span class="pre">INT_CHK_DONE</span></code></p></li>
+</ul>
+</li>
+<li><p><strong>Condition status bits</strong> (DONE, ERR, BUSY, READY, etc.)</p>
+<ul class="simple">
+<li><p>Status bits that indicate event conditions</p></li>
+<li><p>May or may not have associated interrupt enables</p></li>
+<li><p>Still useful for polling-based access patterns</p></li>
+</ul>
+</li>
+<li><p><strong>Interrupt routing/masking architecture</strong></p>
+<ul class="simple">
+<li><p>Global mask registers (<code class="docutils literal notranslate"><span class="pre">INT_MSK_*</span></code>, <code class="docutils literal notranslate"><span class="pre">INT_EN_*</span></code>)</p></li>
+<li><p>Per-channel or per-source routing configuration</p></li>
+<li><p>Multiple physical interrupt outputs</p></li>
+<li><p>Look for MUX/OR trees in block diagrams</p></li>
+</ul>
+</li>
+<li><p><strong>Per-channel or per-unit replication</strong></p>
+<ul class="simple">
+<li><p>Devices with multiple channels often replicate events</p></li>
+<li><p>Example: 4 DMA channels × 3 events = 12 logical events</p></li>
+<li><p>All may feed into 1 or 2 physical interrupt outputs</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="event-placement-in-hierarchy">
+<h3>Event Placement in Hierarchy<a class="headerlink" href="#event-placement-in-hierarchy" title="Link to this heading">¶</a></h3>
+<p>Place logical events in the same Protocol as their related registers:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># ✓ CORRECT: Events with their registers</span>
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Channel</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">regs</span> <span class="p">:</span> <span class="n">ChannelRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>    <span class="c1"># Channel-specific event</span>
+    <span class="n">error</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>   <span class="c1"># Channel-specific event</span>
+
+<span class="c1"># ❌ WRONG: Events separated from registers</span>
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ChannelEvents</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">done</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">error</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Channel</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">regs</span> <span class="p">:</span> <span class="n">ChannelRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">events</span> <span class="p">:</span> <span class="n">ChannelEvents</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># Unnecessary nesting</span>
+</pre></div>
+</div>
+</section>
+<section id="rationale-for-logical-events">
+<h3>Rationale for Logical Events<a class="headerlink" href="#rationale-for-logical-events" title="Link to this heading">¶</a></h3>
+<p>Exposing logical events provides critical benefits:</p>
+<ul class="simple">
+<li><p><strong>Driver Development</strong>: Software needs to know which specific event occurred</p>
+<ul>
+<li><p>Error vs done vs timeout require different handling</p></li>
+<li><p>Cannot distinguish from physical interrupt alone</p></li>
+</ul>
+</li>
+<li><p><strong>Test Scenarios</strong>: Tests need to wait for specific conditions</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">device.ch0.done.wait()</span></code> is clearer than register polling</p></li>
+<li><p>Enables event-driven test patterns</p></li>
+<li><p>Supports concurrent waiting on multiple event types</p></li>
+</ul>
+</li>
+<li><p><strong>Verification</strong>: Proper event sequencing can be checked</p>
+<ul>
+<li><p>Verify error events occur before done events</p></li>
+<li><p>Check that chunk_done precedes final done</p></li>
+<li><p>Validate interrupt masking behavior</p></li>
+</ul>
+</li>
+<li><p><strong>Abstraction</strong>: Higher-level operations compose from logical events</p>
+<ul>
+<li><p>Operation-level methods can wait for specific device states</p></li>
+<li><p>Test scenarios don’t need to know register bit positions</p></li>
+<li><p>Device behavior is more explicit and documentable</p></li>
+</ul>
+</li>
+</ul>
+</section>
+</section>
+<section id="implementation-transfer-function">
+<h2>Implementation: Transfer Function<a class="headerlink" href="#implementation-transfer-function" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Algorithmic with timing implementation</p></li>
+</ul>
+</section>
+<section id="implementation-cycle-accurate">
+<h2>Implementation: Cycle Accurate<a class="headerlink" href="#implementation-cycle-accurate" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>What are we</p></li>
+</ul>
+<ul class="simple">
+<li><p>Is this about operation granularity?</p></li>
+<li><p>Is this assumption about how frequently the block is evaluated?</p>
+<ul>
+<li><p>At operational boundaries</p></li>
+<li><p>At implementation boundaries</p>
+<ul>
+<li><p>Several levels of detail here</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>What does it say</p></li>
+</ul>
+</section>
+<section id="hardware-interface-level">
+<h2>Hardware Interface Level<a class="headerlink" href="#hardware-interface-level" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Per-interface, though likely to share an abstraction level</p></li>
+</ul>
+<ul class="simple">
+<li><p>Transfer-function</p></li>
+<li><p>Transaction level</p></li>
+<li><p>Wire / Detailed protocol</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Abstraction Levels</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#software-interface-operation">Software Interface: Operation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#software-interface-mmio">Software Interface: MMIO</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hierarchical-organization-of-mmio-interfaces">Hierarchical Organization of MMIO Interfaces</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#identifying-logical-events-in-mmio-abstraction">Identifying Logical Events in MMIO Abstraction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#implementation-transfer-function">Implementation: Transfer Function</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#implementation-cycle-accurate">Implementation: Cycle Accurate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-interface-level">Hardware Interface Level</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="runtime.html" title="previous chapter">Runtime Implementation (Developer)</a></li>
+      <li>Next: <a href="checker.html" title="next chapter">Zuspec IR Checker</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/abstraction_levels.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

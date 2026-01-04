@@ -10,12 +10,12 @@
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
     <script src="_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="_static/doctools.js?v=9bcbadda"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Struct Types" href="struct.html" />
-    <link rel="prev" title="Data Types" href="datatypes.html" />
+    <link rel="next" title="Core Types" href="types.html" />
+    <link rel="prev" title="Components" href="components.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
   
@@ -43,45 +43,362 @@ considered to be a post-initialization constant.</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
 
 <span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">MyS</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Struct</span><span class="p">):</span>
-    <span class="n">W</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">const</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-    <span class="n">a</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">rand</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
-    <span class="n">b</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">data_out</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+    <span class="n">mem</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Memory</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>The example above shows several aspects of declaring fields within a
-Zuspec datatype.</p>
+<section id="decorators">
+<h2>Decorators<a class="headerlink" href="#decorators" title="Link to this heading">¶</a></h2>
+<section id="dataclass">
+<h3>&#64;dataclass<a class="headerlink" href="#dataclass" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">&#64;zdc.dataclass</span></code> decorator marks a class as a Zuspec type. It extends
+Python’s standard <code class="docutils literal notranslate"><span class="pre">&#64;dataclass</span></code> with Zuspec-specific processing and profile
+validation.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="c1"># With profile validation</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">profiles</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">profile</span><span class="o">=</span><span class="n">profiles</span><span class="o">.</span><span class="n">RetargetableProfile</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">HardwareModel</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">data</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># Width-annotated required</span>
+</pre></div>
+</div>
+<p>Profiles control validation rules:</p>
 <ul class="simple">
-<li><p><strong>W</strong> - Constant that will be configured during initialization</p></li>
-<li><p><strong>a</strong> - Random field with a built-in constraint limiting it to 0..9</p></li>
-<li><p><strong>b</strong> - Random field specified with the <cite>rand</cite> convenience field specifier</p></li>
-<li><p>default - Specifies the reset value</p></li>
-<li><p>rand  - Marks whether this field is randomizable</p></li>
-<li><p>const - Marks whether this field is const</p></li>
-<li><p>domain - Iterable, or Callable that produces an iterable, of the field domain</p></li>
-<li><p>bind</p></li>
-<li><p>init - dict of initialization values to apply. Elements may be lambda expressions</p></li>
-<li><p>claims</p></li>
-<li><p>provides</p></li>
-<li><p>export - makes the container a dependency provider of this field</p></li>
-<li><p>depends - Type to use in dependency binding</p></li>
-<li><p>mirror - Marks a bundle field as being a mirror of the specified type</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PythonProfile</span></code> - Permissive, allows standard Python types</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RetargetableProfile</span></code> - Strict, requires width-annotated types for hardware</p></li>
 </ul>
-<section id="convenience">
-<h2>Convenience<a class="headerlink" href="#convenience" title="Link to this heading">¶</a></h2>
+</section>
+<section id="process">
+<h3>&#64;process<a class="headerlink" href="#process" title="Link to this heading">¶</a></h3>
+<p>Marks an async method as an always-running process. The process starts
+automatically when the component’s simulation begins.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Worker</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">process</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Iteration </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="sync">
+<h3>&#64;sync<a class="headerlink" href="#sync" title="Link to this heading">¶</a></h3>
+<p>Marks a synchronous (clocked) process with deferred assignment semantics.
+The process executes on positive edge of clock or reset.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">count</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">reset</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_counter_proc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div>
+</div>
+<p><strong>Deferred Assignment:</strong> In <code class="docutils literal notranslate"><span class="pre">&#64;sync</span></code> processes, assignments don’t take effect
+immediately. The new value is applied after the method completes but before
+the next evaluation.</p>
+</section>
+<section id="comb">
+<h3>&#64;comb<a class="headerlink" href="#comb" title="Link to this heading">¶</a></h3>
+<p>Marks a combinational process with immediate assignment semantics.
+The process re-evaluates whenever any input changes.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Adder</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">a</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="nb">sum</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">comb</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_add</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sum</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+</pre></div>
+</div>
+</section>
+<section id="invariant">
+<h3>&#64;invariant<a class="headerlink" href="#invariant" title="Link to this heading">¶</a></h3>
+<p>Marks a method as a structural invariant that must always hold.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Config</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Struct</span><span class="p">):</span>
+    <span class="n">x</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u8</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
+    <span class="n">y</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u8</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">invariant</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">sum_constraint</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">&lt;=</span> <span class="mi">150</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="field-specifiers">
+<h2>Field Specifiers<a class="headerlink" href="#field-specifiers" title="Link to this heading">¶</a></h2>
+<section id="field">
+<h3>field()<a class="headerlink" href="#field" title="Link to this heading">¶</a></h3>
+<p>The general-purpose field specifier with the following parameters:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span>
+    <span class="n">rand</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>           <span class="c1"># Whether field is randomizable</span>
+    <span class="n">init</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>            <span class="c1"># Dict of init values or callable</span>
+    <span class="n">default_factory</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="c1"># Factory for default value</span>
+    <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>         <span class="c1"># Default value</span>
+    <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>        <span class="c1"># Additional metadata dict</span>
+    <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>            <span class="c1"># Size (for Memory fields)</span>
+    <span class="n">bounds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>          <span class="c1"># Value bounds (min, max)</span>
+    <span class="n">width</span><span class="o">=</span><span class="kc">None</span>            <span class="c1"># Width expression for bitv types</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Example:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyStruct</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Struct</span><span class="p">):</span>
+    <span class="n">a</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">b</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u8</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+    <span class="n">mem</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Memory</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">4096</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="const">
+<h3>const()<a class="headerlink" href="#const" title="Link to this heading">¶</a></h3>
+<p>Marks a field as a post-construction constant (structural type parameter).
+Used for configuration and parameterization.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WishboneInitiator</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Bundle</span><span class="p">):</span>
+    <span class="n">DATA_WIDTH</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">const</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+    <span class="n">ADDR_WIDTH</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">const</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+
+    <span class="c1"># Other fields can reference const values</span>
+    <span class="n">dat_w</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bitv</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">DATA_WIDTH</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="input">
+<h3>input()<a class="headerlink" href="#input" title="Link to this heading">¶</a></h3>
+<p>Marks a field as an input port. Input fields see the value of their
+bound output with no delay. Supports optional <code class="docutils literal notranslate"><span class="pre">width</span></code> parameter for
+<code class="docutils literal notranslate"><span class="pre">bitv</span></code> types.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Consumer</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">data</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+
+    <span class="c1"># Variable-width input with lambda expression</span>
+    <span class="n">param_data</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bitv</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">DATA_WIDTH</span><span class="p">)</span>
+</pre></div>
+</div>
 <ul class="simple">
-<li><p>rand</p></li>
-<li><p>const</p></li>
-<li><p>output - claim==True if a Service provides==True if
-- Pool[T] if in an action context ; implicit bind via comp dependency
-- T otherwise ; explicit bind</p></li>
-<li><p>input</p></li>
-<li><p>port
-- Is a dependency on T ; explicit bind</p></li>
-<li><p>export
-- Is a T provider ; explicit bind</p></li>
-<li></li>
+<li><p>Top-level inputs are bound to implicit outputs</p></li>
+<li><p>Non-top-level inputs must be explicitly bound to outputs</p></li>
 </ul>
+</section>
+<section id="output">
+<h3>output()<a class="headerlink" href="#output" title="Link to this heading">¶</a></h3>
+<p>Marks a field as an output port. Bound inputs see the current value
+with no delay. Supports optional <code class="docutils literal notranslate"><span class="pre">width</span></code> parameter for <code class="docutils literal notranslate"><span class="pre">bitv</span></code> types.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Producer</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">data</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+
+    <span class="c1"># Variable-width output</span>
+    <span class="n">result</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bitv</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">RESULT_WIDTH</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="bundle">
+<h3>bundle()<a class="headerlink" href="#bundle" title="Link to this heading">¶</a></h3>
+<p>Instantiates a bundle (interface) with declared directionality.
+Supports <code class="docutils literal notranslate"><span class="pre">kwargs</span></code> parameter for passing configuration to the bundle.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">DATA_WIDTH</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">const</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+
+    <span class="n">bus</span> <span class="p">:</span> <span class="n">WishboneBus</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bundle</span><span class="p">(</span>
+        <span class="n">kwargs</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span>
+            <span class="n">DATA_WIDTH</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">DATA_WIDTH</span><span class="p">,</span>
+            <span class="n">ADDR_WIDTH</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">DATA_WIDTH</span><span class="p">))</span>
+</pre></div>
+</div>
+</section>
+<section id="mirror">
+<h3>mirror()<a class="headerlink" href="#mirror" title="Link to this heading">¶</a></h3>
+<p>Instantiates a bundle with flipped directionality (inputs become outputs
+and vice versa).</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Responder</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">bus_mirror</span> <span class="p">:</span> <span class="n">WishboneBus</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">mirror</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="monitor">
+<h3>monitor()<a class="headerlink" href="#monitor" title="Link to this heading">¶</a></h3>
+<p>Instantiates a bundle for passive monitoring (all signals are inputs).</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Monitor</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">bus_mon</span> <span class="p">:</span> <span class="n">WishboneBus</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">monitor</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="port">
+<h3>port()<a class="headerlink" href="#port" title="Link to this heading">¶</a></h3>
+<p>Marks a field as an API consumer. Ports must be bound to a matching
+export that provides the interface implementation.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">MemIF</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span> <span class="o">...</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span> <span class="o">...</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Consumer</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">mem</span> <span class="p">:</span> <span class="n">MemIF</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="export">
+<h3>export()<a class="headerlink" href="#export" title="Link to this heading">¶</a></h3>
+<p>Marks a field as an API provider. Exports must be bound to implementations
+of the interface methods via <code class="docutils literal notranslate"><span class="pre">__bind__</span></code>.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Provider</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">mem</span> <span class="p">:</span> <span class="n">MemIF</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">export</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="p">{</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mem</span><span class="o">.</span><span class="n">read</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">do_read</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mem</span><span class="o">.</span><span class="n">write</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">do_write</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">do_read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="n">addr</span><span class="p">]</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">do_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_data</span><span class="p">[</span><span class="n">addr</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span>
+</pre></div>
+</div>
+</section>
+<section id="inst">
+<h3>inst()<a class="headerlink" href="#inst" title="Link to this heading">¶</a></h3>
+<p>Marks a field for automatic instance construction based on annotated type.
+Supports <code class="docutils literal notranslate"><span class="pre">kwargs</span></code> for constructor arguments and <code class="docutils literal notranslate"><span class="pre">size</span></code> for containers.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="c1"># Single instance with kwargs</span>
+    <span class="n">counter</span> <span class="p">:</span> <span class="n">Counter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">(</span>
+        <span class="n">kwargs</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span><span class="n">WIDTH</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">COUNTER_WIDTH</span><span class="p">))</span>
+
+    <span class="c1"># Array of instances</span>
+    <span class="n">workers</span> <span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Worker</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">(</span>
+        <span class="n">elem_factory</span><span class="o">=</span><span class="n">Worker</span><span class="p">,</span>
+        <span class="n">size</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="tuple">
+<h3>tuple()<a class="headerlink" href="#tuple" title="Link to this heading">¶</a></h3>
+<p>Creates a fixed-size tuple field with automatic element construction.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tuple</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RegBank</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">regs</span> <span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">tuple</span><span class="p">(</span>
+        <span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+        <span class="n">elem_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]())</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="binding-helper">
+<h2>Binding Helper<a class="headerlink" href="#binding-helper" title="Link to this heading">¶</a></h2>
+<section id="bind-ts-ti">
+<h3>bind[Ts,Ti]<a class="headerlink" href="#bind-ts-ti" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">bind</span></code> helper class provides type-safe binding specifications for
+inline field bindings.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Self</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Parent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">child</span> <span class="p">:</span> <span class="n">ChildComponent</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">bind</span><span class="p">[</span><span class="n">Self</span><span class="p">,</span> <span class="n">ChildComponent</span><span class="p">](</span>
+        <span class="k">lambda</span> <span class="n">s</span><span class="p">,</span> <span class="n">f</span><span class="p">:</span> <span class="p">{</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">clock</span> <span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">))</span>
+</pre></div>
+</div>
+<p>The lambda receives:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">s</span></code> - Handle to parent class (Self)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">f</span></code> - Handle to field being bound (ChildComponent)</p></li>
+</ul>
+<p>Returns a dict mapping target fields to source fields.</p>
+</section>
+</section>
+<section id="execution-types">
+<h2>Execution Types<a class="headerlink" href="#execution-types" title="Link to this heading">¶</a></h2>
+<section id="execkind">
+<h3>ExecKind<a class="headerlink" href="#execkind" title="Link to this heading">¶</a></h3>
+<p>Enumeration of execution method kinds:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ExecKind.Comb</span></code> - Combinational (RTL)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ExecKind.Sync</span></code> - Synchronous (RTL)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ExecKind.Proc</span></code> - Process (behavioral)</p></li>
+</ul>
+</section>
+<section id="exec-execproc-execsync-execcomb">
+<h3>Exec / ExecProc / ExecSync / ExecComb<a class="headerlink" href="#exec-execproc-execsync-execcomb" title="Link to this heading">¶</a></h3>
+<p>Internal marker types for decorated methods:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Exec</span></code> - Base execution marker</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ExecProc</span></code> - Process execution marker (from <code class="docutils literal notranslate"><span class="pre">&#64;process</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ExecSync</span></code> - Synchronous execution marker (from <code class="docutils literal notranslate"><span class="pre">&#64;sync</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ExecComb</span></code> - Combinational execution marker (from <code class="docutils literal notranslate"><span class="pre">&#64;comb</span></code>)</p></li>
+</ul>
+</section>
+</section>
+<section id="parameterization-features">
+<h2>Parameterization Features<a class="headerlink" href="#parameterization-features" title="Link to this heading">¶</a></h2>
+<p>Zuspec supports powerful parameterization through const fields and lambda
+expressions. See <a class="reference external" href="../PARAMETERIZATION_SUMMARY.md">PARAMETERIZATION_SUMMARY.md</a>
+for complete details.</p>
+<section id="width-expressions">
+<h3>Width Expressions<a class="headerlink" href="#width-expressions" title="Link to this heading">¶</a></h3>
+<p>Fields can reference const parameters to determine their width dynamically:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ParameterizedBus</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Bundle</span><span class="p">):</span>
+    <span class="n">DATA_WIDTH</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">const</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+
+    <span class="c1"># Width derived from parameter</span>
+    <span class="n">data</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bitv</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">DATA_WIDTH</span><span class="p">)</span>
+
+    <span class="c1"># Computed width</span>
+    <span class="n">byte_en</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bitv</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">DATA_WIDTH</span> <span class="o">//</span> <span class="mi">8</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="kwargs-for-bundle-instantiation">
+<h3>Kwargs for Bundle Instantiation<a class="headerlink" href="#kwargs-for-bundle-instantiation" title="Link to this heading">¶</a></h3>
+<p>Components can pass parameters to nested bundles:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SystemComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">BUS_WIDTH</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">const</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+
+    <span class="n">bus</span> <span class="p">:</span> <span class="n">SystemBus</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bundle</span><span class="p">(</span>
+        <span class="n">kwargs</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span>
+            <span class="n">WIDTH</span><span class="o">=</span><span class="n">s</span><span class="o">.</span><span class="n">BUS_WIDTH</span><span class="p">,</span>
+            <span class="n">ADDR_WIDTH</span><span class="o">=</span><span class="mi">32</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>This enables flexible, reusable component designs with compile-time
+configuration.</p>
+</section>
 </section>
 </section>
 
@@ -111,28 +428,34 @@ Zuspec datatype.</p>
     </div>
 </search>
 <script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
-<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="datatypes.html">Data Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Class Fields</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#convenience">Convenience</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#decorators">Decorators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#field-specifiers">Field Specifiers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#binding-helper">Binding Helper</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#execution-types">Execution Types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#parameterization-features">Parameterization Features</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a></li>
-<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
-<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
-<li class="toctree-l1"><a class="reference internal" href="dependencies.html">Dependencies</a></li>
-<li class="toctree-l1"><a class="reference internal" href="profiles.html">Profiles</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
 </ul>
 
 <div class="relations">
 <h3>Related Topics</h3>
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
-      <li>Previous: <a href="datatypes.html" title="previous chapter">Data Types</a></li>
-      <li>Next: <a href="struct.html" title="next chapter">Struct Types</a></li>
+      <li>Previous: <a href="components.html" title="previous chapter">Components</a></li>
+      <li>Next: <a href="types.html" title="next chapter">Core Types</a></li>
   </ul></li>
 </ul>
 </div>
@@ -152,7 +475,7 @@ Zuspec datatype.</p>
       &#169;2025, Matthew Ballance.
       
       |
-      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
       &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
       
       |

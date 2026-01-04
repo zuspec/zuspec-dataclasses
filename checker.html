@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Zuspec IR Checker &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Data Model (Developer)" href="datamodel.html" />
+    <link rel="prev" title="Abstraction Levels" href="abstraction_levels.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="zuspec-ir-checker">
+<h1>Zuspec IR Checker<a class="headerlink" href="#zuspec-ir-checker" title="Link to this heading">¶</a></h1>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<p>The Zuspec IR Checker is an extensible validation framework that checks your Zuspec code by analyzing the Intermediate Representation (IR). Unlike traditional type checkers that work at the AST level, the IR checker validates the <em>semantic</em> model of your code, ensuring it conforms to profile-specific rules.</p>
+<p><strong>Key Features:</strong></p>
+<ul class="simple">
+<li><p><strong>IR-based validation</strong> - Checks compiled IR, not raw Python AST</p></li>
+<li><p><strong>Profile-aware</strong> - Different rules for different abstraction levels</p></li>
+<li><p><strong>Extensible</strong> - Plugins can register custom checkers via entrypoints</p></li>
+<li><p><strong>Flake8 integration</strong> - Works seamlessly with existing tools</p></li>
+<li><p><strong>VSCode support</strong> - Real-time error highlighting in the editor</p></li>
+</ul>
+</section>
+<section id="architecture">
+<h2>Architecture<a class="headerlink" href="#architecture" title="Link to this heading">¶</a></h2>
+<p>The checker uses a three-layer architecture:</p>
+<ol class="arabic simple">
+<li><p><strong>Flake8 Plugin</strong> (<code class="docutils literal notranslate"><span class="pre">zuspec_flake8</span></code>) - Entry point that hooks into flake8</p></li>
+<li><p><strong>Core Checker</strong> (<code class="docutils literal notranslate"><span class="pre">IRChecker</span></code>) - Builds IR and dispatches to profile checkers</p></li>
+<li><p><strong>Profile Checkers</strong> - Validate IR nodes according to profile rules</p></li>
+</ol>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Flake8 → ZuspecFlake8Plugin → IRChecker → Profile Checker
+                                 ↓
+                               IR Model
+                                 ↓
+                        Source Locations
+</pre></div>
+</div>
+</section>
+<section id="installation-and-setup">
+<h2>Installation and Setup<a class="headerlink" href="#installation-and-setup" title="Link to this heading">¶</a></h2>
+<section id="basic-installation">
+<h3>Basic Installation<a class="headerlink" href="#basic-installation" title="Link to this heading">¶</a></h3>
+<p>The checker is included with <code class="docutils literal notranslate"><span class="pre">zuspec-dataclasses</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>zuspec-dataclasses
+<span class="c1"># or</span>
+uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>zuspec-dataclasses
+</pre></div>
+</div>
+<p>The flake8 plugin is automatically registered via entrypoints.</p>
+</section>
+<section id="configuration">
+<h3>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h3>
+<p>Configure in your <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[tool.flake8]</span>
+<span class="n">max-line-length</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span>
+<span class="n">extend-ignore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;E203&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;W503&quot;</span><span class="p">]</span>
+
+<span class="k">[tool.zuspec]</span>
+<span class="c1"># Package roots for IR compilation</span>
+<span class="n">package_roots</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;src&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;tests&quot;</span>
+<span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>Configuration Options:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">package_roots</span></code> - List of directories containing your Zuspec packages. The checker needs to know where to find modules for import resolution during IR compilation.</p></li>
+</ul>
+</section>
+<section id="vscode-integration">
+<h3>VSCode Integration<a class="headerlink" href="#vscode-integration" title="Link to this heading">¶</a></h3>
+<ol class="arabic">
+<li><p><strong>Install the Python extension</strong> (if not already installed)</p></li>
+<li><p><strong>Install flake8</strong> in your project environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>flake8
+</pre></div>
+</div>
+</li>
+<li><p><strong>Configure VSCode settings</strong> in <code class="docutils literal notranslate"><span class="pre">.vscode/settings.json</span></code>:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;python.linting.enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;python.linting.flake8Enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;python.linting.flake8Path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;packages/python/bin/flake8&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;python.linting.lintOnSave&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Reload VSCode window</strong>: Press <code class="docutils literal notranslate"><span class="pre">Ctrl+Shift+P</span></code> and select “Developer: Reload Window”</p></li>
+</ol>
+<p>After setup, Zuspec errors will appear with red squiggles in the editor:</p>
+<img alt="VSCode showing Zuspec error on line 32" src="screenshots/vscode_zuspec_error.png" />
+</section>
+</section>
+<section id="error-codes">
+<h2>Error Codes<a class="headerlink" href="#error-codes" title="Link to this heading">¶</a></h2>
+<p>The checker produces errors with codes <code class="docutils literal notranslate"><span class="pre">ZDC001</span></code> through <code class="docutils literal notranslate"><span class="pre">ZDC006</span></code>:</p>
+<section id="zdc001-width-annotation-required">
+<h3>ZDC001: Width Annotation Required<a class="headerlink" href="#zdc001-width-annotation-required" title="Link to this heading">¶</a></h3>
+<p>Integer fields must have explicit width annotations in retargetable code.</p>
+<p><strong>Bad:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># Error: infinite-width int</span>
+</pre></div>
+</div>
+<p><strong>Good:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">count</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># OK: explicit width</span>
+</pre></div>
+</div>
+</section>
+<section id="zdc002-non-zuspec-type">
+<h3>ZDC002: Non-Zuspec Type<a class="headerlink" href="#zdc002-non-zuspec-type" title="Link to this heading">¶</a></h3>
+<p>Fields must use Zuspec types (Component, Struct, width-annotated integers).</p>
+<p><strong>Bad:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">object</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># Error: not a Zuspec type</span>
+</pre></div>
+</div>
+<p><strong>Good:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint8_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># OK: Zuspec type</span>
+</pre></div>
+</div>
+</section>
+<section id="zdc003-unannotated-variable">
+<h3>ZDC003: Unannotated Variable<a class="headerlink" href="#zdc003-unannotated-variable" title="Link to this heading">¶</a></h3>
+<p>Variables in process/sync/comb methods must have type annotations.</p>
+<p><strong>Bad:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="mi">5</span>  <span class="c1"># Error: no type annotation</span>
+</pre></div>
+</div>
+<p><strong>Good:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint8_t</span> <span class="o">=</span> <span class="mi">5</span>  <span class="c1"># OK: annotated</span>
+</pre></div>
+</div>
+</section>
+<section id="zdc004-type-annotation-error">
+<h3>ZDC004: Type Annotation Error<a class="headerlink" href="#zdc004-type-annotation-error" title="Link to this heading">¶</a></h3>
+<p>Type annotations must be valid and resolvable.</p>
+<p><strong>Bad:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">NonexistentType</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># Error: undefined type</span>
+</pre></div>
+</div>
+<p><strong>Good:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint16_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># OK: valid type</span>
+</pre></div>
+</div>
+</section>
+<section id="zdc005-non-zuspec-constructor-call">
+<h3>ZDC005: Non-Zuspec Constructor Call<a class="headerlink" href="#zdc005-non-zuspec-constructor-call" title="Link to this heading">¶</a></h3>
+<p>Constructors in retargetable code must be for Zuspec types.</p>
+<p><strong>Bad:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">obj</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>  <span class="c1"># Error: Python object() not allowed</span>
+</pre></div>
+</div>
+<p><strong>Good:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">obj</span> <span class="o">=</span> <span class="n">MyComponent</span><span class="p">()</span>  <span class="c1"># OK: Zuspec Component</span>
+</pre></div>
+</div>
+</section>
+<section id="zdc006-forbidden-function-call">
+<h3>ZDC006: Forbidden Function Call<a class="headerlink" href="#zdc006-forbidden-function-call" title="Link to this heading">¶</a></h3>
+<p>Some Python functions are not allowed in retargetable code.</p>
+<p><strong>Bad:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;optional&#39;</span><span class="p">):</span>  <span class="c1"># Error: dynamic introspection</span>
+        <span class="k">pass</span>
+</pre></div>
+</div>
+<p><strong>Good:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>  <span class="c1"># OK: static attribute access</span>
+        <span class="k">pass</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="built-in-profiles">
+<h2>Built-in Profiles<a class="headerlink" href="#built-in-profiles" title="Link to this heading">¶</a></h2>
+<section id="pythonprofile">
+<h3>PythonProfile<a class="headerlink" href="#pythonprofile" title="Link to this heading">¶</a></h3>
+<p>The most permissive profile, allows all Python constructs.</p>
+<p><strong>Use when:</strong></p>
+<ul class="simple">
+<li><p>Writing pure Python implementations</p></li>
+<li><p>Prototyping before targeting hardware</p></li>
+<li><p>Testing with maximum flexibility</p></li>
+</ul>
+<p><strong>Allows:</strong></p>
+<ul class="simple">
+<li><p>Infinite-width integers (<code class="docutils literal notranslate"><span class="pre">int</span></code>)</p></li>
+<li><p>Dynamic operations (<code class="docutils literal notranslate"><span class="pre">hasattr</span></code>, <code class="docutils literal notranslate"><span class="pre">getattr</span></code>, <code class="docutils literal notranslate"><span class="pre">setattr</span></code>)</p></li>
+<li><p>Unannotated variables</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Any</span></code> and <code class="docutils literal notranslate"><span class="pre">object</span></code> types</p></li>
+</ul>
+<p><strong>Example:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">profile</span><span class="o">=</span><span class="n">profiles</span><span class="o">.</span><span class="n">PythonProfile</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">FlexibleModel</span><span class="p">:</span>
+    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># OK in Python profile</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="mi">5</span>  <span class="c1"># Unannotated OK</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;optional&#39;</span><span class="p">):</span>  <span class="c1"># Dynamic access OK</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;optional&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="retargetableprofile">
+<h3>RetargetableProfile<a class="headerlink" href="#retargetableprofile" title="Link to this heading">¶</a></h3>
+<p>The default profile for hardware-targetable code.</p>
+<p><strong>Use when:</strong></p>
+<ul class="simple">
+<li><p>Writing code for synthesis or compilation</p></li>
+<li><p>Targeting multiple backends (Verilog, C++, etc.)</p></li>
+<li><p>Need strong type safety</p></li>
+</ul>
+<p><strong>Requires:</strong></p>
+<ul class="simple">
+<li><p>Width-annotated integer types</p></li>
+<li><p>Concrete types (no <code class="docutils literal notranslate"><span class="pre">Any</span></code> or <code class="docutils literal notranslate"><span class="pre">object</span></code>)</p></li>
+<li><p>Type annotations on all variables</p></li>
+<li><p>Static attribute access</p></li>
+</ul>
+<p><strong>Example:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>  <span class="c1"># Uses RetargetableProfile by default</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">count</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">increment</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">next_val</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+</span> <span class="mi">1</span>  <span class="c1"># Annotation required</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="n">next_val</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="profile-auto-detection">
+<h2>Profile Auto-Detection<a class="headerlink" href="#profile-auto-detection" title="Link to this heading">¶</a></h2>
+<p>The checker automatically detects which profile applies to each class by examining its type hierarchy:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>  <span class="c1"># Auto-detected as Retargetable</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint8_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">profile</span><span class="o">=</span><span class="n">profiles</span><span class="o">.</span><span class="n">PythonProfile</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyPythonClass</span><span class="p">:</span>  <span class="c1"># Explicitly Python profile</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="creating-custom-checkers">
+<h2>Creating Custom Checkers<a class="headerlink" href="#creating-custom-checkers" title="Link to this heading">¶</a></h2>
+<p>You can extend the checker system with custom profile checkers.</p>
+<section id="step-1-create-profile-and-checker-classes">
+<h3>Step 1: Create Profile and Checker Classes<a class="headerlink" href="#step-1-create-profile-and-checker-classes" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># my_checker_plugin/profiles.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.profiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">Profile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.ir_checker</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProfileChecker</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.ir.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">Field</span><span class="p">,</span> <span class="n">DataTypeInt</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyCustomProfile</span><span class="p">(</span><span class="n">Profile</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Custom profile with specific rules.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyCustomChecker</span><span class="p">(</span><span class="n">ProfileChecker</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Checker that validates MyCustomProfile rules.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">Field</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate field types.&quot;&quot;&quot;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Example: Only allow 32-bit integers</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">datatype</span><span class="p">,</span> <span class="n">DataTypeInt</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">datatype</span><span class="o">.</span><span class="n">bits</span> <span class="o">!=</span> <span class="mi">32</span><span class="p">:</span>
+                <span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s1">&#39;line&#39;</span><span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">line</span> <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span> <span class="k">else</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s1">&#39;col&#39;</span><span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">pos</span> <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+                    <span class="s1">&#39;code&#39;</span><span class="p">:</span> <span class="s1">&#39;ZDC101&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;message&#39;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Field &#39;</span><span class="si">{</span><span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; must be 32-bit&quot;</span>
+                <span class="p">})</span>
+
+        <span class="k">return</span> <span class="n">errors</span>
+</pre></div>
+</div>
+</section>
+<section id="step-2-register-via-entrypoint">
+<h3>Step 2: Register via Entrypoint<a class="headerlink" href="#step-2-register-via-entrypoint" title="Link to this heading">¶</a></h3>
+<p>In your plugin’s <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[project.entry-points.</span><span class="s2">&quot;zuspec.checkers&quot;</span><span class="k">]</span>
+<span class="n">my_custom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my_checker_plugin:MyCustomProfile:MyCustomChecker&quot;</span>
+</pre></div>
+</div>
+<p>The format is: <code class="docutils literal notranslate"><span class="pre">name</span> <span class="pre">=</span> <span class="pre">&quot;module:ProfileClass:CheckerClass&quot;</span></code></p>
+</section>
+<section id="step-3-install-and-use">
+<h3>Step 3: Install and Use<a class="headerlink" href="#step-3-install-and-use" title="Link to this heading">¶</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>my-checker-plugin
+</pre></div>
+</div>
+<p>The checker is now automatically available:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">my_checker_plugin.profiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">MyCustomProfile</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">profile</span><span class="o">=</span><span class="n">MyCustomProfile</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">value</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>  <span class="c1"># OK</span>
+    <span class="c1"># bad: zdc.uint16_t = zdc.field()  # Would fail with ZDC101</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="checker-extension-api">
+<h2>Checker Extension API<a class="headerlink" href="#checker-extension-api" title="Link to this heading">¶</a></h2>
+<section id="profilechecker-base-class">
+<h3>ProfileChecker Base Class<a class="headerlink" href="#profilechecker-base-class" title="Link to this heading">¶</a></h3>
+<p>All custom checkers should inherit from <code class="docutils literal notranslate"><span class="pre">ProfileChecker</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.ir_checker</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProfileChecker</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.ir.base</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Component</span><span class="p">,</span> <span class="n">Field</span><span class="p">,</span> <span class="n">Function</span><span class="p">,</span> <span class="n">Statement</span>
+<span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyChecker</span><span class="p">(</span><span class="n">ProfileChecker</span><span class="p">):</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">component</span><span class="p">:</span> <span class="n">Component</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check a component definition.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[]</span>  <span class="c1"># Return list of error dicts</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">Field</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check a field definition.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_function</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">function</span><span class="p">:</span> <span class="n">Function</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check a function/method definition.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_statement</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stmt</span><span class="p">:</span> <span class="n">Statement</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check a statement in a function body.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[]</span>
+</pre></div>
+</div>
+</section>
+<section id="error-format">
+<h3>Error Format<a class="headerlink" href="#error-format" title="Link to this heading">¶</a></h3>
+<p>Errors should be dictionaries with these keys:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+    <span class="s1">&#39;line&#39;</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>        <span class="c1"># Source line number (1-indexed)</span>
+    <span class="s1">&#39;col&#39;</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>         <span class="c1"># Column offset (0-indexed)</span>
+    <span class="s1">&#39;code&#39;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>        <span class="c1"># Error code (e.g., &#39;ZDC001&#39;)</span>
+    <span class="s1">&#39;message&#39;</span><span class="p">:</span> <span class="nb">str</span>      <span class="c1"># Human-readable description</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="reusing-core-infrastructure">
+<h3>Reusing Core Infrastructure<a class="headerlink" href="#reusing-core-infrastructure" title="Link to this heading">¶</a></h3>
+<p>Custom checkers can leverage core utilities:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.ir_checker</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">is_zuspec_type</span><span class="p">,</span>      <span class="c1"># Check if type is Zuspec-compatible</span>
+    <span class="n">get_type_width</span><span class="p">,</span>      <span class="c1"># Extract width from annotated int</span>
+    <span class="n">resolve_type</span><span class="p">,</span>        <span class="c1"># Resolve type references</span>
+<span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyChecker</span><span class="p">(</span><span class="n">ProfileChecker</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">Field</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_zuspec_type</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">datatype</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[{</span>
+                <span class="s1">&#39;line&#39;</span><span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">line</span> <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span> <span class="k">else</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s1">&#39;col&#39;</span><span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">pos</span> <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">loc</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s1">&#39;code&#39;</span><span class="p">:</span> <span class="s1">&#39;ZDC102&#39;</span><span class="p">,</span>
+                <span class="s1">&#39;message&#39;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Field &#39;</span><span class="si">{</span><span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39; uses non-Zuspec type&quot;</span>
+            <span class="p">}]</span>
+        <span class="k">return</span> <span class="p">[]</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="command-line-usage">
+<h2>Command-Line Usage<a class="headerlink" href="#command-line-usage" title="Link to this heading">¶</a></h2>
+<p>Run the checker from the command line:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Check a single file</span>
+flake8<span class="w"> </span>src/my_module.py
+
+<span class="c1"># Check entire project</span>
+flake8<span class="w"> </span>src/
+
+<span class="c1"># Show only Zuspec errors</span>
+flake8<span class="w"> </span>src/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>ZDC
+
+<span class="c1"># Verbose output with line numbers</span>
+flake8<span class="w"> </span>--format<span class="o">=</span><span class="s1">&#39;%(path)s:%(row)d:%(col)d: %(code)s %(text)s&#39;</span><span class="w"> </span>src/
+</pre></div>
+</div>
+<section id="integration-with-ci-cd">
+<h3>Integration with CI/CD<a class="headerlink" href="#integration-with-ci-cd" title="Link to this heading">¶</a></h3>
+<p>Add to your CI pipeline:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># .github/workflows/lint.yml</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check Zuspec code</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">pip install flake8 zuspec-dataclasses</span>
+<span class="w">    </span><span class="no">flake8 src/ --select=ZDC</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">¶</a></h2>
+<section id="errors-not-showing-in-vscode">
+<h3>Errors Not Showing in VSCode<a class="headerlink" href="#errors-not-showing-in-vscode" title="Link to this heading">¶</a></h3>
+<ol class="arabic">
+<li><p><strong>Check flake8 is enabled:</strong></p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;python.linting.flake8Enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Verify flake8 path</strong> points to environment with zuspec-dataclasses:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>which<span class="w"> </span>flake8
+flake8<span class="w"> </span>--version
+</pre></div>
+</div>
+</li>
+<li><p><strong>Reload VSCode window:</strong> Ctrl+Shift+P → “Developer: Reload Window”</p></li>
+<li><p><strong>Check Problems panel</strong> (Ctrl+Shift+M) for errors</p></li>
+<li><p><strong>Test from command line:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>flake8<span class="w"> </span>path/to/file.py
+</pre></div>
+</div>
+</li>
+</ol>
+</section>
+<section id="errors-at-line-1-1">
+<h3>Errors at Line 1:1<a class="headerlink" href="#errors-at-line-1-1" title="Link to this heading">¶</a></h3>
+<p>If all errors show at line 1, column 1, the IR is missing source locations. This was fixed in version 2026.1+. Upgrade:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>zuspec-dataclasses
+</pre></div>
+</div>
+</section>
+<section id="module-not-found-errors">
+<h3>“Module not found” Errors<a class="headerlink" href="#module-not-found-errors" title="Link to this heading">¶</a></h3>
+<p>The checker needs to import your code to build IR. Ensure:</p>
+<ol class="arabic">
+<li><p><strong>Configure package_roots</strong> in <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[tool.zuspec]</span>
+<span class="n">package_roots</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;src&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Install package in development mode:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+</li>
+<li><p><strong>Check Python path</strong> includes your source directories</p></li>
+</ol>
+</section>
+<section id="slow-performance">
+<h3>Slow Performance<a class="headerlink" href="#slow-performance" title="Link to this heading">¶</a></h3>
+<p>IR compilation can be slow for large projects. To optimize:</p>
+<ol class="arabic">
+<li><p><strong>Use .flake8cache</strong> to cache results</p></li>
+<li><p><strong>Run on changed files only</strong> in CI</p></li>
+<li><p><strong>Exclude unnecessary directories:</strong></p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[tool.flake8]</span>
+<span class="n">exclude</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;.git&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;__pycache__&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;build&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;dist&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+</li>
+</ol>
+</section>
+</section>
+<section id="comparison-with-other-tools">
+<h2>Comparison with Other Tools<a class="headerlink" href="#comparison-with-other-tools" title="Link to this heading">¶</a></h2>
+<section id="vs-mypy">
+<h3>vs MyPy<a class="headerlink" href="#vs-mypy" title="Link to this heading">¶</a></h3>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Feature</p></th>
+<th class="head"><p>MyPy Plugin</p></th>
+<th class="head"><p>IR Checker</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Analysis Level</p></td>
+<td><p>Python AST</p></td>
+<td><p>Zuspec IR</p></td>
+</tr>
+<tr class="row-odd"><td><p>Type Checking</p></td>
+<td><p>Yes (static)</p></td>
+<td><p>Yes (semantic)</p></td>
+</tr>
+<tr class="row-even"><td><p>Profile Awareness</p></td>
+<td><p>Yes</p></td>
+<td><p>Yes</p></td>
+</tr>
+<tr class="row-odd"><td><p>Flake8 Integration</p></td>
+<td><p>No</p></td>
+<td><p>Yes</p></td>
+</tr>
+<tr class="row-even"><td><p>VSCode Integration</p></td>
+<td><p>Via MyPy extension</p></td>
+<td><p>Via Flake8</p></td>
+</tr>
+<tr class="row-odd"><td><p>Extensibility</p></td>
+<td><p>MyPy plugin API</p></td>
+<td><p>Entrypoints</p></td>
+</tr>
+<tr class="row-even"><td><p>Error Location</p></td>
+<td><p>Excellent</p></td>
+<td><p>Excellent (2026.1+)</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> The mypy plugin is deprecated in favor of the IR checker.</p>
+</section>
+<section id="vs-flake8-style-checkers">
+<h3>vs Flake8 Style Checkers<a class="headerlink" href="#vs-flake8-style-checkers" title="Link to this heading">¶</a></h3>
+<p>Traditional flake8 plugins check code style (formatting, naming, imports). The Zuspec IR checker validates <strong>semantic correctness</strong> - whether your code can be compiled to the target platform.</p>
+</section>
+<section id="vs-pylint">
+<h3>vs PyLint<a class="headerlink" href="#vs-pylint" title="Link to this heading">¶</a></h3>
+<p>PyLint focuses on Python best practices and bug detection. The Zuspec IR checker enforces <strong>hardware synthesis constraints</strong> - ensuring code is retargetable to Verilog, VHDL, C++, etc.</p>
+</section>
+</section>
+<section id="frequently-asked-questions">
+<h2>Frequently Asked Questions<a class="headerlink" href="#frequently-asked-questions" title="Link to this heading">¶</a></h2>
+<p><strong>Q: Do I need to configure anything special for the checker to work?</strong></p>
+<p>A: Only if you have complex import structures. Add <code class="docutils literal notranslate"><span class="pre">package_roots</span></code> to your <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> pointing to your source directories.</p>
+<p><strong>Q: Can I disable specific error codes?</strong></p>
+<p>A: Yes, use flake8’s standard ignore mechanism:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>flake8<span class="w"> </span>--extend-ignore<span class="o">=</span>ZDC001,ZDC003<span class="w"> </span>src/
+</pre></div>
+</div>
+<p>Or in <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[tool.flake8]</span>
+<span class="n">extend-ignore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;ZDC001&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;ZDC003&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>Q: How do I create a checker for my own profile?</strong></p>
+<p>A: Create a <code class="docutils literal notranslate"><span class="pre">ProfileChecker</span></code> subclass and register it via entrypoints. See <a class="reference internal" href="#creating-custom-checkers">Creating Custom Checkers</a>.</p>
+<p><strong>Q: Can I use this with pre-commit hooks?</strong></p>
+<p>A: Yes! Add to <code class="docutils literal notranslate"><span class="pre">.pre-commit-config.yaml</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">repos</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/pycqa/flake8</span>
+<span class="w">    </span><span class="nt">rev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6.0.0</span>
+<span class="w">    </span><span class="nt">hooks</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">flake8</span>
+<span class="w">        </span><span class="nt">additional_dependencies</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">zuspec-dataclasses</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p><strong>Q: Does the checker work with Python 3.8?</strong></p>
+<p>A: The checker requires Python 3.9+ for full AST support.</p>
+<p><strong>Q: Can I use the checker in Jupyter notebooks?</strong></p>
+<p>A: Not directly. Extract your Zuspec code to <code class="docutils literal notranslate"><span class="pre">.py</span></code> files for checking.</p>
+</section>
+<section id="see-also">
+<h2>See Also<a class="headerlink" href="#see-also" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><span class="xref std std-doc">profiles</span> - Profile system overview</p></li>
+<li><p><a class="reference internal" href="types.html"><span class="doc">Core Types</span></a> - Zuspec type system</p></li>
+<li><p><a class="reference internal" href="components.html"><span class="doc">Components</span></a> - Component and structure definitions</p></li>
+<li><p><a class="reference external" href="profile_checker_design.html">Profile Checker Design</a> - Implementation details (historical, mypy-based)</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The mypy plugin is deprecated as of version 2026.1. Use the flake8-based IR checker instead.</p>
+</div>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Zuspec IR Checker</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#architecture">Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation-and-setup">Installation and Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#error-codes">Error Codes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#built-in-profiles">Built-in Profiles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#profile-auto-detection">Profile Auto-Detection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#creating-custom-checkers">Creating Custom Checkers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#checker-extension-api">Checker Extension API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#command-line-usage">Command-Line Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#comparison-with-other-tools">Comparison with Other Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#frequently-asked-questions">Frequently Asked Questions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#see-also">See Also</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="abstraction_levels.html" title="previous chapter">Abstraction Levels</a></li>
+      <li>Next: <a href="datamodel.html" title="next chapter">Data Model (Developer)</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/checker.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

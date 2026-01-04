@@ -10,11 +10,11 @@
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
     <script src="_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="_static/doctools.js?v=9bcbadda"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Data Types" href="datatypes.html" />
+    <link rel="next" title="Components" href="components.html" />
     <link rel="prev" title="Zuspec Language" href="index.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
@@ -35,223 +35,124 @@
             
   <section id="zuspec-language-overview">
 <h1>Zuspec Language Overview<a class="headerlink" href="#zuspec-language-overview" title="Link to this heading">¶</a></h1>
-<p>Zuspec is a language focused on modeling digital hardware
-designs at multiple levels of abstraction – from an
-abstract behavioral model down to register transfer level (RTL).
+<p>Zuspec is a Python-embedded modeling language focused on modeling
+the behavior of digital hardware designs at multiple levels of abstraction
+– from an abstract behavioral model down to register transfer level (RTL).
 Multiple distinct implementations can be derived from a Zuspec
 model to address various points on the performance / fidelity curve.</p>
 <p>Zuspec is a Python-based language, which means that it is embedded in
 Python and adopts Python syntax, but applies special semantic rules
 to specified portions of the description.</p>
-<p>Let’s look at an example:</p>
-<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Counter example</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+<p>Zuspec is composed of four elements:</p>
+<ul class="simple">
+<li><p>Language facade – the base classes and decorators used to identify key elements of the description</p></li>
+<li><p>Pure-Python runtime – A pure Python implementation of the Zuspec semantics that leverages the Python
+implementation of the source description</p></li>
+<li><p>Data Model – An AST-like data model that captures the key type and behavioral descriptions involved
+in a model</p></li>
+<li><p>Datamodel Processing Tools – Tools that operate on the data model to analyze aspects
+of the model or produce additional outputs (eg C implementation)</p></li>
+</ul>
+<p>It is critical to keep all of these aspects independent and modular. For example, the language
+facade (zuspec.dataclasses namespace classes) must not be aware of the pure-python runtime.</p>
+<p>Zuspec types inherit from a Zuspec base class, and are decorated with &#64;zdc.dataclass.
+Zuspec classes are dataclasses.</p>
+<p>Fields of Zuspec classes have the basic form of Python dataclass fields.</p>
+<p>Zuspec input is valid Python syntax, but is not executable on its own because the input
+specifies intent, not implementation. For example:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">MyIF</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+  <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">api</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="o">...</span>
 
-<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
-    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
-    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
-    <span class="n">count</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Bit</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyTargT</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+  <span class="n">p</span> <span class="p">:</span> <span class="n">MyIF</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">export</span><span class="p">()</span>
 
-    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span><span class="n">s</span><span class="o">.</span><span class="n">clock</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span><span class="n">s</span><span class="o">.</span><span class="n">reset</span><span class="p">)</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_inc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="p">{</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">api</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">target</span>
+  <span class="p">}</span>
+
+  <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span> <span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;target: </span><span class="si">%d</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">val</span><span class="p">)</span>
+    <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyInitC</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+  <span class="n">p</span> <span class="p">:</span> <span class="n">MyIF</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>
+
+  <span class="nd">@zdc</span><span class="o">.</span><span class="n">process</span>
+  <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">16</span><span class="p">):</span>
+      <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">p</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">TopC</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+  <span class="n">i</span> <span class="p">:</span> <span class="n">MyInitC</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+  <span class="n">c</span> <span class="p">:</span> <span class="n">MyConsC</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+  <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="p">{</span>
+    <span class="n">i</span><span class="o">.</span><span class="n">t</span> <span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">t</span>
+  <span class="p">}</span>
 </pre></div>
 </div>
-<p>Note that we follow the Python <cite>dataclasses</cite> pattern</p>
+<p>In the example above, the <em>modeling</em> aspect of Zuspec is shown in several
+places:</p>
 <ul class="simple">
-<li><p><strong>Component</strong> - Components are structural elements, equivalent to</p></li>
+<li><p>Ports and exports are marked as having a Python type of MyIF, but are not
+explicitly initialized. A Python type checker can validate that method calls
+are valid</p></li>
+<li><p>The methods of an <em>export</em> are specified via the mapping returned from __bind__.
+Here, again, the relationship is modeled and not the implementation</p></li>
+<li><p>In the initiator, the <em>process</em> decoration marks the run method as one that is
+automatically started when an instance of the class is created</p></li>
+<li><p>In the top-level component, the __bind__ method specifies that the initiator and
+consumer port/export is connected</p></li>
 </ul>
-<p>Verilog modules and SystemC or PSS components.
-* <strong>Signal Ports</strong> -
-* <strong>Sync</strong> - Marks a method as being activated on a clock or
-reset edge. The semantics of code in the method are behavioral.
-However, output variables only change at clock edge (ie Verilog
-non-blocking assignment).</p>
-<section id="interaction-with-tools">
-<h2>Interaction with Tools<a class="headerlink" href="#interaction-with-tools" title="Link to this heading">¶</a></h2>
-<p>Zuspec defines a language, which means that tools must have a way to
-operate on a Zuspec description. The <cite>zuspec.dataclasses.api</cite>
-package provides a visitor that iterates over key features of a Zuspec
-model.</p>
-<p># Abstracted Messaging (base on which TLM was built)
-- field of &lt;Api&gt; = port()
-- field of &lt;Api&gt; = export(bind here)
-- build/connect process ensures logical result</p>
-<p>=&gt; Really clumsy to do in C++ ; impossible in SV
-=&gt; Really easy to describe in Python. Several (more-complex)</p>
-<blockquote>
-<div><p>ways to implement.</p>
-</div></blockquote>
-<p>Goal: capture specification not implementation</p>
-<dl>
-<dt>=&gt; Leverage association rules</dt><dd><ul class="simple">
-<li><p>associate with nearest timebase provider</p></li>
-<li><p>association control</p></li>
-</ul>
-<p>=&gt; Use association properties for static APIs?
-Api::C -&gt; nearest association – which might be top</p>
-</dd>
-</dl>
-<p>=&gt; Assess</p>
-<p>Pool is an association:
-pool&lt;T&gt; forms an association with any input&lt;T&gt;, output&lt;T&gt;
-- Filter rule: associate anything?
--&gt; Each provider
--&gt; Pushing down match rules
-–&gt; component must gather providers
--&gt; Error if multiple rules match
--&gt; associate() -&gt; Returns a map to add to the stack
-–&gt; Upper must win…</p>
-<p>-&gt; Two stacks: natural ; override
-–&gt; Check override stack first
-–&gt; Check natural stack second</p>
-<p>=&gt; Do need something for binding
--&gt; That’s impl specific…
--&gt; Transform -&gt; map ‘std’ to &lt;provider&gt;
-=&gt; Top-level component has required associatians</p>
-<blockquote>
-<div><p>-&gt; Use for an external API (vs being built-in)</p>
-</div></blockquote>
-<dl>
-<dt>=&gt; Must identify base types assumed to be tool-supported</dt><dd><p>-&gt; Ex: tool that doesn’t support registers must be flagged
--&gt; Contract of ‘tool recognizes these core constructs’
-–&gt; This is extensible. Libraries can flag their base classes</p>
-<blockquote>
-<div><p>as needing to be recognized</p>
-</div></blockquote>
-</dd>
-</dl>
-<p>Pure: having no data -&gt; Really talking about abstract class?</p>
-<p>Core language support (parser) must provide elab and linking
-facilities.
-- Build associations maps</p>
-<p>Alias methods to services?
-print() &lt;-&gt; std.print()
-- Certain implementations can require a method to be</p>
-<blockquote>
-<div><p>a struct member</p>
-</div></blockquote>
-<p># Creating a component instance triggers a scan for required services
-- If a component has associated actions, then
--&gt; Forall actions that match this type, check for
-–&gt; memory and resource claims
-–&gt; Buffer/State/</p>
-<p>Violation of scheduling rules can be detected at runtime:
--&gt; Parallel must check for duplicate targets
--&gt; Actions must expose associations
--&gt; State is a single resource with completion semantics</p>
-<p>Service Provider
-Resource Provider &lt;-&gt; Pool is also a resource provider</p>
-<p>forall:</p>
-<dl class="simple">
-<dt>with forall(select) as fp:</dt><dd><p>constraints</p>
-</dd>
-</dl>
-<p># Locating the claim
-- up- or -down associative
-- optional (0,1), single, or multi
-- Use a dedicated</p>
-<p>Associations can be up- or down-associative.
-- comp is a down-associative
-- aspace (claim), pool (lock/share, input/output) is</p>
-<p># Organizing assiciations
-- Provider / Client
-- Is different from port binding
--&gt; Provider instances add to this component’s scope
--&gt; Push an override
-–&gt; Provider stack searched in reverse
-–&gt; Override stack searched in order
-–&gt; Bind acts as an override(!)</p>
-<p>action input/output ports are consumers</p>
-<p>Associate Providers</p>
-<p># Associating features with methods</p>
-<p># Structs</p>
-<p># Components
-- init
-- associate_down (maybe: available in build?)
-- build
-- associate_up
-- bind / connect</p>
-<p>=&gt; Can avoid repeated constructions</p>
-<p>Type model
-- Type variants expanded
-- Cut-off evaluation ASAP</p>
-<dl class="simple">
-<dt>-&gt; Component is left with</dt><dd><ul class="simple">
-<li><p>bindmap of associations
-- claim -&gt; src</p></li>
-<li><p>bindmap of connections</p></li>
-<li></li>
-</ul>
-</dd>
-</dl>
-<p># Actions
-- How
-- Associate themselves with 0+ components
-&lt;path&gt;.execute(ActionT)
--&gt;
--&gt; When a type is not valid on a subtree, it is not valid for all members</p>
-<p># Services
-- Individual connection
-- Specific provider is secondary to the existence of a provider
--&gt; Config is a service
-–&gt; Can distribute as needed
--&gt; Config can also be passed down as a const</p>
-<p>-&gt; Service-provider component
-–&gt; Provide access for programmatic build?
-–&gt; Need a point where
-–&gt; Have to be ‘bottom-up’ build</p>
+<p>All the code is valid Python that supports static analysis tools such as type checkers.</p>
+<section id="processing">
+<h2>Processing<a class="headerlink" href="#processing" title="Link to this heading">¶</a></h2>
+<p>Many Zuspec implementations provide something that appears to be a Python object.
+In these cases, the Zuspec-defined class that is the base of the user-defined class
+provides a __new__ implementation that constructs an appropriate implementation object.
+These providers are known as Object Factories, and implement the ObjFactory protocol.
+The base classes obtain the proper ObjFactory implementation via the Config class.</p>
+<p>This scheme allows Zuspec classes to be created as any other Python class.</p>
+</section>
+<section id="runtime">
+<h2>Runtime<a class="headerlink" href="#runtime" title="Link to this heading">¶</a></h2>
+<p>An implementation of the ‘Timebase’ class allows methods to synchronize with respect
+to a simulation time. The time used in ‘Timebase’ is not a wallclock time, so
+asyncio.sleep() is never used in a Zuspec description</p>
+</section>
+<section id="datamodel">
+<h2>Datamodel<a class="headerlink" href="#datamodel" title="Link to this heading">¶</a></h2>
+<p>Zuspec uses a data model that is a superset, or specialization, of Python. In other
+words, the Zuspec data model can represent the Python language, but also has special
+types that are significant in Zuspec. For example, the data model has a <cite>Component</cite>
+class that represents a class that inherits from the language-facade <cite>Component</cite> type.</p>
+<p>The Zuspec dataclasses package provides a processor that accepts a set of types and
+produces data models that correspond to them.</p>
+<p>Fundamentally, the Zuspec datamodel is a type data model.</p>
+<p>All type definitions in a datamodel Context have a name corresponding to the qualname
+of the source type.</p>
+<p>The datamodel bind map captures relationships between:</p>
 <ul class="simple">
-<li><p>bind is either p2p or a match pattern</p></li>
-<li></li>
+<li><p>port and export</p></li>
+<li><p>input and output</p></li>
+<li><p>input and input</p></li>
+<li><p>export API type method and method</p></li>
 </ul>
-<p># Covergroups</p>
-<p># What about local providers / consumers?
-- assumes
-- functions support providers as well?</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>Claims establish local deps</p></li>
-<li><p>Can roll-up</p></li>
-</ul>
-</div></blockquote>
+<p>port, export, input, and output references are captured as indexed expressions.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="p">{</span>
+  <span class="n">i</span><span class="o">.</span><span class="n">t</span> <span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">t</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>For example, the bind from the example above results in a bind map with a single
+entry has the following type expressions:</p>
 <ul class="simple">
-<li><p>How to identify? By type handle</p></li>
-<li><p>action</p></li>
+<li><p>RefFieldIndex(RefFieldIndex(0, RefContext()), 0)</p></li>
+<li><p>RefFieldIndex(RefFieldIndex(1, RefContext()), 0)</p></li>
 </ul>
-<p># External API to provider functionality
--</p>
-<p># Generative Features
-- Create exec blocks with parameterized co-routines
-- Create sub-components / sub-fields</p>
-<p># Profiles
-- Language must define sets of supported features</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>Synthesizable RTL</p></li>
-<li><p>Behavioral RTL</p></li>
-<li><p>Behavioral HVL</p></li>
-<li><p>Portable TLM</p></li>
-<li><p>Portable PV</p></li>
-<li><p>Portable Test</p></li>
-<li><p>Python</p></li>
-<li><p>Static/Formal</p></li>
-</ul>
-<p>Run checks in terms of profiles</p>
-<ul class="simple">
-<li><p>A profile is a concept.</p></li>
-<li><p>Always described in human-readable text</p></li>
-<li><p>Identified by a class</p></li>
-<li><p>Class provides a validator
-- Validate decorated class with respect to its profile (always specific to most-restrictive type)
--</p></li>
-<li><p>Profiles are composed by</p></li>
-</ul>
-</div></blockquote>
+<p>The datamodel bind map is created by evaluating the __bind__ method and passing
+an object for ‘self’ that converts references to fields to reference expression
+data model elements.</p>
 </section>
 </section>
 
@@ -281,20 +182,24 @@ Resource Provider &lt;-&gt; Pool is also a resource provider</p>
     </div>
 </search>
 <script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
-<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Zuspec Language Overview</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#interaction-with-tools">Interaction with Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#processing">Processing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#runtime">Runtime</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#datamodel">Datamodel</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="datatypes.html">Data Types</a></li>
-<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
-<li class="toctree-l1"><a class="reference internal" href="struct.html">Struct Types</a></li>
 <li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
-<li class="toctree-l1"><a class="reference internal" href="actions.html">Actions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
-<li class="toctree-l1"><a class="reference internal" href="dependencies.html">Dependencies</a></li>
-<li class="toctree-l1"><a class="reference internal" href="profiles.html">Profiles</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
 </ul>
 
 <div class="relations">
@@ -302,7 +207,7 @@ Resource Provider &lt;-&gt; Pool is also a resource provider</p>
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
       <li>Previous: <a href="index.html" title="previous chapter">Zuspec Language</a></li>
-      <li>Next: <a href="datatypes.html" title="next chapter">Data Types</a></li>
+      <li>Next: <a href="components.html" title="next chapter">Components</a></li>
   </ul></li>
 </ul>
 </div>
@@ -322,7 +227,7 @@ Resource Provider &lt;-&gt; Pool is also a resource provider</p>
       &#169;2025, Matthew Ballance.
       
       |
-      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
       &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
       
       |

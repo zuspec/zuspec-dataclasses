@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Core Types &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Runtime Implementation (Developer)" href="runtime.html" />
+    <link rel="prev" title="Class Fields" href="fields.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="core-types">
+<h1>Core Types<a class="headerlink" href="#core-types" title="Link to this heading">¶</a></h1>
+<p>The <code class="docutils literal notranslate"><span class="pre">zuspec.dataclasses</span></code> module provides core types for modeling
+hardware-centric systems. These types form the user-facing API for
+defining components, memory, registers, and time-based behaviors.</p>
+<section id="component">
+<h2>Component<a class="headerlink" href="#component" title="Link to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">Component</span></code> class is the primary structural building block in Zuspec.
+Components form hierarchical trees and can contain fields, ports, exports,
+processes, and bindings.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComponent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clock</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint1_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">reset</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint1_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">process</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Time: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="properties">
+<h3>Properties<a class="headerlink" href="#properties" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> - The instance name of the component</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">parent</span></code> - Reference to the parent component (None for root)</p></li>
+</ul>
+</section>
+<section id="methods">
+<h3>Methods<a class="headerlink" href="#methods" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">wait(amt:</span> <span class="pre">Time)</span></code> - Suspend execution for the specified time</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">time()</span> <span class="pre">-&gt;</span> <span class="pre">Time</span></code> - Return the current simulation time</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">shutdown()</span></code> - Cancel all running process tasks</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">__bind__()</span> <span class="pre">-&gt;</span> <span class="pre">Dict</span></code> - Override to specify port/field bindings</p></li>
+</ul>
+</section>
+<section id="lifecycle">
+<h3>Lifecycle<a class="headerlink" href="#lifecycle" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Component and child fields are constructed</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">__comp_build__</span></code> initializes the component tree (depth-first)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">__bind__</span></code> mappings are applied</p></li>
+<li><p>Processes start when simulation begins (via <code class="docutils literal notranslate"><span class="pre">wait()</span></code>)</p></li>
+</ol>
+</section>
+</section>
+<section id="time-timing">
+<h2>Time &amp; Timing<a class="headerlink" href="#time-timing" title="Link to this heading">¶</a></h2>
+<section id="time">
+<h3>Time<a class="headerlink" href="#time" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Time</span></code> class represents simulation time with various unit granularities.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="c1"># Create time values using factory methods</span>
+<span class="n">t1</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>    <span class="c1"># 100 nanoseconds</span>
+<span class="n">t2</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">us</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>      <span class="c1"># 5 microseconds</span>
+<span class="n">t3</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ms</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>      <span class="c1"># 1 millisecond</span>
+<span class="n">t4</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">s</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>     <span class="c1"># 0.5 seconds</span>
+<span class="n">t5</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ps</span><span class="p">(</span><span class="mi">250</span><span class="p">)</span>    <span class="c1"># 250 picoseconds</span>
+<span class="n">t6</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">fs</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span>   <span class="c1"># 1000 femtoseconds</span>
+<span class="n">t7</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">delta</span><span class="p">()</span>    <span class="c1"># Zero-time delta</span>
+</pre></div>
+</div>
+</section>
+<section id="timeunit">
+<h3>TimeUnit<a class="headerlink" href="#timeunit" title="Link to this heading">¶</a></h3>
+<p>Enumeration of supported time units:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">TimeUnit.S</span></code> - Seconds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TimeUnit.MS</span></code> - Milliseconds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TimeUnit.US</span></code> - Microseconds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TimeUnit.NS</span></code> - Nanoseconds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TimeUnit.PS</span></code> - Picoseconds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TimeUnit.FS</span></code> - Femtoseconds</p></li>
+</ul>
+</section>
+<section id="timebase-protocol">
+<h3>Timebase Protocol<a class="headerlink" href="#timebase-protocol" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Timebase</span></code> protocol defines the interface for simulation time control:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">wait(amt:</span> <span class="pre">Time)</span></code> - Suspend until time elapses</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">after(amt:</span> <span class="pre">Time,</span> <span class="pre">call:</span> <span class="pre">Callable)</span></code> - Schedule callback</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">time()</span> <span class="pre">-&gt;</span> <span class="pre">Time</span></code> - Get current simulation time</p></li>
+</ul>
+</section>
+</section>
+<section id="integer-types">
+<h2>Integer Types<a class="headerlink" href="#integer-types" title="Link to this heading">¶</a></h2>
+<p>Zuspec provides width-specified integer types using Python’s <code class="docutils literal notranslate"><span class="pre">Annotated</span></code> type.</p>
+<section id="predefined-types">
+<h3>Predefined Types<a class="headerlink" href="#predefined-types" title="Link to this heading">¶</a></h3>
+<p>Unsigned integers:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">uint1_t</span></code> through <code class="docutils literal notranslate"><span class="pre">uint8_t</span></code> - 1 to 8 bit unsigned</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">uint16_t</span></code>, <code class="docutils literal notranslate"><span class="pre">uint32_t</span></code>, <code class="docutils literal notranslate"><span class="pre">uint64_t</span></code> - 16, 32, 64 bit unsigned</p></li>
+</ul>
+<p>Signed integers:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">int8_t</span></code>, <code class="docutils literal notranslate"><span class="pre">int16_t</span></code>, <code class="docutils literal notranslate"><span class="pre">int32_t</span></code>, <code class="docutils literal notranslate"><span class="pre">int64_t</span></code></p></li>
+</ul>
+</section>
+<section id="width-specifiers">
+<h3>Width Specifiers<a class="headerlink" href="#width-specifiers" title="Link to this heading">¶</a></h3>
+<p>For custom widths, use <code class="docutils literal notranslate"><span class="pre">U(width)</span></code> for unsigned or <code class="docutils literal notranslate"><span class="pre">S(width)</span></code> for signed:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="c1"># Custom 24-bit unsigned integer</span>
+<span class="n">uint24_t</span> <span class="o">=</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">zdc</span><span class="o">.</span><span class="n">U</span><span class="p">(</span><span class="mi">24</span><span class="p">)]</span>
+
+<span class="c1"># Custom 12-bit signed integer</span>
+<span class="n">int12_t</span> <span class="o">=</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">zdc</span><span class="o">.</span><span class="n">S</span><span class="p">(</span><span class="mi">12</span><span class="p">)]</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyStruct</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">PackedStruct</span><span class="p">):</span>
+    <span class="n">field_a</span> <span class="p">:</span> <span class="n">uint24_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">field_b</span> <span class="p">:</span> <span class="n">int12_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="packedstruct">
+<h2>PackedStruct<a class="headerlink" href="#packedstruct" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">PackedStruct</span></code> represents bit-packed data structures where fields are
+packed contiguously in memory.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StatusReg</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">PackedStruct</span><span class="p">):</span>
+    <span class="n">valid</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint1_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">ready</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint1_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">count</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint8_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">data</span>  <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">uint16_t</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>PackedStruct instances support conversion to/from integers, enabling
+direct register read/write operations.</p>
+</section>
+<section id="memory-types">
+<h2>Memory Types<a class="headerlink" href="#memory-types" title="Link to this heading">¶</a></h2>
+<section id="memory-t">
+<h3>Memory[T]<a class="headerlink" href="#memory-t" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">Memory[T]</span></code> provides direct memory access with element-typed storage.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MemoryController</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="c1"># 1024-element memory of 32-bit values</span>
+    <span class="n">mem</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Memory</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Methods:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">read(addr:</span> <span class="pre">int)</span> <span class="pre">-&gt;</span> <span class="pre">T</span></code> - Read element at address</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">write(addr:</span> <span class="pre">int,</span> <span class="pre">data:</span> <span class="pre">T)</span></code> - Write element to address</p></li>
+</ul>
+</section>
+<section id="regfile">
+<h3>RegFile<a class="headerlink" href="#regfile" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">RegFile</span></code> is the base class for register file definitions.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ControlRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
+    <span class="n">status</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">control</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">data</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="reg-t">
+<h3>Reg[T]<a class="headerlink" href="#reg-t" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">Reg[T]</span></code> represents an individual register with async access methods.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Read and write registers</span>
+<span class="n">value</span> <span class="o">=</span> <span class="k">await</span> <span class="n">regs</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<span class="k">await</span> <span class="n">regs</span><span class="o">.</span><span class="n">control</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="mh">0x01</span><span class="p">)</span>
+
+<span class="c1"># Conditional wait</span>
+<span class="k">await</span> <span class="n">regs</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">when</span><span class="p">(</span><span class="k">lambda</span> <span class="n">v</span><span class="p">:</span> <span class="n">v</span> <span class="o">&amp;</span> <span class="mh">0x01</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Methods:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">read()</span> <span class="pre">-&gt;</span> <span class="pre">T</span></code> - Async read of register value</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">write(val:</span> <span class="pre">T)</span></code> - Async write to register</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">when(cond:</span> <span class="pre">Callable[[T],</span> <span class="pre">bool])</span></code> - Wait for condition</p></li>
+</ul>
+</section>
+<section id="addressspace">
+<h3>AddressSpace<a class="headerlink" href="#addressspace" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">AddressSpace</span></code> provides a software-centric view of memory, mapping
+multiple storage regions into a unified address space.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SoC</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">mem</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Memory</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">uint32_t</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mh">0x10000</span><span class="p">)</span>
+    <span class="n">regs</span> <span class="p">:</span> <span class="n">ControlRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">aspace</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">AddressSpace</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="p">{</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">aspace</span><span class="o">.</span><span class="n">mmap</span> <span class="p">:</span> <span class="p">(</span>
+            <span class="n">zdc</span><span class="o">.</span><span class="n">At</span><span class="p">(</span><span class="mh">0x0000_0000</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">mem</span><span class="p">),</span>
+            <span class="n">zdc</span><span class="o">.</span><span class="n">At</span><span class="p">(</span><span class="mh">0x1000_0000</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="at">
+<h3>At<a class="headerlink" href="#at" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">At</span></code> helper specifies an element’s location in an address space:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">zdc</span><span class="o">.</span><span class="n">At</span><span class="p">(</span><span class="n">offset</span><span class="o">=</span><span class="mh">0x1000_0000</span><span class="p">,</span> <span class="n">element</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="memif-protocol">
+<h3>MemIF Protocol<a class="headerlink" href="#memif-protocol" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">MemIF</span></code> defines the byte-level memory access interface:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">read8/16/32/64(addr)</span></code> - Read sized values</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">write8/16/32/64(addr,</span> <span class="pre">data)</span></code> - Write sized values</p></li>
+</ul>
+</section>
+<section id="addrhandle">
+<h3>AddrHandle<a class="headerlink" href="#addrhandle" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">AddrHandle</span></code> implements <code class="docutils literal notranslate"><span class="pre">MemIF</span></code> and provides a pointer-like abstraction
+for accessing an address space.</p>
+</section>
+</section>
+<section id="synchronization">
+<h2>Synchronization<a class="headerlink" href="#synchronization" title="Link to this heading">¶</a></h2>
+<section id="lock">
+<h3>Lock<a class="headerlink" href="#lock" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">Lock</span></code> provides a mutex for coordinating access to shared resources.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SharedResource</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">mutex</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Lock</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">process</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">worker</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">mutex</span><span class="p">:</span>
+            <span class="c1"># Critical section</span>
+            <span class="k">pass</span>
+</pre></div>
+</div>
+<p>Methods:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">acquire()</span></code> - Async acquire lock</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">release()</span></code> - Release lock</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">locked()</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code> - Check if locked</p></li>
+</ul>
+<p>Supports async context manager (<code class="docutils literal notranslate"><span class="pre">async</span> <span class="pre">with</span></code>).</p>
+</section>
+</section>
+<section id="pool-types">
+<h2>Pool Types<a class="headerlink" href="#pool-types" title="Link to this heading">¶</a></h2>
+<section id="pool-t-tc">
+<h3>Pool[T,Tc]<a class="headerlink" href="#pool-t-tc" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">Pool[T,Tc]</span></code> manages a collection of resources with matching and selection.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">pool</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>           <span class="c1"># Add item to pool</span>
+<span class="n">pool</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>          <span class="c1"># Get item by index</span>
+<span class="n">pool</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">cond</span><span class="p">)</span>    <span class="c1"># Find matching item</span>
+<span class="n">pool</span><span class="o">.</span><span class="n">selector</span> <span class="o">=</span> <span class="n">fn</span>       <span class="c1"># Set selection function</span>
+</pre></div>
+</div>
+</section>
+<section id="claimpool-t-tc">
+<h3>ClaimPool[T,Tc]<a class="headerlink" href="#claimpool-t-tc" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">ClaimPool</span></code> extends Pool with exclusive/shared locking:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lock(i)</span></code> - Acquire item for read-write access</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">share(i)</span></code> - Acquire item for read-only access</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">drop(i)</span></code> - Release item</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Core Types</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#component">Component</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#time-timing">Time &amp; Timing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#integer-types">Integer Types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#packedstruct">PackedStruct</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#memory-types">Memory Types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#synchronization">Synchronization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#pool-types">Pool Types</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="fields.html" title="previous chapter">Class Fields</a></li>
+      <li>Next: <a href="runtime.html" title="next chapter">Runtime Implementation (Developer)</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/types.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
