@@ -19,65 +19,59 @@
 import dataclasses
 import dataclasses as dc
 import enum
-from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic
-from .annotation import Annotation, AnnotationSync
-
+from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic, Literal
+from typing import dataclass_transform
 
 if TYPE_CHECKING:
-    from .api.type_processor import TypeProcessor
+    from .profiles import Profile
 
-def dataclass(cls, **kwargs):
-    # TODO: Add type annotations to decorated methods
-    cls_annotations = cls.__annotations__
 
-    for name, value in cls.__dict__.items():
-#        print("Name: %s ; Value: %s" % (name, value))
-        if isinstance(value, dc.Field) and not name in cls_annotations:
-            print("TODO: annotate field")
-            cls_annotations[name] = int
+@dataclass_transform()
+def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
+    """Decorator for defining zuspec dataclasses with optional profile enforcement.
+    
+    Args:
+        cls: Class being decorated (when used without parameters)
+        profile: Profile class defining validation rules (defaults to RetargetableProfile)
+        **kwargs: Additional arguments passed to dataclasses.dataclass
+    
+    Example:
+        from zuspec.dataclasses import dataclass, profiles
+        
+        @dataclass(profile=profiles.PythonProfile)
+        class MyClass:
+            x: int  # Allowed with Python profile
+        
+        @dataclass(profile=profiles.RetargetableProfile)
+        class MyRetargetableClass:
+            x: uint32_t  # Width-annotated type required
+    """
+    def decorator(cls):
+        # Store profile information in class metadata for mypy plugin
+        # The profile attribute is used by the MyPy plugin to determine
+        # which validation rules to apply
+        if profile is not None:
+            cls.__profile__ = profile
+        # If no profile specified, MyPy plugin will use DEFAULT_PROFILE
+        
+        # TODO: Add type annotations to decorated methods
+        cls_annotations = cls.__annotations__
 
-    cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
+        for name, value in cls.__dict__.items():
+    #        print("Name: %s ; Value: %s" % (name, value))
+            if isinstance(value, dc.Field) and not name in cls_annotations:
+                print("TODO: annotate field")
+                cls_annotations[name] = int
 
-    setattr(cls_t, "__base_init__", getattr(cls_t, "__init__"))
-    def local_init(self, tp=None, *args, **kwargs):
-        """Only called during type processing"""
-        if tp is None:
-            raise Exception("Zuspec types cannot be directly constructed")
+        cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
-        if not hasattr(tp, "init"):
-            raise Exception("Type-processor parameter is missing 'init'")
-
-        return tp.init(self, *args, **kwargs)
-    setattr(cls_t, "__init__", local_init)
-
-    if not hasattr(cls_t, "__base_new__"):
-        setattr(cls_t, "__base_new__", getattr(cls_t, "__new__"))
-        def local_new(c, tp=None, *args, **kwargs):
-            """Always called during user-object construction"""
-            if tp is None:
-                raise Exception("Zuspec types cannot be directly constructed")
-            return tp.new(c, *args, **kwargs)
-        setattr(cls_t, "__new__", local_new)
-
-    return cls_t
-
-def bundle():
-    return dc.field()
-
-def mirror():
-    return dc.field()
-
-def monitor():
-    return dc.field()
-
-BindT = TypeVarTuple('BindT')
-
-#class bind(Generic[*BindT]):
-#    """Helper class for specifying binds. Ensures that the parameter
-#     passed to the lambda is identified as the class type
-#    """
-#    def __init__(self, c : Callable[[*BindT],Dict[Any,Any]]):
-#        self._c = c
+        return cls_t
+    
+    # Handle both @dataclass and @dataclass(...) syntax
+    if cls is None:
+        return decorator
+    else:
+        return decorator(cls)
 
 class bind[Ts,Ti]:
     """Helper class for specifying binds. Ensures that the parameter
@@ -86,66 +80,47 @@ class bind[Ts,Ti]:
     def __init__(self, c : Callable[[Ts,Ti],Dict[Any,Any]]):
         self._c = c
 
-class binder(object):
-    def __init__(self, c : Callable):
-        pass
-
 def field(
         rand=False, 
-        bind : Optional[Callable[[object],Dict[Any,Any]]] = None,
         init : Optional[Union[Dict[str,Any], Callable[[object],Dict[Any,Any]]]] = None,
         default_factory : Optional[Any] = None,
-        default : Optional[Any] = None):
+        default : Optional[Any] = None,
+        metadata : Optional[Dict[str,object]]=None,
+        size : Optional[int]=None,
+        bounds : Optional[tuple]=None,
+        width=None):
+    """Field declaration for structs and bundles.
+    
+    Args:
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+               May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
+    """
     args = {}
-    metadata = None
-
-#     # Obtain the location of this call
-#     import inspect
-#     frame = inspect.currentframe()
-#     print("--> ")
-#     while frame is not None:
-#         modname = frame.f_globals["__name__"]
-
-#         print("modname: %s" % modname)
-#         if not modname.startswith("zuspec.dataclasses") and not modname.startswith("importlib"):
-#             break
-# #            pass
-# #            frame = frame.f_back
-#         else:
-#             frame = frame.f_back
-#     print("<-- ")
-
-#     if frame is not None:
-#         print("Location: %s:%d" % (frame.f_code.co_filename, frame.f_lineno))
 
     if default_factory is not None:
         args["default_factory"] = default_factory
 
-    if bind is not None:
-        metadata = {} if metadata is None else metadata
-        metadata["bind"] = bind
-
     # *Always* specify a default to avoid becoming a required field
     if "default_factory" not in args.keys():
         args["default"] = default
+    
+    if size is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["size"] = size
+    
+    if bounds is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["bounds"] = bounds
+    
+    if width is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["width"] = width
 
     if metadata is not None:
-        print("metadata: %s" % metadata)
         args["metadata"] = metadata
+
     return dc.field(**args)
     
-    # @staticmethod
-    # def __call__(rand=False, bind : Callable[[T],Dict[Any,Any]] = None):
-    #     pass
-
-    # """
-    # Marks a plain data field
-    # - rand -- Marks the field as being randomizable
-    # - 
-    # """
-    # # TODO: 
-    # return dc.field()
-
 class Input(object): 
     """Marker type for 'input' dataclass fields"""
     ...
@@ -154,35 +129,121 @@ class Output(object):
     """Marker type for 'output' dataclass fields"""
     ...
 
-def input(*args, **kwargs):
-    """
-    Marks an input field. Input fields declared on a 
-    top-level component are `bound` to an implicit output. Those
-    on non-top-level components must explicitly be `bound` to an 
-    output. An input field sees the value of the output field 
-    to which it is bound with no delay
-    """
-    return dataclasses.field(default_factory=Input)
+def input(*args, width=None, **kwargs) -> Any:
+    """Marks an input field.
 
-def output(*args, **kwargs):
+    Args:
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+               May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
     """
-    Marks an output field. Input fields that are bound to
-    an output field always see its current output value 
-    with no delay.
+    metadata = {}
+    if width is not None:
+        metadata["width"] = width
+    return dataclasses.field(default_factory=Input, metadata=metadata if metadata else None)
+
+def output(*args, width=None, **kwargs) -> Any:
+    """Marks an output field.
+
+    Args:
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+               May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
     """
-    return dc.field(default_factory=Output)
+    metadata = {}
+    if width is not None:
+        metadata["width"] = width
+    return dc.field(default_factory=Output, metadata=metadata if metadata else None)
 
-def lock(*args, **kwargs):
-    return dc.field(default_factory=Lock)
 
-def share(*args, **kwargs):
-    return dc.field(default_factory=Share)
+def const(default=None) -> Any:
+    """Marks a post-construction constant.
+
+    Used primarily for configuration and bundle/interface parameters.
+    """
+    return dc.field(default=default, metadata={"kind": "const"})
+
+
+def bundle(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+    ) -> Any:
+    """Marks a field as a bundle/interface with declared directionality."""
+    metadata = {"kind": "bundle"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
+    return dc.field(init=False, default_factory=default_factory, metadata=metadata)
+
+
+def mirror(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+    ) -> Any:
+    """Marks a field as a bundle/interface with flipped directionality."""
+    metadata = {"kind": "mirror"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
+    return dc.field(init=False, default_factory=default_factory, metadata=metadata)
+
+
+def monitor(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None
+    ) -> Any:
+    """Marks a field as a bundle/interface for passive monitoring."""
+    metadata = {"kind": "monitor"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
+    return dc.field(init=False, default_factory=default_factory, metadata=metadata)
 
 def port():
-    return dc.field()
+    """A 'port' field is an API consumer. It must be bound
+    to a matching 'export' field that provides an implementation
+    of the API"""
+    return dc.field(init=False, metadata={"kind": "port"})
 
-def export(*args, bind=None, **kwargs):
-    return dc.field(*args, **kwargs)
+def export():
+    """An 'export' field is an API provider. It must be bound
+    to implementations of the API class -- either per method 
+    or on a whole-class basis."""
+    return dc.field(init=False, metadata={"kind": "export"})
+
+def inst(
+        default_factory=dc.MISSING,
+        kwargs: Optional[Union[Dict[str, Any], Callable[[object], Dict[str, Any]]]] = None,
+        elem_factory: Optional[Union[type, Callable[[object], Any]]] = None,
+        size: Optional[int] = None
+    ):
+    """Instance attributes are automatically constructed based on the annotated type.
+    
+    Args:
+        default_factory: Factory function to create the instance
+        kwargs: Dict or lambda returning dict with constructor arguments
+        elem_factory: For container types, factory for creating elements
+        size: For container types, size of the container
+    """
+    metadata = {"kind": "instance"}
+    if kwargs is not None:
+        metadata["kwargs"] = kwargs
+    if elem_factory is not None:
+        metadata["elem_factory"] = elem_factory
+    if size is not None:
+        metadata["size"] = size
+    return dc.field(
+        init=False,
+        default_factory=default_factory,
+        metadata=metadata)
+
+def tuple(size=0, elem_factory=None):
+    """Fixed-size tuple field.
+
+    Note: element construction is handled by the runtime.
+    """
+    metadata = {"kind": "tuple"}
+    if size is not None and size != 0:
+        metadata["size"] = size
+    if elem_factory is not None:
+        metadata["elem_factory"] = elem_factory
+    return dc.field(init=False, metadata=metadata)
+
 
 class ExecKind(enum.Enum):
     Comb = enum.auto()
@@ -196,106 +257,89 @@ class Exec(object):
 #    timebase : Optional[Callable] = field(default=None)
 #    t : Optional[Callable] = field(default=None)
 
-def extern(
-    typename,
-    bind,
-    files=None,
-    params=None):
-    """
-    Denotes an instance of an external module
-    """
-    from .struct import Extern
-    return dc.field(default_factory=Extern,
-                    metadata=dict(
-                        typename=typename,
-                        bind=bind,
-                        files=files,
-                        params=params))
-
 class ExecProc(Exec): pass
+
+@dc.dataclass
+class ExecSync(Exec):
+    """Synchronous process"""
+    clock : Optional[Callable] = dc.field(default=None)
+    reset : Optional[Callable] = dc.field(default=None)
+
+@dc.dataclass
+class ExecComb(Exec):
+    """Combinational process"""
+    pass
 
 def process(T):
     """
     Marks an always-running process. The specified
-    method must be `async` and take no arguments
+    method must be `async` and take no arguments. The
+    process is started when the component containing 
+    it begins to run.
     """
+    # Datamodel Mapping
     return ExecProc(T)
 
-def reg(offset=0):
-    return dc.field()
-    pass
-
-def const(default=None):
-    return dc.field()
-
-@dc.dataclass
-class ExecSync(Exec):
-    clock : Optional[Callable] = field(default=None)
-    reset : Optional[Callable] = field(default=None)
-
-def sync(clock : Callable, reset : Callable):
+def sync(clock: Callable = None, reset: Callable = None):
     """
-    Marks a synchronous-evaluation region, which is evaluated on 
-    the active edge of either the clock or reset.
-
-    The semantics of a `sync` method differ from native Python.
-    Assignments are delayed/nonblocking: they only take effect after
-    evaluation of the method completes. If a variable is assigned multiple times
-    within a sync method, only the last assignment to that variable in the method
-    is applied for that cycle. Earlier assignments are ignored. Augmented
-    assignments (eg +=) are treated the same as regular assignments.
-
-    @zdc.sync
-    def _update(self):
-      self.val1 = self.val1 + 1
-      self.val1 = self.val1 + 1
-      self.val2 += 1
-      self.val2 += 1
-
-    In the example above, both val1 and val2 will only be increased by one
-    each time _update is evaluated.
+    Decorator for synchronous processes.
+    
+    The process is evaluated on positive edge of clock or reset.
+    Assignments in sync processes are deferred - they take effect
+    after the method completes but before next evaluation.
+    
+    Args:
+        clock: Lambda expression that returns clock signal reference
+        reset: Lambda expression that returns reset signal reference
+        
+    Example:
+        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
+        def _count(self):
+            if self.reset:
+                self.count = 0
+            else:
+                self.count += 1
     """
-    def __call__(T):
-        return ExecSync(method=T, clock=clock, reset=reset)
-    return __call__
+    def decorator(method):
+        return ExecSync(method=method, clock=clock, reset=reset)
+    return decorator
 
-def comb(latch : bool=False):
+def comb(method):
     """
-    Marks a combinational evaluation region that is evaluated 
-    whenever one of the variables read by the method changes.
+    Decorator for combinational processes.
+    
+    The process is re-evaluated whenever any of the signals it reads change.
+    Assignments in comb processes take effect immediately.
+    
+    Example:
+        @zdc.comb
+        def _calc(self):
+            self.out = self.a ^ self.b
     """
-    def __call__(T):
-        return Exec(method=T, kind=ExecKind.Comb, )
-    return __call__
+    return ExecComb(method=method)
 
-@dc.dataclass
-class ExecState(Exec): pass
+def invariant(func):
+    """Decorator to mark a method as a structural invariant.
+    
+    The decorated method should return a boolean expression that must 
+    always hold for valid instances of the dataclass.
+    
+    Example:
+        @zdc.dataclass
+        class Config(zdc.Struct):
+            x: zdc.uint8_t = zdc.field(bounds=(0, 100))
+            y: zdc.uint8_t = zdc.field(bounds=(0, 100))
+            
+            @zdc.invariant
+            def sum_constraint(self) -> bool:
+                return self.x + self.y <= 150
+    
+    Args:
+        func: Method that returns bool
+        
+    Returns:
+        Decorated function with _is_invariant flag set
+    """
+    func._is_invariant = True
+    return func
 
-class FSM(object):
-    """Declares a method-based FSM"""
-    state : ExecState = field(default_factory=ExecState)
-
-class fsm(object):
-
-    def __new__(cls, 
-                 initial : ExecState,
-                 clock : Optional[Callable] = None,
-                 reset : Optional[Callable] = None) -> dc.Field:
-        """Defines the parameters of an FSM field"""
-        return dc.field(
-            metadata=dict(initial=initial, clock=clock, reset=reset),
-            default_factory=FSM)
-
-    @staticmethod
-    def state(T):
-        """Decorates an FSM state method. A state method is automatically
-        invoked on an active clock edge when the state machine that this
-        method is a member of is in the appropriate state. FSM state 
-        methods are non-blocking assignment regions just like sync exec blocks.
-        State methods cannot be called directly"""
-        return ExecState(method=T)
-
-
-def constraint(T):
-    setattr(T, "__constraint__", True)
-    return T

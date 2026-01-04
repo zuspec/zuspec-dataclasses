@@ -1,0 +1,69 @@
+{
+  "timestamp": "20251213_020225",
+  "results": [
+    {
+      "name": "Small/Fast (1K @ 1ns)",
+      "num_transfers": 1000,
+      "clock_period_ns": 1,
+      "wall_time": 0.0035211859503760934,
+      "throughput": 283995.2260667152,
+      "sim_time_ns": 24000.0
+    },
+    {
+      "name": "Small/Slow (1K @ 100ns)",
+      "num_transfers": 1000,
+      "clock_period_ns": 100,
+      "wall_time": 0.0034221569658257067,
+      "throughput": 292213.36425715865,
+      "sim_time_ns": 2400000.0
+    },
+    {
+      "name": "Medium/Medium (10K @ 10ns)",
+      "num_transfers": 10000,
+      "clock_period_ns": 10,
+      "wall_time": 0.032966515980660915,
+      "throughput": 303338.0902569832,
+      "sim_time_ns": 2400000.0
+    },
+    {
+      "name": "Large/Fast (50K @ 1ns)",
+      "num_transfers": 50000,
+      "clock_period_ns": 1,
+      "wall_time": 0.13932416099123657,
+      "throughput": 358875.2994761977,
+      "sim_time_ns": 1200000.0
+    },
+    {
+      "name": "Large/Medium (50K @ 10ns)",
+      "num_transfers": 50000,
+      "clock_period_ns": 10,
+      "wall_time": 0.12978345999727026,
+      "throughput": 385257.10441878845,
+      "sim_time_ns": 12000000.0
+    },
+    {
+      "name": "Large/Slow (50K @ 100ns)",
+      "num_transfers": 50000,
+      "clock_period_ns": 100,
+      "wall_time": 0.12773852999089286,
+      "throughput": 391424.5764654154,
+      "sim_time_ns": 120000000.0
+    },
+    {
+      "name": "Very Large (100K @ 10ns)",
+      "num_transfers": 100000,
+      "clock_period_ns": 10,
+      "wall_time": 0.256469312007539,
+      "throughput": 389910.19711964787,
+      "sim_time_ns": 24000000.0
+    },
+    {
+      "name": "Stress Test (200K @ 1ns)",
+      "num_transfers": 200000,
+      "clock_period_ns": 1,
+      "wall_time": 0.5139146959991194,
+      "throughput": 389169.6453847716,
+      "sim_time_ns": 4800000.0
+    }
+  ]
+}

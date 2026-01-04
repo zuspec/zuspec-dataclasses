@@ -1,115 +1,261 @@
-
-from __future__ import annotations
+import asyncio
 import pytest
 import zuspec.dataclasses as zdc
-from typing import Dict, Optional, Self, Type
-
-def test_smoke():
 
 
-    @zdc.dataclass
-    class WishboneInitiator(zdc.Bundle):
-        ADR_WIDTH : int = zdc.const(default=32)
-        DAT_WIDTH : int = zdc.const(default=32)
-        adr : zdc.Bits = zdc.output(init=dict(width=lambda s:s.ADR_WIDTH))
-        dat_w : zdc.Bits = zdc.output(init=dict(width=lambda s:s.DAT_WIDTH))
-        dat_r : zdc.Bits = zdc.input(init=dict(width=lambda s:s.DAT_WIDTH))
-        cyc : zdc.Bit = zdc.output()
-        err : zdc.Bit = zdc.input()
-        sel : zdc.Bits = zdc.output(init=dict(width=lambda s:int(s.DAT_WIDTH/8)))
-        stb : zdc.Bit = zdc.output()
-        ack : zdc.Bit = zdc.input()
-        we : zdc.Bit = zdc.output()
-
-        @staticmethod
-        def idle(b : WishboneInitiator):
-            b.adr = 0
-            b.dat_w = 0
-            b.cyc = 0
-            b.sel = 0
-            b.stb = 0
-            b.we = 0
-
-        @staticmethod
-        def idle_mirror(b : WishboneInitiator):
-            b.dat_r = 0
-            b.err = 0
-            b.ack = 0
+def test_bundle():
+    """Test bundle(), mirror(), and const() directionality plus clock/reset binding."""
 
     @zdc.dataclass
-    class Initiator(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
-        wb_i : WishboneInitiator = zdc.field()
-        _state : zdc.Int = zdc.field()
-
-        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
-        def _initiator_proc(self):
-            if (self.reset):
-                self._state = 0
-                WishboneInitiator.idle(self.wb_i)
-            else:
-                if self._state == 0:
-                    self.wb_i.cyc = 1
-                    self.wb_i.stb = 1
-                    self._state = 1
-                elif self._state == 1:
-                    if self.wb_i.ack == 1:
-                        self._state = 0
+    class ReqRsp(zdc.Struct):
+        DATA_WIDTH: zdc.uint32_t = zdc.const(default=32)
+        req: zdc.bv = zdc.output(width=lambda s:s.DATA_WIDTH)
+        rsp: zdc.bv = zdc.input(width=lambda s:s.DATA_WIDTH)
 
     @zdc.dataclass
-    class Consumer(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
-        wb_t : WishboneInitiator = zdc.mirror()
-        _state : zdc.Int = zdc.field()
+    class Prod(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        reset: zdc.bit = zdc.input()
+        io: ReqRsp = zdc.bundle()
 
-        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
-        def _consumer_proc(self):
+        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        def _tick(self):
             if self.reset:
-                self._state = 0
-                WishboneInitiator.idle_mirror(self.wb_t)
+                self.io.req = 0
             else:
-                if self._state == 0:
-                    self.wb_t.ack = 0
-                    if self.wb_t.cyc and self.wb_t.stb:
-                        self._state = 1
-                elif self._state == 1:
-                    self._state = 2
-                elif self._state == 2:
-                    self._state = 3
-                elif self._state == 3:
-                    self.wb_t.ack = 1
+                self.io.req = self.io.req + 1
+
+    @zdc.dataclass
+    class Cons(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        reset: zdc.bit = zdc.input()
+        tick_cnt: zdc.uint32_t = zdc.field(default=0)
+        io: ReqRsp = zdc.mirror()
+
+        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        def _tick(self):
+            if self.reset:
+                self.tick_cnt = 0
+            else:
+                self.tick_cnt = self.tick_cnt + 1
+
+        # Read producer request and drive a modified response
+        # Note: since this is sync logic with deferred-assignment semantics,
+        # rsp will trail req by one clock.
+        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        def _rsp(self):
+            if self.reset:
+                self.io.rsp = 0
+            else:
+                self.io.rsp = self.io.req + 2
 
     @zdc.dataclass
     class Top(zdc.Component):
-        clock : zdc.Bit = zdc.input()
-        reset : zdc.Bit = zdc.input()
-        initiator : Initiator = zdc.field(bind=zdc.bind[Self,Initiator](lambda s,f:{
-            f.clock : s.clock,
-            f.reset : s.reset,
-            f.wb_i : s.consumer.wb_t,
-            
-        }))
+        clock: zdc.bit = zdc.input()
+        reset: zdc.bit = zdc.input()
+        prod: Prod = zdc.inst()
+        cons: Cons = zdc.inst()
 
-        consumer : Consumer = zdc.field()
-
-        def __bind__(self) -> Optional[Dict]:
-            return {
-                self.initiator.clock : self.consumer.clock,
-                self.initiator.reset : self.consumer.reset,
-                self.initiator.wb_i : self.consumer.wb_t
-            }
+        # Ensure eval infrastructure is initialized so signal bindings propagate
+        @zdc.comb
+        def _noop(self):
             pass
 
-        @staticmethod
-        def dobind(s : Top, i : Initiator) -> Dict:
-            return {
-            }
+        def __bind__(self):
+            # Order matters: bind clock to consumer first so it samples req
+            # before the producer updates it on the same edge.
+            return (
+                (self.cons.clock, self.clock),
+                (self.cons.reset, self.reset),
+                (self.prod.clock, self.clock),
+                (self.prod.reset, self.reset),
+                (self.prod.io, self.cons.io),
+            )
 
-        consumer : Consumer = zdc.field(bind=zdc.bind[Self,Consumer](lambda s,i:{
-            i.clock : s.clock,
-            i.clock : s.reset,
-        }))
+    top = Top()
+
+    assert top.prod.io is not top.cons.io
+    assert top.prod.io.DATA_WIDTH == 32
+
+    async def tick():
+        top.clock = 1
+        await top.wait(zdc.Time.delta())
+        top.clock = 0
+        await top.wait(zdc.Time.delta())
+
+    async def run():
+        # NOTE: at top-level, signals may only be driven from async context.
+        # Propagation occurs when we call wait().
+
+        top.clock = 0
+        top.reset = 1
+        await top.wait(zdc.Time.delta())
+
+        # While in reset, a clock edge should keep outputs at reset values
+        await tick()
+        assert top.prod.io.req == 0
+        assert top.cons.io.req == 0
+        assert top.cons.io.rsp == 0
+        assert top.prod.io.rsp == 0
+        assert top.cons.tick_cnt == 0
+
+        # Release reset and run a few cycles
+        top.reset = 0
+        await top.wait(zdc.Time.delta())
+
+        for i in range(3):
+            await tick()
+            exp_req = (i+1)
+            assert top.prod.io.req == exp_req
+            assert top.cons.io.req == exp_req
+            exp_rsp = exp_req + 1
+            assert top.cons.io.rsp == exp_rsp
+            assert top.prod.io.rsp == exp_rsp
+            assert top.cons.tick_cnt == exp_req
+
+        # Directionality checks (still enforced)
+        with pytest.raises(AttributeError):
+            top.prod.io.rsp = 0x1
+        with pytest.raises(AttributeError):
+            top.cons.io.req = 0x2
+
+    asyncio.run(run())
+
+def test_bundle_signal_bind():
+    """Test bundle(), mirror(), and const() directionality plus clock/reset binding."""
+
+    @zdc.dataclass
+    class ReqRsp(zdc.Struct):
+        DATA_WIDTH: zdc.uint32_t = zdc.const(default=32)
+        req: zdc.bv = zdc.output(width=lambda s:s.DATA_WIDTH)
+        rsp: zdc.bv = zdc.input(width=lambda s:s.DATA_WIDTH)
+
+    @zdc.dataclass
+    class Prod(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        reset: zdc.bit = zdc.input()
+        io: ReqRsp = zdc.bundle()
+
+        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        def _tick(self):
+            if self.reset:
+                self.io.req = 0
+            else:
+                self.io.req = self.io.req + 1
+
+    @zdc.dataclass
+    class Data(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        reset: zdc.bit = zdc.input()
+        req : zdc.u32 = zdc.input()
+        rsp : zdc.u32 = zdc.output()
+
+        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        def _rsp(self):
+            if self.reset:
+                self.rsp = 0
+            else:
+                self.rsp = self.req + 2
+
+    @zdc.dataclass
+    class Cons(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        reset: zdc.bit = zdc.input()
+        tick_cnt: zdc.uint32_t = zdc.field(default=0)
+        io: ReqRsp = zdc.mirror()
+        _dat : Data = zdc.inst()
+
+        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        def _tick(self):
+            if self.reset:
+                self.tick_cnt = 0
+            else:
+                self.tick_cnt = self.tick_cnt + 1
+
+        def __bind__(self): return (
+            (self.clock, self._dat.clock),
+            (self.reset, self._dat.reset),
+            (self.io.req, self._dat.req),
+            (self.io.rsp, self._dat.rsp),
+        )
+
+        # Read producer request and drive a modified response
+        # Note: since this is sync logic with deferred-assignment semantics,
+        # rsp will trail req by one clock.
+
+    @zdc.dataclass
+    class Top(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        reset: zdc.bit = zdc.input()
+        prod: Prod = zdc.inst()
+        cons: Cons = zdc.inst()
+
+        # Ensure eval infrastructure is initialized so signal bindings propagate
+        @zdc.comb
+        def _noop(self):
+            pass
+
+        def __bind__(self):
+            # Order matters: bind clock to consumer first so it samples req
+            # before the producer updates it on the same edge.
+            return (
+                (self.cons.clock, self.clock),
+                (self.cons.reset, self.reset),
+                (self.prod.clock, self.clock),
+                (self.prod.reset, self.reset),
+                (self.prod.io, self.cons.io),
+            )
+
+    top = Top()
+
+    assert top.prod.io is not top.cons.io
+    assert top.prod.io.DATA_WIDTH == 32
+
+    async def tick():
+        top.clock = 1
+        await top.wait(zdc.Time.delta())
+        top.clock = 0
+        await top.wait(zdc.Time.delta())
+
+    async def run():
+        # NOTE: at top-level, signals may only be driven from async context.
+        # Propagation occurs when we call wait().
+
+        top.clock = 0
+        top.reset = 1
+        await top.wait(zdc.Time.delta())
+
+        # While in reset, a clock edge should keep outputs at reset values
+        await tick()
+        assert top.prod.io.req == 0
+        assert top.cons.io.req == 0
+        assert top.cons.io.rsp == 0
+        assert top.prod.io.rsp == 0
+        assert top.cons.tick_cnt == 0
+
+        # Release reset and run a few cycles
+        top.reset = 0
+        await top.wait(zdc.Time.delta())
+
+        for i in range(3):
+            await tick()
+            exp_req = (i+1)
+            assert top.prod.io.req == exp_req
+            assert top.cons.io.req == exp_req
+            exp_rsp = exp_req + 1
+            assert top.cons.io.rsp == exp_rsp
+            assert top.prod.io.rsp == exp_rsp
+            assert top.cons.tick_cnt == exp_req
+
+        # Directionality checks (still enforced)
+        with pytest.raises(AttributeError):
+            top.prod.io.rsp = 0x1
+        with pytest.raises(AttributeError):
+            top.cons.io.req = 0x2
+
+    asyncio.run(run())
 
 
+if __name__ == "__main__":
+    test_bundle()
+    print("\n✓ test_bundle passed!")

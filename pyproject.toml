@@ -7,8 +7,16 @@ version = "0.0.1"
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
-[tool.mypy]
-mypy_path = "src"
+[project.entry-points."flake8.extension"]
+ZDC = "zuspec.dataclasses.flake8_zdc_struct:ZuspecFlake8Plugin"
+
+[project.entry-points."zuspec.ir_checkers"]
+Retargetable = "zuspec.dataclasses.ir_checker.retargetable:RetargetableIRChecker"
+Python = "zuspec.dataclasses.ir_checker.python_profile:PythonIRChecker"
+
+[project.entry-points."zuspec.profiles"]
+Retargetable = "zuspec.dataclasses.profiles:RetargetableProfile"
+Python = "zuspec.dataclasses.profiles:PythonProfile"
 
 [tool.setuptools.package-data]
 "zuspec.dataclasses" = [
