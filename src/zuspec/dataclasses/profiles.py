@@ -131,6 +131,11 @@ class PythonProfile(Profile):
     def get_checker(cls) -> Optional[ProfileChecker]:
         # No restrictions - use default MyPy behavior
         return None
+    
+    @classmethod
+    def get_name(cls) -> str:
+        """Return the canonical name without 'Profile' suffix."""
+        return 'Python'
 
 
 class RetargetableChecker:
@@ -652,6 +657,11 @@ class RetargetableProfile(Profile):
     @classmethod
     def get_checker(cls) -> Optional[ProfileChecker]:
         return RetargetableChecker()
+    
+    @classmethod
+    def get_name(cls) -> str:
+        """Return the canonical name without 'Profile' suffix."""
+        return 'Retargetable'
 
 
 # Default profile - Retargetable is the default as specified in profiles.md

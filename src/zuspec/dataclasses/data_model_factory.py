@@ -608,6 +608,9 @@ class DataModelFactory(object):
                     from .ir.expr import ExprLambda
                     kwargs_expr = ExprLambda(callable=kwargs_val)
             
+            # Try to get source location for this field
+            field_loc = self._get_field_location(t, f.name)
+            
             # Create FieldInOut for input/output ports, otherwise regular Field
             if is_input_port or is_output_port:
                 field_dm = FieldInOut(
@@ -617,7 +620,8 @@ class DataModelFactory(object):
                     is_out=is_output_port,  # True for output, False for input
                     width_expr=width_expr,
                     kwargs_expr=kwargs_expr,
-                    is_const=is_const
+                    is_const=is_const,
+                    loc=field_loc
                 )
             else:
                 field_dm = Field(
@@ -626,11 +630,57 @@ class DataModelFactory(object):
                     kind=kind,
                     width_expr=width_expr,
                     kwargs_expr=kwargs_expr,
-                    is_const=is_const
+                    is_const=is_const,
+                    loc=field_loc
                 )
             fields.append(field_dm)
         
         return fields
+
+    def _get_field_location(self, cls: Type, field_name: str) -> Optional['Loc']:
+        """
+        Get source location for a field in a class.
+        
+        Uses AST parsing to find the field definition and extract line/column info.
+        """
+        try:
+            import inspect
+            import ast
+            from .ir.base import Loc
+            
+            # Get source file and lines
+            source_lines, start_lineno = inspect.getsourcelines(cls)
+            source_file = inspect.getsourcefile(cls)
+            source = ''.join(source_lines)
+            
+            # Parse the source
+            tree = ast.parse(source)
+            
+            # Find the class definition
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name == cls.__name__:
+                    # Find the field annotation
+                    for stmt in node.body:
+                        if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                            if stmt.target.id == field_name:
+                                # Found it! Calculate actual line number
+                                actual_lineno = start_lineno + stmt.lineno - 1
+                                return Loc(
+                                    file=source_file,
+                                    line=actual_lineno,
+                                    pos=stmt.col_offset
+                                )
+            
+            # If not found in annotations, might be a method or property
+            # Return class location as fallback
+            return Loc(
+                file=source_file,
+                line=start_lineno,
+                pos=0
+            )
+        except Exception as e:
+            # If we can't get location, return None (will default to line 1)
+            return None
 
     def _resolve_field_type(self, field_type) -> DataType:
         """Resolve a field type annotation to a DataType."""

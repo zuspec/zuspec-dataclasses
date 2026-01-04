@@ -17,8 +17,8 @@ hierarchy (for example, in a test) must be done using the runtime factory.
 
     @zdc.dataclass
     class Top(zdc.Component):
-        clock : zdc.uint1_t = zdc.input()
-        reset : zdc.uint1_t = zdc.input()
+        clock : zdc.bit = zdc.input()
+        reset : zdc.bit = zdc.input()
 
     # Create root component - triggers full tree elaboration
     top_i = Top()
@@ -72,14 +72,14 @@ mappings between ports.
 
     @zdc.dataclass
     class Initiator(zdc.Component):
-        clock : zdc.uint1_t = zdc.input()
-        reset : zdc.uint1_t = zdc.input()
+        clock : zdc.bit = zdc.input()
+        reset : zdc.bit = zdc.input()
         wb_i : WishboneInitiator = zdc.field()
 
     @zdc.dataclass
     class Top(zdc.Component):
-        clock : zdc.uint1_t = zdc.input()
-        reset : zdc.uint1_t = zdc.input()
+        clock : zdc.bit = zdc.input()
+        reset : zdc.bit = zdc.input()
         initiator : Initiator = zdc.field(bind=zdc.bind[Self,Initiator](lambda s,f:{
             f.clock : s.clock,
             f.reset : s.reset,
@@ -97,14 +97,14 @@ to the parent class `self` and a handle to the field
 
     @zdc.dataclass
     class Initiator(zdc.Component):
-        clock : zdc.uint1_t = zdc.input()
-        reset : zdc.uint1_t = zdc.input()
+        clock : zdc.bit = zdc.input()
+        reset : zdc.bit = zdc.input()
         wb_i : WishboneInitiator = zdc.field()
 
     @zdc.dataclass
     class Top(zdc.Component):
-        clock : zdc.uint1_t = zdc.input()
-        reset : zdc.uint1_t = zdc.input()
+        clock : zdc.bit = zdc.input()
+        reset : zdc.bit = zdc.input()
         initiator : Initiator = zdc.field()
         
         def __bind__(self): return {
@@ -127,12 +127,12 @@ using the ``At`` helper to specify address offsets.
 
     @zdc.dataclass
     class ControlRegs(zdc.RegFile):
-        status : zdc.Reg[zdc.uint32_t] = zdc.field()
-        control : zdc.Reg[zdc.uint32_t] = zdc.field()
+        status : zdc.Reg[zdc.u32] = zdc.field()
+        control : zdc.Reg[zdc.u32] = zdc.field()
 
     @zdc.dataclass
     class SoC(zdc.Component):
-        mem : zdc.Memory[zdc.uint32_t] = zdc.field(size=0x10000)
+        mem : zdc.Memory[zdc.u32] = zdc.field(size=0x10000)
         regs : ControlRegs = zdc.field()
         aspace : zdc.AddressSpace = zdc.field()
 
@@ -192,9 +192,9 @@ The `@sync` exec is exclusively used with RTL descriptions
     import zuspec.dataclasses as zdc
     @zdc.dataclass
     class Counter(zdc.Component):
-      clock : zdc.uint1_t = zdc.input()
-      reset : zdc.uint1_t = zdc.input()
-      count : zdc.uint32_t = zdc.output()
+      clock : zdc.bit = zdc.input()
+      reset : zdc.bit = zdc.input()
+      count : zdc.u32 = zdc.output()
 
       @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
       def inc(self):

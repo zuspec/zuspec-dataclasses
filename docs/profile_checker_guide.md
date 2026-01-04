@@ -1,5 +1,17 @@
 # Profile Checker User Guide
 
+.. warning::
+   **DEPRECATED:** This mypy-based profile checker is deprecated as of version 2026.1.
+   
+   Please use the new **flake8-based IR Checker** instead, which provides:
+   
+   * Better integration with VSCode
+   * Accurate source locations
+   * Extensibility via entrypoints
+   * Works with flake8 tooling
+   
+   See the :doc:`checker` documentation for the new system.
+
 ## Overview
 
 The zuspec-dataclasses profile checker system allows you to define and enforce different validation rules for your dataclasses. Profiles enable you to specify what Python constructs are allowed, ensuring your code meets specific requirements (e.g., hardware synthesis, code generation to other languages).

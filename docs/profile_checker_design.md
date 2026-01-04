@@ -1,4 +1,16 @@
-# Profile Checker Interface Design
+# Profile Checker Interface Design (MyPy-based - DEPRECATED)
+
+.. warning::
+   **DEPRECATED:** This design document describes the deprecated mypy-based profile checker.
+   
+   The new IR-based checker (version 2026.1+) uses a different architecture:
+   
+   * Works with **flake8** instead of mypy
+   * Validates the **IR** (Intermediate Representation) instead of Python AST
+   * Uses **entrypoints** for registration instead of mypy plugins
+   * Provides **accurate source locations** for errors
+   
+   See :doc:`checker` for the current design.
 
 ## Overview
 
