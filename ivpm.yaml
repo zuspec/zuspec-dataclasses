@@ -5,15 +5,6 @@ package:
     dep-sets:
     - name: default-dev
       deps:
-        #      - name: pyvsc-dataclasses
-        #        url: https://github.com/vsc-tools/pyvsc-dataclasses.git
-          #      - name: pytypeworks
-          #        url: https://github.com/mballance/pytypeworks.git
-          #      - name: zuspec-arl-dm
-          #        url: https://github.com/zuspec/zuspec-arl-dm.git
-          #- name: zuspec-dm
-          #url: https://github.com/zuspec/zuspec-dm.git
-          #branch: mballance/simplify
       - name: pytest
         src: pypi
       - name: flake8
@@ -24,8 +15,6 @@ package:
         src: pypi
       - name: packaging
         src: pypi
-          #      - name: pywellen
-          #        src: pypi
 
     - name: default
       deps: []
