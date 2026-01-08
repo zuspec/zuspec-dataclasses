@@ -80,8 +80,8 @@ class Event(aEvent):
 
     # Specifies a method that is invoked when the event is set.
     # Use 'bind' to associate a callback with this
-    at : Callable = field(init=False)
-    
+    at: Callable = field(init=False)
+
     def __new__(cls, **kwargs):
         from .config import Config
         ret = Config.inst().factory.mkEvent(cls, **kwargs)
