@@ -24,11 +24,11 @@ Version: 2026.1 (January 2026)
    :caption: User Guide:
 
    intro
+   abstraction_levels
    components
    fields
    types
    runtime
-   abstraction_levels
    checker
 
 .. toctree::
