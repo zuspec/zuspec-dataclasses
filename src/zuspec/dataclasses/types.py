@@ -224,8 +224,18 @@ class CompImpl(Protocol):
 class Extern[T](Protocol):
     """Marks an extern ref. The type parameter specifies the
     Zuspec type"""
-    annotations : Dict[str, object] = {}
-    ...
+
+    def __implementation__(self) -> Dict[str, Any]:
+        ...
+
+@dc.dataclass
+class AnnotationFileSet(object):
+    filetype : str = dc.field()
+    basedir : str = dc.field()
+    incdirs : Set[str] = dc.field(default_factory=set)
+    defines : Set[str] = dc.field(default_factory=set)
+    files : List[str] = dc.field(default_factory=list)
+
 
 class PackedStruct(TypeBase,SupportsInt):
 
