@@ -290,8 +290,19 @@ class RetargetableIRChecker(BaseIRChecker):
         if isinstance(dtype, DataType):
             # Special case: DataTypeRef needs additional checking
             if isinstance(dtype, DataTypeRef):
-                return self._is_zuspec_ref(dtype)
-            # All other DataType instances are Zuspec types
+                if not self._is_zuspec_ref(dtype):
+                    return False
+            
+            # For generic types with element_type (Reg[T], Tuple[T], etc.),
+            # also check that the element type is a Zuspec type
+            if hasattr(dtype, 'element_type'):
+                element_type = getattr(dtype, 'element_type', None)
+                if element_type is not None:
+                    # Recursively check the element type
+                    if not self._is_zuspec_type_obj(element_type):
+                        return False
+            
+            # All DataType instances (with valid element types) are Zuspec types
             return True
         
         # Not a DataType at all
@@ -329,6 +340,12 @@ class RetargetableIRChecker(BaseIRChecker):
             'str', 'string',
             # Zuspec base classes
             'Component', 'Struct', 'Class', 'Protocol',
+            # Register and memory types
+            'Reg', 'RegFile', 'RegFifo',
+            # Other known Zuspec types
+            'WishboneInitiator', 'WishboneTarget',  # Known protocol types
+            'Lock', 'Event', 'Memory', 'AddressSpace', 'AddrHandle',
+            'Channel', 'GetIF', 'PutIF',
         }
         
         # Check exact match
