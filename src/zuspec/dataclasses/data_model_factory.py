@@ -18,7 +18,7 @@ from .ir.stmt import (
     StmtAssert, StmtAssume, StmtCover, StmtMatch, StmtMatchCase,
 )
 from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
-from .types import TypeBase, Component, Extern, Lock, Memory
+from .types import TypeBase, Component, Extern, Lock, Memory, Struct
 
 # Import Event at runtime to avoid circular dependency
 def _get_event_type():
@@ -293,6 +293,12 @@ class DataModelFactory(object):
         return (hasattr(t, '__mro__') and 
                 Component in t.__mro__ and 
                 t is not Component)
+    
+    def _is_struct(self, t : Type) -> bool:
+        """Check if a type inherits from Struct (bundle)."""
+        return (hasattr(t, '__mro__') and 
+                Struct in t.__mro__ and 
+                t is not Struct)
 
     def _process_protocol(self, t : Type) -> DataTypeProtocol:
         """Process a Protocol type into DataTypeProtocol."""
@@ -566,14 +572,14 @@ class DataModelFactory(object):
                     ef_t = f.metadata['elem_factory']
                     elem_factory_dt = DataTypeRef(ref_name=self._get_type_name(ef_t))
                     # Ensure factory type is processed
-                    if hasattr(ef_t, '__mro__') and (self._is_protocol(ef_t) or self._is_extern(ef_t) or self._is_component(ef_t)):
+                    if hasattr(ef_t, '__mro__') and (self._is_protocol(ef_t) or self._is_extern(ef_t) or self._is_component(ef_t) or self._is_struct(ef_t)):
                         self._add_pending(ef_t)
 
                 datatype = DataTypeTuple(element_type=elem_dt, size=size, elem_factory=elem_factory_dt)
 
                 # Add referenced element type to pending
                 if elem_py_t is not None and hasattr(elem_py_t, '__mro__'):
-                    if self._is_protocol(elem_py_t) or self._is_extern(elem_py_t) or self._is_component(elem_py_t):
+                    if self._is_protocol(elem_py_t) or self._is_extern(elem_py_t) or self._is_component(elem_py_t) or self._is_struct(elem_py_t):
                         self._add_pending(elem_py_t)
             else:
                 datatype = self._resolve_field_type(field_type)
@@ -584,7 +590,7 @@ class DataModelFactory(object):
 
                 # Add referenced types to pending
                 if field_type is not None and hasattr(field_type, '__mro__'):
-                    if self._is_protocol(field_type) or self._is_extern(field_type) or self._is_component(field_type):
+                    if self._is_protocol(field_type) or self._is_extern(field_type) or self._is_component(field_type) or self._is_struct(field_type):
                         self._add_pending(field_type)
             
             # Check if this is a const field

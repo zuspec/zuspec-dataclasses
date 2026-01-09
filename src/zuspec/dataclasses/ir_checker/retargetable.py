@@ -41,6 +41,12 @@ class RetargetableIRChecker(BaseIRChecker):
         super().__init__()
         self._checked_modules: Set[str] = set()
         self._module_top_funcs: Dict[str, Set[str]] = {}
+        self._ir_context: Optional['Context'] = None
+    
+    def check_context(self, context: 'Context', check_ctx: CheckContext) -> List[CheckError]:
+        """Store IR context for type lookup, then delegate to parent."""
+        self._ir_context = context
+        return super().check_context(context, check_ctx)
     
     def check_field(self, field: 'Field', check_ctx: CheckContext) -> List[CheckError]:
         """
@@ -61,8 +67,11 @@ class RetargetableIRChecker(BaseIRChecker):
         # Rule 1: No infinite-width integers
         if isinstance(field_type, DataTypeInt):
             # DataTypeInt uses 'bits' attribute for width
-            width = getattr(field_type, 'bits', None) or getattr(field_type, 'width', None)
-            if not width or width == 0:
+            width = getattr(field_type, 'bits', None)
+            if width is None:
+                width = getattr(field_type, 'width', None)
+            # Check for infinite width: None, 0, or negative values (typically -1)
+            if width is None or width <= 0:
                 errors.append(self.make_error(
                     'ZDC001',
                     f"Field '{field.name}' uses infinite-width int. "
@@ -290,14 +299,25 @@ class RetargetableIRChecker(BaseIRChecker):
     
     def _is_zuspec_ref(self, dtype_ref: 'DataTypeRef') -> bool:
         """Check if a DataTypeRef references a Zuspec type."""
-        from ..ir.data_type import DataTypeRef
+        from ..ir.data_type import DataTypeRef, DataTypeComponent, DataTypeStruct, DataTypeClass, DataTypeExtern
         
         # Check the referenced type name
         ref_name = getattr(dtype_ref, 'ref_name', None)
         if not ref_name:
             return False
         
-        # Check if it's a known Zuspec type name
+        # First, try to look up the type in the IR context
+        if self._ir_context and hasattr(self._ir_context, 'type_m'):
+            actual_type = self._ir_context.type_m.get(ref_name)
+            if actual_type:
+                # Check if the actual type is a Zuspec type
+                if isinstance(actual_type, (DataTypeComponent, DataTypeStruct, DataTypeClass, DataTypeExtern)):
+                    return True
+                # Also check using the generic method
+                if self._is_zuspec_type_obj(actual_type):
+                    return True
+        
+        # Fallback: Check if it's a known Zuspec type name
         zuspec_type_names = {
             # Integer types
             'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
@@ -309,8 +329,6 @@ class RetargetableIRChecker(BaseIRChecker):
             'str', 'string',
             # Zuspec base classes
             'Component', 'Struct', 'Class', 'Protocol',
-            # Other known Zuspec types
-            'WishboneInitiator', 'WishboneTarget',  # Known protocol types
         }
         
         # Check exact match

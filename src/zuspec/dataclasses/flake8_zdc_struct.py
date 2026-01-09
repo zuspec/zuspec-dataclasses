@@ -169,6 +169,12 @@ class ZuspecFlake8Plugin:
                     fallback_errors = self._check_fields_fallback(cls, profile_name)
                     all_errors.extend(fallback_errors)
         
+        # Check XtorComponent bindings for all classes
+        for cls in classes:
+            if self._is_xtor_component(cls):
+                xtor_errors = self._check_xtor_bindings(cls)
+                all_errors.extend(xtor_errors)
+        
         # Clean up: remove module and package root from sys.modules and sys.path
         self._cleanup_import()
         
@@ -498,6 +504,114 @@ class ZuspecFlake8Plugin:
         except ValueError:
             # filepath not relative to package_root - just use stem
             return filepath.stem
+    
+    def _is_xtor_component(self, cls: type) -> bool:
+        """Check if a class is XtorComponent-derived."""
+        try:
+            if hasattr(cls, '__mro__'):
+                return any(base.__name__ == 'XtorComponent' for base in cls.__mro__)
+            return False
+        except (AttributeError, TypeError):
+            return False
+    
+    def _check_xtor_bindings(self, cls: type) -> List['CheckError']:
+        """Check that all xtor_if methods in XtorComponent have valid bindings.
+        
+        Args:
+            cls: XtorComponent class to check
+            
+        Returns:
+            List of errors for unbound methods
+        """
+        from .ir_checker.base import CheckError
+        import inspect
+        
+        errors = []
+        comp_name = cls.__name__
+        
+        # Collect all user-defined methods (not from base classes)
+        user_methods = set()
+        for name in dir(cls):
+            if name.startswith('_') and name != '__bind__':
+                continue
+            
+            try:
+                attr = getattr(cls, name, None)
+                if not callable(attr):
+                    continue
+                
+                # Check if it's from the user's module (not zuspec.dataclasses)
+                method_module = getattr(attr, '__module__', '')
+                if method_module.startswith('zuspec.dataclasses'):
+                    continue
+                
+                # It's a user-defined method
+                if name != '__bind__':
+                    user_methods.add(name)
+            except Exception:
+                continue
+        
+        if not user_methods:
+            return errors  # No user methods to check
+        
+        # Check if __bind__ is user-defined (not inherited from base class)
+        has_user_bind = False
+        if hasattr(cls, '__bind__'):
+            bind_method = getattr(cls, '__bind__')
+            bind_module = getattr(bind_method, '__module__', '')
+            # Check if __bind__ is defined in user's module (not zuspec.dataclasses)
+            if not bind_module.startswith('zuspec.dataclasses'):
+                has_user_bind = True
+        
+        if not has_user_bind:
+            # Get source location for the class
+            try:
+                source_file = inspect.getsourcefile(cls)
+                source_lines, start_line = inspect.getsourcelines(cls)
+            except (TypeError, OSError):
+                source_file = self.filename
+                start_line = 1
+            
+            errors.append(CheckError(
+                code='ZDC100',
+                message=f"XtorComponent '{comp_name}' has methods {user_methods} but no __bind__() method. "
+                        f"All xtor_if methods must be bound.",
+                filename=source_file or self.filename,
+                lineno=start_line,
+                col_offset=0
+            ))
+            return errors  # Return early - can't check bindings without __bind__
+        
+        # Try to extract binding info from __bind__ source
+        try:
+            bind_source = inspect.getsource(cls.__bind__)
+            bind_file = inspect.getsourcefile(cls.__bind__)
+            bind_lines, bind_start = inspect.getsourcelines(cls.__bind__)
+            
+            # Look for method references in the binding
+            bound_methods = set()
+            for method_name in user_methods:
+                # Check if method is referenced in __bind__ source
+                if f'self.{method_name}' in bind_source or f'self.xtor_if.{method_name}' in bind_source:
+                    bound_methods.add(method_name)
+            
+            # Check for unbound methods
+            unbound = user_methods - bound_methods
+            if unbound:
+                errors.append(CheckError(
+                    code='ZDC101',
+                    message=f"XtorComponent '{comp_name}': methods {unbound} are not bound in __bind__(). "
+                            f"Add bindings like: (self.xtor_if.{list(unbound)[0]}, self.{list(unbound)[0]})",
+                    filename=bind_file or self.filename,
+                    lineno=bind_start,
+                    col_offset=4
+                ))
+        
+        except Exception as e:
+            # If we can't analyze, log but don't error
+            logger.debug(f"Could not verify bindings for {comp_name}: {e}")
+        
+        return errors
 
 
 def plugin_factory():
