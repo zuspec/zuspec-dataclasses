@@ -228,13 +228,33 @@ class Extern[T](Protocol):
     def __implementation__(self) -> Dict[str, Any]:
         ...
 
+@dc.dataclass(kw_only=True, frozen=True)
+class Attr(object):
+    """Base class for attributes"""
+    pass
+
+@dc.dataclass(kw_only=True, frozen=True)
+class Label(Attr):
+    """Attribute class for applying a label"""
+    name : str = dc.field()
+
+
+def attr(attr_t : Attr):
+    """Function that can act as a decorator. """
+    def _wrapper(*args, **kwargs):
+        # In the decorator flavor, return the decorated type
+        return args[0]
+    # Note: when used as a function, the return isn't useful
+    return _wrapper
+
+
 @dc.dataclass
 class AnnotationFileSet(object):
-    filetype : str = dc.field()
-    basedir : str = dc.field()
-    incdirs : Set[str] = dc.field(default_factory=set)
-    defines : Set[str] = dc.field(default_factory=set)
-    files : List[str] = dc.field(default_factory=list)
+    filetype: str = dc.field()
+    basedir: str = dc.field()
+    incdirs: Set[str] = dc.field(default_factory=set)
+    defines: Set[str] = dc.field(default_factory=set)
+    files: List[str] = dc.field(default_factory=list)
 
 
 class PackedStruct(TypeBase,SupportsInt):
