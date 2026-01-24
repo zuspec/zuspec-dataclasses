@@ -38,6 +38,12 @@ class StmtAssign(Stmt):
     value: Expr = dc.field()
 
 @dc.dataclass(kw_only=True)
+class StmtAnnAssign(Stmt):
+    target: Expr = dc.field()
+    annotation: Expr = dc.field()
+    value: Optional[Expr] = dc.field(default=None)
+
+@dc.dataclass(kw_only=True)
 class StmtAugAssign(Stmt):
     target: Expr = dc.field()
     op: AugOp = dc.field()
