@@ -58,7 +58,44 @@ class TestZuspecIRChecker:
 
 class TestRetargetableChecker:
     """Test the Retargetable profile checker."""
-    
+
+    def test_checker_can_check_component_with_methods(self):
+        """Test that checker can handle components with async methods.
+
+        This test ensures the checker doesn't fail with import errors when
+        processing components that have methods with statements.
+        Regression test for StmtAnnAssign import error.
+        """
+
+        @zdc.dataclass
+        class DmaChannel(zdc.Component):
+            """Simple DMA channel for testing."""
+
+            async def configure(self, addr: int) -> bool:
+                """Configure method with local variable."""
+                # This creates statements that the checker needs to process
+                result = addr & 0x3
+                return result == 0
+
+            async def transfer(self) -> None:
+                """Transfer with assignments."""
+                count = 0
+                for i in range(10):
+                    count = count + i
+
+        # Build IR
+        factory = DataModelFactory()
+        context = factory.build([DmaChannel])
+
+        # Check - this should not raise ImportError
+        checker = ZuspecIRChecker(profile='Retargetable')
+        try:
+            errors = checker.check_context(context)
+            # Should succeed without ImportError
+            assert isinstance(errors, list)
+        except ImportError as e:
+            pytest.fail(f"Checker raised ImportError: {e}")
+
     def test_infinite_width_int_detected(self):
         """Test that infinite-width int is detected."""
         

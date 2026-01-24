@@ -125,15 +125,15 @@ class RetargetableIRChecker(BaseIRChecker):
     def check_statement(self, stmt: 'Stmt', check_ctx: CheckContext) -> List[CheckError]:
         """
         Check statements for retargetable violations.
-        
+
         Rules:
         1. All variable assignments must be type-annotated
         2. No forbidden expressions
         """
-        from ..ir.stmt import StmtAssign, StmtAnnAssign
-        
+        from ..ir.stmt import StmtAssign
+
         errors = []
-        
+
         # Rule 1: Check for unannotated variable assignments
         if isinstance(stmt, StmtAssign):
             # Check if this is an unannotated assignment
@@ -153,10 +153,10 @@ class RetargetableIRChecker(BaseIRChecker):
                                     f"Retargetable code requires explicit type annotations",
                                     stmt
                                 ))
-        
+
         # Check expressions in statement
         errors.extend(super().check_statement(stmt, check_ctx))
-        
+
         return errors
     
     def check_expression(self, expr: 'Expr', check_ctx: CheckContext) -> List[CheckError]:

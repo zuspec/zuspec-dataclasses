@@ -302,12 +302,12 @@ class Component(TypeBase):
     @property
     def name(self) -> str:
         assert self._impl is not None
-        return self._impl.name()
+        return self._impl.name
 
     @property
     def parent(self) -> Optional[Component]:
         assert self._impl is not None
-        return self._impl.parent()
+        return self._impl.parent
 
     def __bind__(self) -> Optional[Union[Dict,Tuple]]: 
         pass
