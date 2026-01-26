@@ -34,10 +34,12 @@ from .checker import ZuspecIRChecker
 # Import built-in checkers to ensure they're available
 from .retargetable import RetargetableIRChecker
 from .python_profile import PythonIRChecker
+from .sprtl_synthesizable import SPRTLSynthesizableChecker
 
 # Register built-in checkers
 CheckerRegistry.register(RetargetableIRChecker, 'Retargetable')
 CheckerRegistry.register(PythonIRChecker, 'Python')
+CheckerRegistry.register(SPRTLSynthesizableChecker, 'SPRTLSynthesizable')
 
 __all__ = [
     # Core protocol and base class
@@ -55,6 +57,7 @@ __all__ = [
     # Built-in implementations
     'RetargetableIRChecker',
     'PythonIRChecker',
+    'SPRTLSynthesizableChecker',
 ]
 
 # Auto-discover entry points after module import
