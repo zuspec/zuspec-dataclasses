@@ -56,8 +56,15 @@ class RetargetableIRChecker(BaseIRChecker):
         1. No infinite-width integers
         2. Only Zuspec types allowed
         3. Check default_factory if present
+        
+        Note: Skips internal/private implementation fields.
         """
         errors = []
+        
+        # Skip internal implementation fields
+        field_name = getattr(field, 'name', '')
+        if field_name.startswith('_impl') or field_name in ('xtor_if', '_req_events', '_mem_l'):
+            return errors  # Internal implementation details are exempt
         
         # Get the field's datatype
         field_type = getattr(field, 'datatype', None) or getattr(field, 'type', None)
@@ -344,6 +351,8 @@ class RetargetableIRChecker(BaseIRChecker):
             'Component', 'Struct', 'Class', 'Protocol',
             # Register and memory types
             'Reg', 'RegFile', 'RegFifo',
+            # Time type
+            'Time',
             # Other known Zuspec types
             'WishboneInitiator', 'WishboneTarget',  # Known protocol types
             'Lock', 'Event', 'Memory', 'AddressSpace', 'AddrHandle',

@@ -180,6 +180,42 @@ class ZuspecFlake8Plugin:
         
         return all_errors
     
+    def _is_zuspec_class(self, cls: type) -> bool:
+        """
+        Check if a class is a Zuspec class (not a plain Python class).
+        
+        A class is considered a Zuspec class if:
+        1. It has TypeBase in its MRO (Component, Struct, Bundle, etc.)
+        2. It's decorated with a Zuspec decorator (@zdc.dataclass)
+        
+        Args:
+            cls: Class to check
+            
+        Returns:
+            True if this is a Zuspec class that should be checked
+        """
+        try:
+            # Check if TypeBase is in the MRO
+            if hasattr(cls, '__mro__'):
+                for base in cls.__mro__:
+                    base_module = getattr(base, '__module__', '')
+                    base_name = getattr(base, '__name__', '')
+                    
+                    # Check for zuspec base classes
+                    if 'zuspec' in base_module and base_name in (
+                        'TypeBase', 'Component', 'XtorComponent', 'Struct', 
+                        'PackedStruct', 'Bundle', 'Action'
+                    ):
+                        return True
+            
+            # Check if decorated with Zuspec @dataclass (has __profile__ attribute)
+            if hasattr(cls, '__profile__'):
+                return True
+            
+            return False
+        except Exception:
+            return False
+    
     def _detect_profile(self, cls: type) -> str:
         """
         Detect the profile for a class from its __profile__ attribute.
@@ -301,11 +337,34 @@ class ZuspecFlake8Plugin:
         # Handle typing.Annotated (used by zdc.u32, zdc.bit, etc.)
         if hasattr(typing, 'get_origin') and hasattr(typing, 'get_args'):
             origin = typing.get_origin(type_annotation)
+            
             if origin is typing.Annotated:
                 # Get the actual type from Annotated[ActualType, ...]
                 args = typing.get_args(type_annotation)
                 if args:
                     type_annotation = args[0]
+            
+            # Handle Union (including Optional which is Union[T, None])
+            elif origin is typing.Union:
+                args = typing.get_args(type_annotation)
+                # Check if all non-None types are Zuspec types
+                for arg in args:
+                    if arg is type(None):  # Skip None in Optional[T]
+                        continue
+                    if not self._is_zuspec_type_annotation(arg):
+                        return False
+                # If we get here, all non-None types are Zuspec types
+                return True
+            
+            # Handle generic types (Dict, List, Set, etc.)
+            elif origin in (dict, list, set, tuple):
+                args = typing.get_args(type_annotation)
+                # Check if all type arguments are Zuspec types
+                for arg in args:
+                    if not self._is_zuspec_type_annotation(arg):
+                        return False
+                # If we get here, all type arguments are Zuspec types
+                return True
         
         # Get the type's module
         type_module = getattr(type_annotation, '__module__', '')
@@ -412,7 +471,9 @@ class ZuspecFlake8Plugin:
                             if hasattr(obj, '__dataclass_fields__'):
                                 # Check if it's from this module (use full name)
                                 if hasattr(obj, '__module__') and obj.__module__ == module_name:
-                                    classes.append(obj)
+                                    # Only include Zuspec classes (those with TypeBase in MRO)
+                                    if self._is_zuspec_class(obj):
+                                        classes.append(obj)
                     except Exception as e:
                         logger.debug(f"Error inspecting {name}: {e}")
                         continue
