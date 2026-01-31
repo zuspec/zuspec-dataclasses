@@ -62,16 +62,129 @@ representing the driver-level view of the device.
 * For devices supporting independent concurrent operations, group related
   operations into Protocol classes
 
-**Example: DMA operation interface**
+**Example: Operation interface (generic device)**
 
 .. code-block:: python
 
-   @zdc.dataclass
-   class DmaOperations(Protocol):
-       async def transfer(self, src: int, dst: int, size: int) -> None:
-           """Perform a complete DMA transfer"""
-           # Implementation uses MMIO level internally
-           pass
+   from typing import Protocol
+   
+   class DeviceOperations(Protocol):
+       async def configure(self, addr: int, size: int) -> bool:
+           """Configure device parameters"""
+           ...
+           
+       async def start(self) -> bool:
+           """Start device operation"""
+           ...
+           
+       async def wait_complete(self) -> bool:
+           """Wait for operation completion"""
+           ...
+
+Operations-Level Implementation Pattern
+========================================
+
+For behavioral models implementing an operations-level interface, follow
+this pattern:
+
+**Key Principles:**
+
+1. **Synchronous Operations:** Operations complete immediately (no background processes)
+2. **Protocol Interfaces:** Define operations as Protocol classes for type safety
+3. **Separation:** Keep interface definitions separate from implementation
+4. **Direct References:** Use direct interface references for external connections
+
+**Implementation Pattern:**
+
+.. code-block:: python
+
+    from typing import Protocol
+    
+    # 1. Define operations interface (in separate file/module)
+    class DeviceOperationsIF(Protocol):
+        async def configure(self, addr: int, size: int) -> bool:
+            """Configure device for operation"""
+            ...
+            
+        async def start(self) -> bool:
+            """Start the operation"""
+            ...
+    
+    # 2. Define external interfaces needed
+    class MemoryIF(Protocol):
+        async def read(self, addr: int) -> int: ...
+        async def write(self, addr: int, data: int) -> None: ...
+    
+    # 3. Implement component
+    @zdc.dataclass
+    class Device(zdc.Component):
+        regs: DeviceRegs = zdc.field()
+        _mem_if: MemoryIF = None  # Set via setup()
+        ops: DeviceOperationsIF = zdc.export()
+        
+        async def configure(self, addr: int, size: int) -> bool:
+            """Implementation of configure operation"""
+            # Validate parameters
+            if addr & 0x3 != 0:  # Check alignment
+                return False
+            
+            # Configure via registers
+            await self.regs.addr.write(addr)
+            await self.regs.size.write(size)
+            return True
+            
+        async def start(self) -> bool:
+            """Implementation of start operation"""
+            # Set status to active
+            await self.regs.status.write(ACTIVE)
+            
+            # Perform operation immediately (behavioral model)
+            addr = await self.regs.addr.read()
+            data = await self._mem_if.read(addr)
+            # ... complete operation ...
+            
+            # Set completion status
+            await self.regs.status.write(COMPLETE)
+            return True
+    
+    # 4. Parent component provides memory interface
+    @zdc.dataclass
+    class System(zdc.Component):
+        device: Device = zdc.field()
+        memory: Memory = zdc.field()
+        
+        def __bind__(self):
+            return {
+                # Bind parent ports to external interfaces
+                # Child interfaces set up via setup()
+            }
+        
+        def setup(self):
+            """Call after binding to initialize child interfaces"""
+            self.device._mem_if = self.memory.mem_if
+
+**Usage Pattern:**
+
+.. code-block:: python
+
+    @zdc.dataclass
+    class Top(zdc.Component):
+        system: System = zdc.field()
+        
+        async def run(self):
+            # Initialize interfaces after binding
+            self.system.setup()
+            
+            # Use operations interface
+            result = await self.system.device.configure(0x1000, 64)
+            assert result == True
+            
+            result = await self.system.device.start()
+            assert result == True
+
+**Note:** This pattern is appropriate when you need high-level driver-like
+operations without cycle-accurate timing. For models requiring concurrent
+background activity, use ``@zdc.process`` methods instead.
 
 MMIO Level
 ==========
@@ -92,23 +205,22 @@ register-based control and visibility into device state.
 * **Events** (``zdc.Event``): Logical events like interrupts, completions, errors
 * **Protocol** (``Protocol``): Grouping of related registers and events
 
-**Example: DMA MMIO interface**
+**Example: Device MMIO interface**
 
 .. code-block:: python
 
    @zdc.dataclass
-   class DmaRegs(zdc.RegFile):
-       src_addr: zdc.Reg[zdc.u32]      # Source address register
-       dst_addr: zdc.Reg[zdc.u32]      # Destination address register
-       length: zdc.Reg[zdc.u32]        # Transfer length register
-       control: zdc.Reg[zdc.u8]        # Control register (start, stop, etc.)
-       status: zdc.Reg[zdc.u8]         # Status register (busy, error, done)
+   class DeviceRegs(zdc.RegFile):
+       addr: zdc.Reg[zdc.u32]       # Address register
+       size: zdc.Reg[zdc.u32]       # Size register  
+       control: zdc.Reg[zdc.u8]     # Control register (start, stop, etc.)
+       status: zdc.Reg[zdc.u8]      # Status register (busy, error, done)
    
    @zdc.dataclass
-   class DmaMmio(Protocol):
-       regs: DmaRegs                   # Register file
-       transfer_complete: zdc.Event    # Interrupt event
-       transfer_error: zdc.Event       # Error event
+   class DeviceMmio(Protocol):
+       regs: DeviceRegs             # Register file
+       complete: zdc.Event          # Completion event
+       error: zdc.Event             # Error event
 
 
 ====================

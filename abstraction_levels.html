@@ -87,15 +87,122 @@ representing the driver-level view of the device.</p>
 <li><p>For devices supporting independent concurrent operations, group related
 operations into Protocol classes</p></li>
 </ul>
-<p><strong>Example: DMA operation interface</strong></p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">DmaOperations</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
-    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">transfer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dst</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Perform a complete DMA transfer&quot;&quot;&quot;</span>
-        <span class="c1"># Implementation uses MMIO level internally</span>
-        <span class="k">pass</span>
+<p><strong>Example: Operation interface (generic device)</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Protocol</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceOperations</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">configure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Configure device parameters&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Start device operation&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">wait_complete</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Wait for operation completion&quot;&quot;&quot;</span>
+        <span class="o">...</span>
 </pre></div>
 </div>
+</section>
+<section id="operations-level-implementation-pattern">
+<h3>Operations-Level Implementation Pattern<a class="headerlink" href="#operations-level-implementation-pattern" title="Link to this heading">¶</a></h3>
+<p>For behavioral models implementing an operations-level interface, follow
+this pattern:</p>
+<p><strong>Key Principles:</strong></p>
+<ol class="arabic simple">
+<li><p><strong>Synchronous Operations:</strong> Operations complete immediately (no background processes)</p></li>
+<li><p><strong>Protocol Interfaces:</strong> Define operations as Protocol classes for type safety</p></li>
+<li><p><strong>Separation:</strong> Keep interface definitions separate from implementation</p></li>
+<li><p><strong>Direct References:</strong> Use direct interface references for external connections</p></li>
+</ol>
+<p><strong>Implementation Pattern:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Protocol</span>
+
+<span class="c1"># 1. Define operations interface (in separate file/module)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceOperationsIF</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">configure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Configure device for operation&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Start the operation&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+<span class="c1"># 2. Define external interfaces needed</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MemoryIF</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span> <span class="o">...</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+
+<span class="c1"># 3. Implement component</span>
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Device</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">regs</span><span class="p">:</span> <span class="n">DeviceRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">_mem_if</span><span class="p">:</span> <span class="n">MemoryIF</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Set via setup()</span>
+    <span class="n">ops</span><span class="p">:</span> <span class="n">DeviceOperationsIF</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">export</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">configure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Implementation of configure operation&quot;&quot;&quot;</span>
+        <span class="c1"># Validate parameters</span>
+        <span class="k">if</span> <span class="n">addr</span> <span class="o">&amp;</span> <span class="mh">0x3</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>  <span class="c1"># Check alignment</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="c1"># Configure via registers</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">addr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">size</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Implementation of start operation&quot;&quot;&quot;</span>
+        <span class="c1"># Set status to active</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">ACTIVE</span><span class="p">)</span>
+
+        <span class="c1"># Perform operation immediately (behavioral model)</span>
+        <span class="n">addr</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">addr</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mem_if</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+        <span class="c1"># ... complete operation ...</span>
+
+        <span class="c1"># Set completion status</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">COMPLETE</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+<span class="c1"># 4. Parent component provides memory interface</span>
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">System</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">Device</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">memory</span><span class="p">:</span> <span class="n">Memory</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="c1"># Bind parent ports to external interfaces</span>
+            <span class="c1"># Child interfaces set up via setup()</span>
+        <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Call after binding to initialize child interfaces&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">_mem_if</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">memory</span><span class="o">.</span><span class="n">mem_if</span>
+</pre></div>
+</div>
+<p><strong>Usage Pattern:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">system</span><span class="p">:</span> <span class="n">System</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Initialize interfaces after binding</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">system</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span>
+
+        <span class="c1"># Use operations interface</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">system</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">configure</span><span class="p">(</span><span class="mh">0x1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="kc">True</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">system</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="kc">True</span>
+</pre></div>
+</div>
+<p><strong>Note:</strong> This pattern is appropriate when you need high-level driver-like
+operations without cycle-accurate timing. For models requiring concurrent
+background activity, use <code class="docutils literal notranslate"><span class="pre">&#64;zdc.process</span></code> methods instead.</p>
 </section>
 <section id="mmio-level">
 <h3>MMIO Level<a class="headerlink" href="#mmio-level" title="Link to this heading">¶</a></h3>
@@ -114,20 +221,19 @@ register-based control and visibility into device state.</p>
 <li><p><strong>Events</strong> (<code class="docutils literal notranslate"><span class="pre">zdc.Event</span></code>): Logical events like interrupts, completions, errors</p></li>
 <li><p><strong>Protocol</strong> (<code class="docutils literal notranslate"><span class="pre">Protocol</span></code>): Grouping of related registers and events</p></li>
 </ul>
-<p><strong>Example: DMA MMIO interface</strong></p>
+<p><strong>Example: Device MMIO interface</strong></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">DmaRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
-    <span class="n">src_addr</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span>      <span class="c1"># Source address register</span>
-    <span class="n">dst_addr</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span>      <span class="c1"># Destination address register</span>
-    <span class="n">length</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span>        <span class="c1"># Transfer length register</span>
-    <span class="n">control</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u8</span><span class="p">]</span>        <span class="c1"># Control register (start, stop, etc.)</span>
-    <span class="n">status</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u8</span><span class="p">]</span>         <span class="c1"># Status register (busy, error, done)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceRegs</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">RegFile</span><span class="p">):</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span>       <span class="c1"># Address register</span>
+    <span class="n">size</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span>       <span class="c1"># Size register</span>
+    <span class="n">control</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u8</span><span class="p">]</span>     <span class="c1"># Control register (start, stop, etc.)</span>
+    <span class="n">status</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Reg</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u8</span><span class="p">]</span>      <span class="c1"># Status register (busy, error, done)</span>
 
 <span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">DmaMmio</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
-    <span class="n">regs</span><span class="p">:</span> <span class="n">DmaRegs</span>                   <span class="c1"># Register file</span>
-    <span class="n">transfer_complete</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span>    <span class="c1"># Interrupt event</span>
-    <span class="n">transfer_error</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span>       <span class="c1"># Error event</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceMmio</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">regs</span><span class="p">:</span> <span class="n">DeviceRegs</span>             <span class="c1"># Register file</span>
+    <span class="n">complete</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span>          <span class="c1"># Completion event</span>
+    <span class="n">error</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Event</span>             <span class="c1"># Error event</span>
 </pre></div>
 </div>
 </section>

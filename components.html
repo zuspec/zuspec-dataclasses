@@ -160,24 +160,141 @@ using the <code class="docutils literal notranslate"><span class="pre">At</span>
 <p>The <code class="docutils literal notranslate"><span class="pre">aspace.base</span></code> provides a <code class="docutils literal notranslate"><span class="pre">MemIF</span></code> handle for byte-level access
 to the mapped regions.</p>
 </section>
+<section id="hierarchical-port-binding">
+<h2>Hierarchical Port Binding<a class="headerlink" href="#hierarchical-port-binding" title="Link to this heading">¶</a></h2>
+<p>When a parent component has a port that needs to be passed down to child
+components, there are two approaches:</p>
+<section id="approach-1-direct-reference-assignment">
+<h3>Approach 1: Direct Reference Assignment<a class="headerlink" href="#approach-1-direct-reference-assignment" title="Link to this heading">¶</a></h3>
+<p>Recommended for behavioral models where ports need to be shared with
+child components.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Child</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">_mem_if</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Store as regular field (not a port)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_interface</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mem_if</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the interface reference&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_mem_if</span> <span class="o">=</span> <span class="n">mem_if</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">operation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Use the interface</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mem_if</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mh">0x1000</span><span class="p">)</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Parent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">mem</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>  <span class="c1"># Port bound to external interface</span>
+    <span class="n">child</span><span class="p">:</span> <span class="n">Child</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Call after binding is complete&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">child</span><span class="o">.</span><span class="n">set_interface</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mem</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>In tests or top-level components, call <code class="docutils literal notranslate"><span class="pre">setup()</span></code> at the start of your
+<code class="docutils literal notranslate"><span class="pre">run()</span></code> method after the component tree is fully bound:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">parent</span><span class="p">:</span> <span class="n">Parent</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+    <span class="n">memory</span><span class="p">:</span> <span class="n">Memory</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mem</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">memory</span><span class="o">.</span><span class="n">mem_if</span>
+        <span class="p">}</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span>  <span class="c1"># Initialize child interfaces</span>
+        <span class="c1"># Now proceed with operations</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">child</span><span class="o">.</span><span class="n">operation</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="approach-2-hierarchical-binding-in-bind">
+<h3>Approach 2: Hierarchical Binding in __bind__<a class="headerlink" href="#approach-2-hierarchical-binding-in-bind" title="Link to this heading">¶</a></h3>
+<p>For hierarchical port-to-port bindings, the parent’s <code class="docutils literal notranslate"><span class="pre">__bind__</span></code>
+can include mappings for child ports. This approach works when
+child ports can be statically bound:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Child</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">mem</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Parent</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">mem</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>
+    <span class="n">child</span><span class="p">:</span> <span class="n">Child</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">child</span><span class="o">.</span><span class="n">mem</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">mem</span><span class="p">,</span>  <span class="c1"># Bind child port to parent port</span>
+        <span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Note:</strong> Approach 1 is simpler and more flexible for operations-level
+behavioral models. Use Approach 2 when you need static port connectivity.</p>
+</section>
+</section>
 <section id="supported-exec-methods">
 <h2>Supported Exec Methods<a class="headerlink" href="#supported-exec-methods" title="Link to this heading">¶</a></h2>
 <p>Exec methods are evaluated automatically based on events in the
 model. User code may not invoke these methods directly.</p>
-<section id="comb">
-<h3>comb<a class="headerlink" href="#comb" title="Link to this heading">¶</a></h3>
 <p>A <cite>&#64;comb</cite> exec method is evaluated whenever one of
 the variables references changes. The <cite>&#64;comb</cite> exec is
 exclusively used with RTL descriptions.</p>
-</section>
-<section id="process">
-<h3>process<a class="headerlink" href="#process" title="Link to this heading">¶</a></h3>
-<p>The <cite>&#64;process</cite> async exec method is evaluated when evaluation of
-the containing component begins. A <cite>&#64;process</cite> exec method is
-an independent thread of control in the model.</p>
-<p>Processes start lazily when the first <code class="docutils literal notranslate"><span class="pre">wait()</span></code> call is made on any
-component in the tree. This allows the component tree to be fully
+<p>The <code class="docutils literal notranslate"><span class="pre">&#64;process</span></code> async exec method creates an independent background thread
+that starts when the first <code class="docutils literal notranslate"><span class="pre">wait()</span></code> call is made anywhere in the component tree.
+A <code class="docutils literal notranslate"><span class="pre">&#64;process</span></code> exec method is an independent thread of control in the model.</p>
+<p>Processes start lazily to allow the component tree to be fully
 constructed before simulation begins.</p>
+<section id="when-to-use-process">
+<h3>When to Use &#64;process<a class="headerlink" href="#when-to-use-process" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong>Monitoring or reactive behaviors</strong> that run continuously</p></li>
+<li><p><strong>Clock generation</strong> or periodic activities</p></li>
+<li><p><strong>Protocol monitors</strong> or checkers</p></li>
+<li><p>Models requiring <strong>concurrent background activity</strong></p></li>
+</ul>
+</section>
+<section id="when-not-to-use-process">
+<h3>When NOT to Use &#64;process<a class="headerlink" href="#when-not-to-use-process" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong>Operations-level behavioral models</strong> (use direct async methods instead)</p></li>
+<li><p><strong>Synchronous operations</strong> that complete immediately</p></li>
+<li><p><strong>Simple request/response patterns</strong></p></li>
+</ul>
+<p>For operations-level models, implement async methods that perform their
+work and return, rather than background processes.</p>
+</section>
+<section id="examples">
+<h3>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h3>
+<p><strong>Good: Background monitoring process</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Monitor</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">regs</span><span class="p">:</span> <span class="n">StatusRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">process</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">monitor</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Continuous monitoring in background&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">status</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error detected!&quot;</span><span class="p">)</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">100</span><span class="p">))</span>
+</pre></div>
+</div>
+<p><strong>Good: Operations-level behavioral model</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Device</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">regs</span><span class="p">:</span> <span class="n">DeviceRegs</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">transfer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Direct async method - NOT @process&quot;&quot;&quot;</span>
+        <span class="c1"># Perform operation and return immediately</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">addr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+        <span class="c1"># ... perform transfer ...</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">regs</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">COMPLETE</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Original example for reference:</strong></p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Worker</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">process</span>
@@ -187,9 +304,8 @@ constructed before simulation begins.</p>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Iteration </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2"> at </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-</section>
 <section id="sync">
-<h3>sync<a class="headerlink" href="#sync" title="Link to this heading">¶</a></h3>
+<h4>sync<a class="headerlink" href="#sync" title="Link to this heading">¶</a></h4>
 <p>A <cite>&#64;sync</cite> exec method is evaluated on the active transition of
 its associated clock or reset. All assignments
 to outputs are considered nonblocking.
@@ -247,13 +363,11 @@ effect. The expected output is as follows:</p>
 </table>
 </section>
 </section>
+</section>
 <section id="supported-special-purpose-methods">
 <h2>Supported Special-Purpose Methods<a class="headerlink" href="#supported-special-purpose-methods" title="Link to this heading">¶</a></h2>
-<section id="activity">
-<h3>activity<a class="headerlink" href="#activity" title="Link to this heading">¶</a></h3>
 <p><cite>&#64;activity</cite> decorated async methods may be declared on a component.
 The body of the method adheres to activity semantics.</p>
-</section>
 </section>
 </section>
 
@@ -291,6 +405,7 @@ The body of the method adheres to activity semantics.</p>
 <li class="toctree-l2"><a class="reference internal" href="#component-lifecycle">Component Lifecycle</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#ports-and-binding">Ports and Binding</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#memory-and-regfile-binding">Memory and RegFile Binding</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hierarchical-port-binding">Hierarchical Port Binding</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#supported-exec-methods">Supported Exec Methods</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#supported-special-purpose-methods">Supported Special-Purpose Methods</a></li>
 </ul>
