@@ -16,6 +16,7 @@ class Timebase(TimebaseP):
     _event_queue: List[Tuple[int, int, asyncio.Future]] = dc.field(default_factory=list)
     _event_counter: int = dc.field(default=0)  # For stable sorting of same-time events
     _running: bool = dc.field(default=False)
+    _execution_depth: int = dc.field(default=0)  # Track nested model execution
 
     @staticmethod
     def _time_to_fs(amt: Time) -> int:

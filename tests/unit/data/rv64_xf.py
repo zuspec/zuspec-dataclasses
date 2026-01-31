@@ -364,5 +364,11 @@ class Rv64XF(zdc.Component):
     
     @zdc.process
     async def _run(self):
-        """Process entry point - reset and wait."""
-        self.reset()
+        """Process entry point - wait indefinitely.
+        
+        Note: reset() should be called explicitly by the user before running,
+        not automatically in the process, to allow test setup of registers.
+        """
+        # Just wait - don't automatically reset as that would interfere
+        # with test setup that may have configured registers
+        pass

@@ -616,22 +616,40 @@ class CompImplRT(object):
         Uses the default timebase to suspend execution of the
         calling coroutine for the specified time.
         
-        When called and simulation is not already running, this also 
-        drives the simulation forward.
+        When called from outside model execution (depth=0), this drives
+        simulation forward. When inside model execution, just suspends.
         """
         from ..types import Time
         tb = self.timebase()
         
-        if not tb._running:
-            # Simulation not running: find root and drive simulation
+        if tb._execution_depth == 0:
+            # Top-level call - we need to drive simulation
             root = comp
             while root._impl.parent is not None:
                 root = root._impl.parent
             root._impl.start_all_processes(root)
-            await tb.run_until(amt)
+            tb._execution_depth += 1
+            try:
+                await tb.run_until(amt)
+            finally:
+                tb._execution_depth -= 1
         else:
-            # Inside simulation: just wait for the specified time
+            # Inside model execution - just wait
             await tb.wait(amt)
+
+    async def run_model_async(self, comp: Component, coro):
+        """Run an async coroutine within model execution context.
+        
+        This wraps the coroutine so that any wait() calls inside know
+        they are within model execution and should just suspend rather
+        than trying to drive simulation.
+        """
+        tb = self.timebase()
+        tb._execution_depth += 1
+        try:
+            return await coro
+        finally:
+            tb._execution_depth -= 1
 
     def time(self):
         """Returns the current time"""

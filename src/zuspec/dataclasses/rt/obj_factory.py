@@ -7,7 +7,7 @@ import inspect
 from typing import cast, ClassVar, Dict, List, Type, Optional, Any, Tuple, get_origin, get_args, get_type_hints, TypeAliasType, TYPE_CHECKING
 from ..config import ObjFactory as ObjFactoryP
 from ..decorators import ExecProc, ExecSync, ExecComb, Input, Output
-from ..types import Component, Extern, Lock, Memory, AddressSpace, RegFile, Reg, U, S, At
+from ..types import Component, Extern, Lock, Memory, AddressSpace, RegFile, Reg, U, S, Uptr, At
 from ..tlm import Channel, GetIF, PutIF, Transport
 from .comp_impl_rt import CompImplRT
 from .timebase import Timebase
@@ -71,6 +71,10 @@ class BindPath:
     
     def __getattr__(self, name):
         return BindPath(self._root, self._path + (name,))
+    
+    def __getitem__(self, index):
+        """Support subscript access like self.req[i]"""
+        return BindPath(self._root, self._path + (f"[{index}]",))
     
     def __repr__(self):
         return f"BindPath({'.'.join(self._path)})"
@@ -224,11 +228,17 @@ class ObjFactory(ObjFactoryP):
                         args = get_args(field_type)
                         if args and len(args) > 1:
                             for meta in args[1:]:
+                                if isinstance(meta, Uptr):
+                                    width = Uptr.get_platform_width()
+                                    break
                                 if isinstance(meta, (U, S)):
                                     width = meta.width
                                     break
                     elif hasattr(field_type, '__metadata__'):
                         for meta in field_type.__metadata__:
+                            if isinstance(meta, Uptr):
+                                width = Uptr.get_platform_width()
+                                break
                             if isinstance(meta, (U, S)):
                                 width = meta.width
                                 break
@@ -299,10 +309,16 @@ class ObjFactory(ObjFactoryP):
                             f"Tuple field '{f.name}' element type is a Protocol; specify elem_factory"
                         )
 
-                    def _mk_tuple(_t=elem_factory, _sz=size):
+                    # Import export function for comparison
+                    from ..decorators import export as export_func, port as port_func
+                    
+                    def _mk_tuple(_t=elem_factory, _sz=size, _export_func=export_func, _port_func=port_func):
                         def _mk_elem():
                             if _t is Lock:
                                 return LockRT()
+                            # Handle elem_factory=zdc.export - create InterfaceImpl placeholders
+                            if _t is _export_func or _t is _port_func:
+                                return InterfaceImpl()
                             if inspect.isclass(_t):
                                 return _t()
                             raise RuntimeError(f"Cannot construct tuple element type '{_t}'")
@@ -350,6 +366,10 @@ class ObjFactory(ObjFactoryP):
                 elif field_type is Lock:
                     # Lock fields get auto-constructed with runtime implementation
                     fields.append((f.name, object, dc.field(default_factory=LockRT)))
+                # Check for Event type (zdc.Event inherits from asyncio.Event)
+                elif inspect.isclass(field_type) and issubclass(field_type, asyncio.Event):
+                    # Event fields get auto-constructed with runtime implementation
+                    fields.append((f.name, object, dc.field(default_factory=EventRT)))
                 elif inspect.isclass(field_type):
                     if issubclass(field_type, Component):
                         if f.default_factory is dc.MISSING:
@@ -395,9 +415,8 @@ class ObjFactory(ObjFactoryP):
                 descriptor = SignalDescriptor(sig_name, sig_type, is_input, default_value, width)
                 setattr(cls_rt, sig_name, descriptor)
 
-            # Wrap async methods for tracing if tracer is enabled
-            if self.tracer is not None:
-                self._wrap_async_methods(cls_rt)
+            # Wrap async methods for simulation context (always) and tracing (if enabled)
+            self._wrap_async_methods(cls_rt)
 
             # Only set up __init__ wrapper once when creating the class
             setattr(cls_rt, "__dc_init__", getattr(cls_rt, "__init__"))
@@ -411,9 +430,12 @@ class ObjFactory(ObjFactoryP):
         return cast(Component, comp)
     
     def _wrap_async_methods(self, cls_rt: Type[Component]):
-        """Wrap async methods for tracing.
+        """Wrap async methods for simulation context and tracing.
         
         Only wraps user-defined async methods (not inherited from Component base class).
+        Wrapping ensures that:
+        1. Simulation execution depth is tracked so wait() works correctly with asyncio.gather
+        2. Tracing is performed if a tracer is configured
         """
         # Get methods from the original class (before runtime wrapping)
         for name in dir(cls_rt):
@@ -433,64 +455,131 @@ class ObjFactory(ObjFactoryP):
             
             @functools.wraps(original_method)
             async def wrapped_method(self, *args, _original=original_method, _method_name=name, **kwargs):
+                timebase = self._impl.timebase() if self._impl else None
                 tracer = self._impl._tracer if self._impl else None
                 
-                # If no tracer, just call original method
-                if tracer is None:
-                    return await _original(self, *args, **kwargs)
+                # Check if this is a top-level entry (depth == 0)
+                is_top_level = timebase is not None and timebase._execution_depth == 0
                 
-                from .tracer import Thread
+                # Track simulation execution depth
+                if timebase is not None:
+                    timebase._execution_depth += 1
                 
-                timebase = self._impl.timebase() if self._impl else None
-                
-                # Get parameter names for building args dict
-                sig = inspect.signature(_original)
-                bound_args = sig.bind(self, *args, **kwargs)
-                bound_args.apply_defaults()
-                
-                # Build args dict excluding 'self'
-                args_dict = {k: v for k, v in bound_args.arguments.items() if k != 'self'}
-                
-                # Get or create thread context
-                current_thread = _current_thread.get()
-                if current_thread is None:
-                    # This is a top-level call - create a new thread
-                    tid = ObjFactory.inst()._get_tid()
-                    thread = Thread(tid=tid, parent=None, component=None)
-                else:
-                    # This is a nested call - reuse the current thread
-                    thread = current_thread
-                
-                # Get current time for enter event
-                if timebase:
-                    enter_time_ns = timebase.time().as_ns()
-                else:
-                    enter_time_ns = 0
-                
-                tracer.enter(_method_name, thread, enter_time_ns, args_dict)
-                
-                # Set this thread as the current context for nested calls
-                token = _current_thread.set(thread)
-                
-                exc = None
-                ret = None
                 try:
-                    ret = await _original(self, *args, **kwargs)
-                    return ret
-                except Exception as e:
-                    exc = e
-                    raise
-                finally:
-                    # Restore previous context
-                    _current_thread.reset(token)
+                    if is_top_level:
+                        # Top-level call - we need to drive simulation
+                        # Start any registered processes (idempotent - won't restart if already started)
+                        root = self
+                        while root._impl.parent is not None:
+                            root = root._impl.parent
+                        root._impl.start_all_processes(root)
+                        timebase._running = True
+                        
+                        # Set up tracing context for top-level call
+                        from .tracer import Thread
+                        thread = None
+                        token = None
+                        enter_time_ns = 0
+                        args_dict = {}
+                        
+                        if tracer is not None:
+                            # Get parameter names for building args dict
+                            sig = inspect.signature(_original)
+                            bound_args = sig.bind(self, *args, **kwargs)
+                            bound_args.apply_defaults()
+                            args_dict = {k: v for k, v in bound_args.arguments.items() if k != 'self'}
+                            
+                            # Create thread context for top-level call
+                            tid = ObjFactory.inst()._get_tid()
+                            thread = Thread(tid=tid, parent=None, component=None)
+                            enter_time_ns = timebase.time().as_ns()
+                            
+                            tracer.enter(_method_name, thread, enter_time_ns, args_dict)
+                            token = _current_thread.set(thread)
+                        
+                        # Create task for the actual method
+                        method_task = asyncio.create_task(_original(self, *args, **kwargs))
+                        
+                        exc = None
+                        ret = None
+                        try:
+                            # Drive simulation until method completes
+                            while not method_task.done():
+                                if timebase._event_queue:
+                                    timebase.advance()
+                                await asyncio.sleep(0)
+                            
+                            ret = method_task.result()
+                            return ret
+                        except Exception as e:
+                            exc = e
+                            raise
+                        finally:
+                            timebase._running = False
+                            
+                            if tracer is not None and thread is not None:
+                                _current_thread.reset(token)
+                                leave_time_ns = timebase.time().as_ns()
+                                tracer.leave(_method_name, thread, leave_time_ns, ret, exc)
                     
-                    # Get current time for leave event
-                    if timebase:
-                        leave_time_ns = timebase.time().as_ns()
+                    # Nested call - just execute normally
+                    if tracer is None:
+                        return await _original(self, *args, **kwargs)
+                    
+                    from .tracer import Thread
+                    
+                    # Get parameter names for building args dict
+                    sig = inspect.signature(_original)
+                    bound_args = sig.bind(self, *args, **kwargs)
+                    bound_args.apply_defaults()
+                    
+                    # Build args dict excluding 'self'
+                    args_dict = {k: v for k, v in bound_args.arguments.items() if k != 'self'}
+                    
+                    # Get or create thread context
+                    current_thread = _current_thread.get()
+                    if current_thread is None:
+                        # This is a top-level call - create a new thread
+                        tid = ObjFactory.inst()._get_tid()
+                        thread = Thread(tid=tid, parent=None, component=None)
                     else:
-                        leave_time_ns = enter_time_ns
+                        # This is a nested call - reuse the current thread
+                        thread = current_thread
                     
-                    tracer.leave(_method_name, thread, leave_time_ns, ret, exc)
+                    # Get current time for enter event
+                    if timebase:
+                        enter_time_ns = timebase.time().as_ns()
+                    else:
+                        enter_time_ns = 0
+                    
+                    tracer.enter(_method_name, thread, enter_time_ns, args_dict)
+                    
+                    # Set this thread as the current context for nested calls
+                    token = _current_thread.set(thread)
+                    
+                    exc = None
+                    ret = None
+                    try:
+                        ret = await _original(self, *args, **kwargs)
+                        return ret
+                    except Exception as e:
+                        exc = e
+                        raise
+                    finally:
+                        # Restore previous context
+                        _current_thread.reset(token)
+                        
+                        # Get current time for leave event
+                        if timebase:
+                            leave_time_ns = timebase.time().as_ns()
+                        else:
+                            leave_time_ns = enter_time_ns
+                        
+                        tracer.leave(_method_name, thread, leave_time_ns, ret, exc)
+                finally:
+                    # Restore execution depth
+                    if timebase is not None:
+                        timebase._execution_depth -= 1
             
             setattr(cls_rt, name, wrapped_method)
     
@@ -522,6 +611,9 @@ class ObjFactory(ObjFactoryP):
                     metadata = element_type.__metadata__
                     if metadata:
                         for item in metadata:
+                            if isinstance(item, Uptr):
+                                width = Uptr.get_platform_width()
+                                break
                             if isinstance(item, (U, S)):
                                 width = item.width
                                 break
@@ -720,6 +812,9 @@ class ObjFactory(ObjFactoryP):
                     metadata = element_type.__metadata__
                     if metadata:
                         for item in metadata:
+                            if isinstance(item, Uptr):
+                                width = Uptr.get_platform_width()
+                                break
                             if isinstance(item, (U, S)):
                                 width = item.width
                                 break
@@ -779,6 +874,9 @@ class ObjFactory(ObjFactoryP):
                             metadata = element_type.__metadata__
                             if metadata:
                                 for item in metadata:
+                                    if isinstance(item, Uptr):
+                                        width = Uptr.get_platform_width()
+                                        break
                                     if isinstance(item, (U, S)):
                                         width = item.width
                                         break
@@ -986,7 +1084,7 @@ class ObjFactory(ObjFactoryP):
                     def _owner_and_field(p: BindPath):
                         o = comp
                         for part in p._path[:-1]:
-                            o = getattr(o, part)
+                            o = ObjFactory.__get_path_element__(o, part)
                         return o, p._path[-1]
 
                     a_comp, a_field = _owner_and_field(target)
@@ -1014,11 +1112,11 @@ class ObjFactory(ObjFactoryP):
                     if len(p._path) >= 2:
                         owner = comp
                         for part in p._path[:-2]:
-                            owner = getattr(owner, part)
+                            owner = ObjFactory.__get_path_element__(owner, part)
                         bundle_field = p._path[-2]
                         sig = p._path[-1]
                         try:
-                            bundle = getattr(owner, bundle_field)
+                            bundle = ObjFactory.__get_path_element__(owner, bundle_field)
                         except Exception:
                             bundle = None
                         if isinstance(bundle, BundleProxy):
@@ -1031,7 +1129,7 @@ class ObjFactory(ObjFactoryP):
                     owner = comp
                     if len(p._path) > 1:
                         for part in p._path[:-1]:
-                            owner = getattr(owner, part)
+                            owner = ObjFactory.__get_path_element__(owner, part)
                     if len(p._path) == 0:
                         return None
                     sig = p._path[-1]
@@ -1096,14 +1194,14 @@ class ObjFactory(ObjFactoryP):
                     if len(source._path) > 1:
                         # Navigate to the component that owns this signal
                         for part in source._path[:-1]:
-                            source_comp = getattr(source_comp, part)
+                            source_comp = ObjFactory.__get_path_element__(source_comp, part)
                     source_signal = source._path[-1]
                     
                     # Get target component and signal name
                     target_comp = comp
                     if len(target._path) > 1:
                         for part in target._path[:-1]:
-                            target_comp = getattr(target_comp, part)
+                            target_comp = ObjFactory.__get_path_element__(target_comp, part)
                     target_signal = target._path[-1]
                     
                     # Register binding: when source_signal changes, update target_signal
@@ -1169,11 +1267,29 @@ class ObjFactory(ObjFactoryP):
         return None
 
     @staticmethod
+    def __get_path_element__(obj, path_elem: str):
+        """Get a single element from path, handling both attribute and subscript access.
+        
+        Path elements can be:
+        - Regular attribute names: 'field_name'
+        - Subscript indices: '[0]', '[1]', etc.
+        """
+        import re
+        match = re.match(r'^\[(\d+)\]$', path_elem)
+        if match:
+            # It's a subscript access
+            idx = int(match.group(1))
+            return obj[idx]
+        else:
+            # It's an attribute access
+            return getattr(obj, path_elem)
+
+    @staticmethod
     def __get_obj_at_path__(comp, path: Tuple[str, ...]):
         """Get the object at a given path from comp."""
         obj = comp
         for attr_name in path:
-            obj = getattr(obj, attr_name)
+            obj = ObjFactory.__get_path_element__(obj, attr_name)
         return obj
 
     @staticmethod
@@ -1186,7 +1302,7 @@ class ObjFactory(ObjFactoryP):
         if isinstance(path_obj, BindPath):
             obj = comp
             for attr_name in path_obj._path:
-                obj = getattr(obj, attr_name)
+                obj = ObjFactory.__get_path_element__(obj, attr_name)
             return obj
         
         # If it's a bound method or other callable, return it directly
@@ -1196,31 +1312,40 @@ class ObjFactory(ObjFactoryP):
     def __set_bind_path_value__(comp, target, value):
         """Set a target field/method to a value by traversing from comp.
         
-        The target represents a BindPath like self.cons.call or self.p.prod.
+        The target represents a BindPath like self.cons.call or self.p.prod,
+        or self.req[0].method for subscripted paths.
         We need to traverse to the parent object and set the final attribute.
         
         For paths like self.cons.call where cons is None, we need to:
         1. Create an InterfaceImpl object for cons
         2. Set the call attribute on that object
         """
+        import re
+        
         if isinstance(target, BindPath):
             # Traverse to the parent object
             obj = comp
             for i, attr_name in enumerate(target._path[:-1]):
-                next_obj = getattr(obj, attr_name)
-                
-                # If we encounter None and this is an export/port field, create InterfaceImpl
-                if next_obj is None:
-                    # Check if this is an export or port field
-                    metadata = ObjFactory.__get_field_metadata__(obj, attr_name)
-                    if metadata and metadata.get("kind") in ["export", "port"]:
-                        # Create an InterfaceImpl object
-                        next_obj = InterfaceImpl()
-                        setattr(obj, attr_name, next_obj)
+                # Check if this is a subscript access
+                match = re.match(r'^\[(\d+)\]$', attr_name)
+                if match:
+                    idx = int(match.group(1))
+                    next_obj = obj[idx]
+                else:
+                    next_obj = getattr(obj, attr_name, None)
+                    
+                    # If we encounter None and this is an export/port field, create InterfaceImpl
+                    if next_obj is None:
+                        # Check if this is an export or port field
+                        metadata = ObjFactory.__get_field_metadata__(obj, attr_name)
+                        if metadata and metadata.get("kind") in ["export", "port"]:
+                            # Create an InterfaceImpl object
+                            next_obj = InterfaceImpl()
+                            setattr(obj, attr_name, next_obj)
                 
                 obj = next_obj
             
-            # Set the final attribute
+            # Set the final attribute (never a subscript in our binding patterns)
             final_attr = target._path[-1]
             setattr(obj, final_attr, value)
         else:

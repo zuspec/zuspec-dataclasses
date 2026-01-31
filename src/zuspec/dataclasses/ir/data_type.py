@@ -30,6 +30,21 @@ class DataTypeInt(DataType):
     signed : bool = dc.field(default=True)
 
 @dc.dataclass(kw_only=True)
+class DataTypeUptr(DataType):
+    """Platform-sized unsigned pointer type.
+    
+    The width is determined at runtime based on the platform's pointer size.
+    This is semantically equivalent to an unsigned integer large enough to hold
+    an address value (typically 32 or 64 bits depending on the platform).
+    """
+    
+    @staticmethod
+    def get_platform_width() -> int:
+        """Get the platform's pointer size in bits."""
+        import struct
+        return struct.calcsize('P') * 8
+
+@dc.dataclass(kw_only=True)
 class DataTypeStruct(DataType):
     """Structs are pure-data types. 
     - methods and constraints may be applied

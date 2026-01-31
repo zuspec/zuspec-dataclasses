@@ -205,6 +205,84 @@ def test_multiple_events():
     assert mc.irq2_count == 1
 
 
+# =============================================================================
+# Tests for Event field auto-construction (without default_factory)
+# =============================================================================
+
+@zdc.dataclass
+class EventAutoConstruct(zdc.Component):
+    """Test component with Event field that should be auto-constructed."""
+    # Event field without default_factory - should be auto-constructed
+    evt: zdc.Event = zdc.field()
+    flag: bool = zdc.field(default=False)
+
+
+def test_event_field_auto_construct():
+    """Test that Event fields are auto-constructed without default_factory."""
+    comp = EventAutoConstruct()
+    
+    # Event should be auto-constructed
+    assert comp.evt is not None
+    
+    # Should support Event operations
+    assert not comp.evt.is_set()
+    comp.evt.set()
+    assert comp.evt.is_set()
+    comp.evt.clear()
+    assert not comp.evt.is_set()
+
+
+def test_event_field_auto_construct_wait():
+    """Test that auto-constructed Event supports wait()."""
+    async def run_test():
+        comp = EventAutoConstruct()
+        
+        async def waiter():
+            await comp.evt.wait()
+            return True
+        
+        task = asyncio.create_task(waiter())
+        await asyncio.sleep(0.01)
+        
+        # Event should not be set yet
+        assert not comp.evt.is_set()
+        
+        # Set the event
+        comp.evt.set()
+        
+        # Waiter should complete
+        result = await asyncio.wait_for(task, timeout=1.0)
+        assert result is True
+    
+    asyncio.run(run_test())
+
+
+@zdc.dataclass
+class ChildWithEvent(zdc.Component):
+    """Child component with auto-constructed Event."""
+    ready: zdc.Event = zdc.field()
+    done: bool = zdc.field(default=False)
+
+
+@zdc.dataclass
+class ParentWithEventChild(zdc.Component):
+    """Parent component with child that has auto-constructed Event."""
+    child: ChildWithEvent = zdc.field()
+
+
+def test_nested_event_auto_construct():
+    """Test that Event fields in nested components are auto-constructed."""
+    parent = ParentWithEventChild()
+    
+    # Child's event should be auto-constructed
+    assert parent.child.ready is not None
+    
+    # Should work correctly
+    assert not parent.child.ready.is_set()
+    parent.child.ready.set()
+    assert parent.child.ready.is_set()
+
+
 if __name__ == "__main__":
     test_event_callback_sync()
     test_event_callback_sync_only()
@@ -212,5 +290,8 @@ if __name__ == "__main__":
     asyncio.run(test_event_wait_and_callback())
     asyncio.run(test_event_wait_without_callback())
     test_multiple_events()
+    test_event_field_auto_construct()
+    asyncio.run(test_event_field_auto_construct_wait())
+    test_nested_event_auto_construct()
     print("All tests passed!")
     print("Note: Event callbacks must be synchronous Python methods.")

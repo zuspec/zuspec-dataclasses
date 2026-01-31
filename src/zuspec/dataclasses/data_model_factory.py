@@ -5,7 +5,7 @@ import inspect
 import ast
 from .ir.context import Context
 from .ir.data_type import (
-    DataType, DataTypeInt, DataTypeStruct, DataTypeClass,
+    DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass,
     DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
     DataTypeLock, DataTypeEvent, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     DataTypeTuple,
@@ -74,7 +74,15 @@ def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types:
                 
                 if name in field_types:
                     hints, field_type = field_types[name]
-                    if field_type is not None and hasattr(field_type, '__dataclass_fields__'):
+                    
+                    # Check if field_type is a Tuple
+                    origin = get_origin(field_type)
+                    if origin is tuple:
+                        # Return a tuple proxy that supports subscript access
+                        args = get_args(field_type)
+                        elem_type = args[0] if args else None
+                        return _BindProxyTuple(new_expr, elem_type)
+                    elif field_type is not None and hasattr(field_type, '__dataclass_fields__'):
                         nested_indices = {}
                         nested_types = {}
                         idx = 0
@@ -147,7 +155,15 @@ class _BindProxy:
             # Get the type of this field to enable chained access
             if name in field_types:
                 hints, field_type = field_types[name]
-                if field_type is not None and hasattr(field_type, '__dataclass_fields__'):
+                
+                # Check if field_type is a Tuple
+                origin = get_origin(field_type)
+                if origin is tuple:
+                    # Return a tuple proxy that supports subscript access
+                    args = get_args(field_type)
+                    elem_type = args[0] if args else None
+                    return _BindProxyTuple(new_expr, elem_type)
+                elif field_type is not None and hasattr(field_type, '__dataclass_fields__'):
                     # Build field indices for the nested type, excluding internal fields
                     nested_indices = {}
                     nested_types = {}
@@ -188,6 +204,55 @@ class _ExprRefWrapper:
     
     def __hash__(self):
         return hash(id(self))
+    
+    def __eq__(self, other):
+        return self is other
+
+
+class _BindProxyTuple:
+    """Proxy for tuple field types that supports subscript access."""
+    def __init__(self, base_expr: ExprRef, elem_type: type):
+        object.__setattr__(self, '_base_expr', base_expr)
+        object.__setattr__(self, '_elem_type', elem_type)
+    
+    def __getitem__(self, index):
+        """Handle self.req[i] - return an ExprSubscript expression."""
+        base_expr = object.__getattribute__(self, '_base_expr')
+        elem_type = object.__getattribute__(self, '_elem_type')
+        
+        # Create subscript expression
+        subscript_expr = ExprSubscript(
+            value=base_expr,
+            slice=ExprConstant(value=index)
+        )
+        
+        # Return appropriate proxy based on element type
+        if elem_type is not None:
+            if hasattr(elem_type, '__dataclass_fields__'):
+                # Element is a dataclass - return _BindProxy for nested access
+                nested_indices = {}
+                nested_types = {}
+                idx = 0
+                for fname, fval in elem_type.__dataclass_fields__.items():
+                    if not fname.startswith('_'):
+                        nested_indices[fname] = idx
+                        try:
+                            nested_hints = get_type_hints(elem_type)
+                            nested_type = nested_hints.get(fname)
+                            nested_types[fname] = (nested_hints, nested_type)
+                        except Exception:
+                            nested_types[fname] = ({}, None)
+                        idx += 1
+                return _BindProxy(nested_indices, nested_types, subscript_expr)
+            else:
+                # Protocol or other type - allow method references
+                return _BindProxyMethod(subscript_expr, elem_type)
+        
+        return _ExprRefWrapper(subscript_expr)
+    
+    def __hash__(self):
+        base_expr = object.__getattribute__(self, '_base_expr')
+        return hash(id(base_expr))
     
     def __eq__(self, other):
         return self is other
@@ -721,8 +786,11 @@ class DataModelFactory(object):
             
             # Check if this is an annotated int with width information
             if base_type is int and metadata:
-                from .types import U, S
+                from .types import U, S, Uptr
                 for m in metadata:
+                    if isinstance(m, Uptr):
+                        # Platform-sized pointer type
+                        return DataTypeUptr()
                     if isinstance(m, (U, S)):
                         return DataTypeInt(bits=m.width, signed=isinstance(m, S))
             

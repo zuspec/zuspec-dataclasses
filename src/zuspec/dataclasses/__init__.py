@@ -27,7 +27,7 @@ from .decorators import (
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, sync, comb, ExecSync, ExecComb, invariant,
-    inst, tuple
+    inst, tuple, view
 )
 from .types import *
 from .tlm import *
@@ -45,12 +45,12 @@ __all__ = [
     'const', 'bundle', 'mirror', 'monitor',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
-    'inst', 'tuple',
+    'inst', 'tuple', 'view',
     # From types (re-exported via *)
     'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
-    'Timebase', 'TypeBase', 'XtorComponent',
+    'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
     'bit', 'bit1', 'bit16', 'bit2', 'bit3', 'bit32', 'bit4', 'bit5', 'bit6',
     'bit64', 'bit7', 'bit8', 'bitv', 'bv',
     'i128', 'i16', 'i32', 'i64', 'i8',
@@ -63,7 +63,7 @@ __all__ = [
     'uint20_t', 'uint21_t', 'uint22_t', 'uint23_t', 'uint24_t', 'uint25_t',
     'uint26_t', 'uint27_t', 'uint28_t', 'uint29_t', 'uint2_t', 'uint30_t',
     'uint31_t', 'uint32_t', 'uint3_t', 'uint4_t', 'uint5_t', 'uint64_t',
-    'uint6_t', 'uint7_t', 'uint8_t', 'uint9_t', 'width',
+    'uint6_t', 'uint7_t', 'uint8_t', 'uint9_t', 'uptr', 'width',
     # From tlm (re-exported via *)
     'Channel', 'GetIF', 'PutIF', 'ReqRspChannel', 'ReqRspIF', 'Transport',
     # From rt.edge

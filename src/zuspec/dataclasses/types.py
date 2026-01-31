@@ -50,6 +50,21 @@ class U(SignWidth):
         # signed for U types is always False
         self.signed = False
 
+@dc.dataclass
+class Uptr(object):
+    """Marker for platform-sized unsigned pointer type.
+    
+    The width is determined at runtime based on the platform's pointer size.
+    This is equivalent to an unsigned integer large enough to hold an address.
+    """
+    signed : bool = dc.field(default=False)
+    
+    @staticmethod
+    def get_platform_width() -> int:
+        """Get the platform's pointer size in bits."""
+        import struct
+        return struct.calcsize('P') * 8
+
 class TimeUnit(enum.IntEnum):
     S = 1
     MS = -3
@@ -282,7 +297,6 @@ class Bundle(TypeBase):
     """
     pass
 
-
 @dc.dataclass
 class Component(TypeBase):
     """
@@ -484,12 +498,14 @@ u31 = uint31_t
 u32 = uint32_t
 u64 = uint64_t
 u128 = uint128_t
+uptr = Annotated[int, Uptr()]
 
 int8_t = Annotated[int, S(8)]
 int16_t = Annotated[int, S(16)]
 int32_t = Annotated[int, S(32)]
 int64_t = Annotated[int, S(64)]
 int128_t = Annotated[int, S(128)]
+
 
 i8 = int8_t
 i16 = int16_t

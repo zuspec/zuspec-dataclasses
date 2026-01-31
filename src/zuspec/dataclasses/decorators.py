@@ -343,3 +343,7 @@ def invariant(func):
     func._is_invariant = True
     return func
 
+
+def view(m):
+    """Marks a method that returns a component view"""
+    return m

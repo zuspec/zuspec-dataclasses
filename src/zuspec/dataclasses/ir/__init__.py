@@ -49,10 +49,10 @@ def json_converter(pmod, *args, **kwargs):
 # Re-export data model types
 from .fields import Bind, BindSet, Field, FieldInOut, FieldKind, SignalDirection
 from .data_type import (
-    DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent, DataTypeExtern,
-    DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeMemory,
+    DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass, DataTypeComponent, DataTypeExtern,
+    DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeEvent, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
-    DataTypeGetIF, DataTypePutIF, DataTypeChannel,
+    DataTypeGetIF, DataTypePutIF, DataTypeChannel, DataTypeTuple,
     Function, Process, ProcessKind
 )
 from .expr import (
@@ -78,10 +78,10 @@ from .stmt import (
 __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
     "Bind","BindSet","Field","FieldInOut","FieldKind","SignalDirection",
-    "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent","DataTypeExtern",
-    "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeMemory",
+    "DataType","DataTypeInt","DataTypeUptr","DataTypeStruct","DataTypeClass","DataTypeComponent","DataTypeExtern",
+    "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeEvent","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
-    "DataTypeGetIF","DataTypePutIF","DataTypeChannel",
+    "DataTypeGetIF","DataTypePutIF","DataTypeChannel","DataTypeTuple",
     "Function","Process","ProcessKind",
     "Expr","BinOp","UnaryOp","BoolOp","CmpOp","AugOp","ExprBin","ExprRef","ExprConstant",
     "TypeExprRefSelf","ExprRefField","ExprRefParam","ExprRefLocal","ExprRefUnresolved",
