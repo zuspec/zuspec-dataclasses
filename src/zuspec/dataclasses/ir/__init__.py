@@ -52,15 +52,26 @@ from .data_type import (
     DataType, DataTypeInt, DataTypeStruct, DataTypeClass, DataTypeComponent, DataTypeExtern,
     DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
-    DataTypeGetIF, DataTypePutIF, DataTypeChannel,
-    Function, Process, ProcessKind
+    DataTypeGetIF, DataTypePutIF, DataTypeChannel, DataTypeTuple,
+    Function, Process, ProcessKind,
+    # Template support
+    TemplateParamKind, TemplateParam, TemplateParamType, TemplateParamValue, TemplateParamEnum,
+    TemplateArg, TemplateArgType, TemplateArgValue, TemplateArgEnum,
+    DataTypeParameterized, DataTypeSpecialized,
+    # Register support
+    DataTypeRegister, DataTypeRegisterGroup
 )
 from .expr import (
     Expr, BinOp, UnaryOp, BoolOp, CmpOp, AugOp,
     ExprBin, ExprRef, ExprConstant, TypeExprRefSelf, ExprRefField,
     ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprRefPy,
     ExprRefBottomUp, ExprUnary, ExprBool, ExprCompare,
-    ExprAttribute, ExprSlice, ExprSubscript, ExprCall, Keyword, ExprAwait
+    ExprAttribute, ExprSlice, ExprSubscript, ExprCall, Keyword, ExprAwait,
+    # PSS-specific expressions (Phase 1)
+    ExprRange, ExprRangeList, ExprIn, ExprStructField, ExprStructLiteral,
+    # Advanced expressions (Phase 3)
+    ExprCast, ExprStringMethod, ExprHierarchical, ExprHierarchicalElem,
+    ExprStaticRef, ExprCompileHas, ExprNull
 )
 from .expr_phase2 import (
     ExprList, ExprTuple, ExprDict, ExprSet, Comprehension, ExprListComp,
@@ -68,11 +79,13 @@ from .expr_phase2 import (
     ExprJoinedStr, ExprFormattedValue
 )
 from .stmt import (
-    Stmt, StmtExpr, StmtAssign, StmtAugAssign, StmtReturn, StmtIf, StmtFor,
+    Stmt, StmtExpr, StmtAssign, StmtAnnAssign, StmtAugAssign, StmtReturn, StmtIf, StmtFor,
     StmtWhile, StmtBreak, StmtContinue, StmtPass, StmtRaise, StmtAssert, Alias, Arg, Arguments,
     StmtAssume, StmtCover,
     WithItem, StmtWith, StmtExceptHandler, StmtTry, TypeIgnore, Module,
-    StmtMatch, StmtMatchCase, Pattern, PatternValue, PatternAs, PatternOr, PatternSequence
+    StmtMatch, StmtMatchCase, Pattern, PatternValue, PatternAs, PatternOr, PatternSequence,
+    # PSS-specific statements
+    StmtRepeat, StmtRepeatWhile, StmtForeach, StmtYield, StmtRandomize
 )
 
 __all__ = [
@@ -81,14 +94,27 @@ __all__ = [
     "DataType","DataTypeInt","DataTypeStruct","DataTypeClass","DataTypeComponent","DataTypeExtern",
     "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
-    "DataTypeGetIF","DataTypePutIF","DataTypeChannel",
+    "DataTypeGetIF","DataTypePutIF","DataTypeChannel","DataTypeTuple",
     "Function","Process","ProcessKind",
+    # Template support
+    "TemplateParamKind","TemplateParam","TemplateParamType","TemplateParamValue","TemplateParamEnum",
+    "TemplateArg","TemplateArgType","TemplateArgValue","TemplateArgEnum",
+    "DataTypeParameterized","DataTypeSpecialized",
+    # Register support
+    "DataTypeRegister","DataTypeRegisterGroup",
     "Expr","BinOp","UnaryOp","BoolOp","CmpOp","AugOp","ExprBin","ExprRef","ExprConstant",
     "TypeExprRefSelf","ExprRefField","ExprRefParam","ExprRefLocal","ExprRefUnresolved",
     "ExprRefPy","ExprRefBottomUp","ExprUnary",
     "ExprBool","ExprCompare","ExprAttribute","ExprSlice","ExprSubscript","ExprCall","Keyword","ExprAwait",
-    "Stmt","StmtExpr","StmtAssign","StmtAugAssign","StmtReturn","StmtIf","StmtFor","StmtWhile",
+    # PSS-specific expressions
+    "ExprRange","ExprRangeList","ExprIn","ExprStructField","ExprStructLiteral",
+    # Advanced expressions (Phase 3)
+    "ExprCast","ExprStringMethod","ExprHierarchical","ExprHierarchicalElem",
+    "ExprStaticRef","ExprCompileHas","ExprNull",
+    "Stmt","StmtExpr","StmtAssign","StmtAnnAssign","StmtAugAssign","StmtReturn","StmtIf","StmtFor","StmtWhile",
     "StmtBreak","StmtContinue","StmtPass","StmtRaise","StmtAssert","StmtAssume","StmtCover","Alias","Arg","Arguments",
+    # PSS-specific statements
+    "StmtRepeat","StmtRepeatWhile","StmtForeach","StmtYield","StmtRandomize",
 "ExprList","ExprTuple","ExprDict","ExprSet","Comprehension","ExprListComp","ExprDictComp",
 "ExprSetComp","ExprGeneratorExp","ExprIfExp","ExprLambda","ExprNamedExpr",
 "WithItem","StmtWith","StmtExceptHandler","StmtTry","TypeIgnore","Module",

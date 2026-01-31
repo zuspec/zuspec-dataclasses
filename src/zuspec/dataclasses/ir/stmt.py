@@ -172,3 +172,76 @@ class PatternOr(Pattern):
 @dc.dataclass(kw_only=True)
 class PatternSequence(Pattern):
     patterns: List[Pattern] = dc.field(default_factory=list)
+
+
+# ============================================================================
+# PSS-Specific Statements (Phase 2)
+# ============================================================================
+
+@dc.dataclass(kw_only=True)
+class StmtRepeat(Stmt):
+    """PSS repeat statement with count: repeat (count) { body }
+    
+    Examples:
+        repeat (10) { ... }
+        repeat (i : 10) { array[i] = i; }
+    """
+    count: Expr = dc.field()
+    iterator: Optional[Expr] = dc.field(default=None)  # Optional loop variable
+    body: List[Stmt] = dc.field(default_factory=list)
+
+
+@dc.dataclass(kw_only=True)
+class StmtRepeatWhile(Stmt):
+    """PSS repeat-while statement: repeat while (condition) { body }
+    
+    Similar to do-while, but PSS-specific syntax.
+    
+    Example:
+        repeat while (!done) { process(); }
+    """
+    condition: Expr = dc.field()
+    body: List[Stmt] = dc.field(default_factory=list)
+
+
+@dc.dataclass(kw_only=True)
+class StmtForeach(Stmt):
+    """PSS foreach statement: foreach (item : collection) { body }
+    
+    Iterates over elements in a collection with optional index.
+    
+    Examples:
+        foreach (item : array) { process(item); }
+        foreach (item[idx] : array) { data[idx] = item; }
+    """
+    target: Expr = dc.field()  # Iterator variable
+    iter: Expr = dc.field()    # Collection to iterate
+    body: List[Stmt] = dc.field(default_factory=list)
+    index_var: Optional[Expr] = dc.field(default=None)  # Optional index variable
+
+
+@dc.dataclass(kw_only=True)
+class StmtYield(Stmt):
+    """PSS yield statement for activity scheduling
+    
+    Suspends execution and returns control to scheduler.
+    
+    Example:
+        yield;
+    """
+    value: Optional[Expr] = dc.field(default=None)
+
+
+@dc.dataclass(kw_only=True)
+class StmtRandomize(Stmt):
+    """PSS randomize statement with inline constraints
+    
+    Randomizes an object with optional inline constraints.
+    
+    Examples:
+        randomize(obj);
+        randomize(obj) with { x > 10; y < 20; }
+    """
+    target: Optional[Expr] = dc.field(default=None)
+    # Note: constraints will need constraint IR (future phase)
+    constraints: List[Stmt] = dc.field(default_factory=list)
