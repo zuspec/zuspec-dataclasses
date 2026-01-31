@@ -23,10 +23,10 @@ Docstring for src.zuspec.dataclasses
 from asyncio import Event as aEvent
 from typing import Callable
 from .decorators import (
-    dataclass, field, process, input, output,
+    dataclass, field, process, input, output, reg,
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
-    Input, Output, sync, comb, ExecSync, ExecComb, invariant,
+    Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view
 )
 from .types import *
@@ -41,10 +41,10 @@ __all__ = [
     # From asyncio
     'aEvent',
     # From decorators
-    'dataclass', 'field', 'process', 'input', 'output',
+    'dataclass', 'field', 'process', 'input', 'output', 'reg',
     'const', 'bundle', 'mirror', 'monitor',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
-    'Input', 'Output', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
+    'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view',
     # From types (re-exported via *)
     'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimPool', 'CompImpl', 'Component',
@@ -71,7 +71,7 @@ __all__ = [
     # Submodules
     'ir', 'profiles',
     # Other exports
-    'DataModelFactory', 'Event',
+    'DataModelFactory', 'Event', 'cycles',
 ]
 
 @dataclass
@@ -88,6 +88,52 @@ class Event(aEvent):
         return ret
 
 
+class _CyclesAwaitable:
+    """Awaitable object representing a wait for N clock cycles.
+    
+    This is used in sync processes to introduce state boundaries:
+        await zdc.cycles(1)  # Wait one clock cycle
+        await zdc.cycles(4)  # Wait four clock cycles
+    
+    The SPRTL transformation pass converts these to FSM state transitions.
+    """
+    def __init__(self, n: int):
+        if n < 1:
+            raise ValueError(f"cycles() requires n >= 1, got {n}")
+        self.n = n
+    
+    def __await__(self):
+        # This is a placeholder for synthesis - actual runtime would need
+        # an event loop integration. For now, just yield control.
+        yield self
+        return None
+    
+    def __repr__(self):
+        return f"cycles({self.n})"
+
+
+def cycles(n: int = 1) -> _CyclesAwaitable:
+    """Wait for N clock cycles in a synchronous process.
+    
+    Used within @zdc.sync decorated methods to introduce explicit
+    clock cycle boundaries, which translate to FSM state transitions.
+    
+    Args:
+        n: Number of clock cycles to wait (default: 1)
+        
+    Returns:
+        An awaitable that represents waiting for N cycles
+        
+    Example:
+        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        async def process(self):
+            while True:
+                self.data = self.input
+                await zdc.cycles(1)  # State boundary
+                self.output = self.data * 2
+                await zdc.cycles(1)  # Another state boundary
+    """
+    return _CyclesAwaitable(n)
 
 
 

@@ -364,9 +364,13 @@ class CompImplRT(object):
             if child is None:
                 child = getattr(comp, child_name, None)
             
-            if child is not None and hasattr(child, '_impl'):
-                # Recursively read from child component
-                return child._impl.signal_read(child, rest_path)
+            if child is not None:
+                if hasattr(child, '_impl'):
+                    # Recursively read from child component
+                    return child._impl.signal_read(child, rest_path)
+                else:
+                    # Fallback: try direct attribute access (e.g., VCDDrivenComponent)
+                    return getattr(child, rest_path, 0)
         
         return 0
     

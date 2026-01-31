@@ -141,17 +141,51 @@ def input(*args, width=None, **kwargs) -> Any:
         metadata["width"] = width
     return dataclasses.field(default_factory=Input, metadata=metadata if metadata else None)
 
-def output(*args, width=None, **kwargs) -> Any:
+def output(*args, width=None, reset=None, **kwargs) -> Any:
     """Marks an output field.
 
     Args:
         width: For width-unspecified types (eg bitv), specifies the concrete width.
                May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
+        reset: Reset value for the output. Used to generate reset logic in synchronous processes.
+               For scalar types, use a literal (e.g., reset=0).
+               For struct types, use a dict (e.g., reset={'data': 0, 'valid': 0}).
     """
     metadata = {}
     if width is not None:
         metadata["width"] = width
+    if reset is not None:
+        metadata["reset"] = reset
     return dc.field(default_factory=Output, metadata=metadata if metadata else None)
+
+
+class RegField(object):
+    """Marker type for 'reg' (internal register) dataclass fields.
+    
+    Note: This is distinct from zdc.Reg which is for register-file style
+    registers with read/write methods. RegField is for internal FSM state.
+    """
+    ...
+
+def reg(reset=None, width=None) -> Any:
+    """Marks an internal register field.
+
+    Internal registers are state elements that persist across clock cycles.
+    They are not exposed as ports but are used for internal FSM state.
+
+    Args:
+        reset: Reset value for the register. Used to generate reset logic.
+               For scalar types, use a literal (e.g., reset=0).
+               For struct types, use a dict (e.g., reset={'field': 0}).
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+               May be an int or a lambda that reads consts.
+    """
+    metadata = {"kind": "reg"}
+    if reset is not None:
+        metadata["reset"] = reset
+    if width is not None:
+        metadata["width"] = width
+    return dc.field(default_factory=RegField, metadata=metadata)
 
 
 def const(default=None) -> Any:
