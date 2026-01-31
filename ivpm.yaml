@@ -7,6 +7,8 @@ package:
       deps:
       - name: pytest
         src: pypi
+      - name: pytest-asyncio
+        src: pypi
       - name: flake8
         src: pypi
       - name: sphinx
