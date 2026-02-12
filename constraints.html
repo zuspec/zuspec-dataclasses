@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Constraints &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Runtime Implementation (Developer)" href="runtime.html" />
+    <link rel="prev" title="Core Types" href="types.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="constraints">
+<h1>Constraints<a class="headerlink" href="#constraints" title="Link to this heading">¶</a></h1>
+<p>Zuspec provides a SystemVerilog/PSS-style constraint framework for declarative
+specification of constraints on random variables. Constraints are declared using
+decorated methods and parsed from Python AST without runtime execution.</p>
+<p><strong>Key Features:</strong></p>
+<ul class="simple">
+<li><p>Pythonic syntax with statement-based constraints</p></li>
+<li><p>Full AST parsing (no runtime execution)</p></li>
+<li><p>Support for SystemVerilog and PSS constraint patterns</p></li>
+<li><p>Fixed and generic constraints</p></li>
+<li><p>Distribution, implication, uniqueness, and solve ordering</p></li>
+<li><p>Type-safe with IDE support</p></li>
+</ul>
+<section id="quick-example">
+<h2>Quick Example<a class="headerlink" href="#quick-example" title="Link to this heading">¶</a></h2>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
+    <span class="c1"># Random fields</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="n">header_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">60</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+    <span class="n">pkt_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># Fixed constraint (always applied)</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">valid_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header_len</span>
+
+    <span class="c1"># Distribution constraint</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">type_distribution</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">zdc</span><span class="o">.</span><span class="n">dist</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pkt_type</span><span class="p">,</span> <span class="p">{</span>
+            <span class="mi">0</span><span class="p">:</span> <span class="mi">40</span><span class="p">,</span>  <span class="c1"># 40% weight</span>
+            <span class="mi">1</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>  <span class="c1"># 30% weight</span>
+            <span class="mi">2</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>  <span class="c1"># 20% weight</span>
+            <span class="mi">3</span><span class="p">:</span> <span class="mi">10</span>   <span class="c1"># 10% weight</span>
+        <span class="p">})</span>
+
+    <span class="c1"># Generic constraint (conditionally applied)</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">small_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
+</pre></div>
+</div>
+</section>
+<section id="random-variables">
+<h2>Random Variables<a class="headerlink" href="#random-variables" title="Link to this heading">¶</a></h2>
+<section id="rand">
+<h3>rand()<a class="headerlink" href="#rand" title="Link to this heading">¶</a></h3>
+<p>Declares a random variable that will be assigned a value by the constraint solver.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Transaction</span><span class="p">:</span>
+    <span class="c1"># Basic random variable</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># With bounds</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># Random array</span>
+    <span class="n">buffer</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Parameters:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">bounds</span></code> (tuple, optional) - <code class="docutils literal notranslate"><span class="pre">(min,</span> <span class="pre">max)</span></code> value bounds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">default</span></code> (any) - Default value when not randomized</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">size</span></code> (int, optional) - Array size for vector fields</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">width</span></code> (int or callable, optional) - Bit width for <code class="docutils literal notranslate"><span class="pre">bitv</span></code> types</p></li>
+</ul>
+</section>
+<section id="randc">
+<h3>randc()<a class="headerlink" href="#randc" title="Link to this heading">¶</a></h3>
+<p>Declares a random-cyclic variable that cycles through all values in its domain
+before repeating. The solver ensures a permutation is exhausted before generating
+a new one.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TestSequence</span><span class="p">:</span>
+    <span class="c1"># Random-cyclic: cycles through 0-15</span>
+    <span class="n">test_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randc</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">valid_tests</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Only IDs 0-11 are valid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">test_id</span> <span class="o">&lt;</span> <span class="mi">12</span>
+</pre></div>
+</div>
+<p><strong>Parameters:</strong></p>
+<ul class="simple">
+<li><p>Same as <code class="docutils literal notranslate"><span class="pre">rand()</span></code></p></li>
+</ul>
+</section>
+</section>
+<section id="constraint-decorators">
+<h2>Constraint Decorators<a class="headerlink" href="#constraint-decorators" title="Link to this heading">¶</a></h2>
+<section id="constraint">
+<h3>&#64;constraint<a class="headerlink" href="#constraint" title="Link to this heading">¶</a></h3>
+<p>Marks a method as a fixed constraint that is always applied during randomization.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BusTransaction</span><span class="p">:</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">addr_aligned</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Address must be word-aligned&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span>
+</pre></div>
+</div>
+<p><strong>Statement Syntax:</strong></p>
+<p>Constraints use statement syntax (not returns). Multiple statements are implicitly ANDed:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bounds_check</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="mi">0</span>      <span class="c1"># Statement 1</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">100</span>     <span class="c1"># Statement 2</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span>  <span class="c1"># Statement 3</span>
+    <span class="c1"># All three must be true</span>
+</pre></div>
+</div>
+</section>
+<section id="constraint-generic">
+<h3>&#64;constraint.generic<a class="headerlink" href="#constraint-generic" title="Link to this heading">¶</a></h3>
+<p>Marks a method as a generic constraint that is only applied when explicitly
+activated. Used for conditional constraint sets.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">small_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">large_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="mi">1024</span>
+</pre></div>
+</div>
+<p>Generic constraints can be selectively enabled based on test scenarios.</p>
+</section>
+</section>
+<section id="constraint-expressions">
+<h2>Constraint Expressions<a class="headerlink" href="#constraint-expressions" title="Link to this heading">¶</a></h2>
+<section id="comparison-operators">
+<h3>Comparison Operators<a class="headerlink" href="#comparison-operators" title="Link to this heading">¶</a></h3>
+<p>Standard comparison operators are supported:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">comparisons</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">&lt;</span> <span class="mi">100</span>          <span class="c1"># Less than</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">&lt;=</span> <span class="mi">100</span>         <span class="c1"># Less than or equal</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span>            <span class="c1"># Greater than</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">&gt;=</span> <span class="mi">10</span>          <span class="c1"># Greater than or equal</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">==</span> <span class="mi">50</span>          <span class="c1"># Equal</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="o">!=</span> <span class="mi">0</span>           <span class="c1"># Not equal</span>
+    <span class="mi">0</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">g</span> <span class="o">&lt;</span> <span class="mi">100</span>     <span class="c1"># Chained comparison</span>
+</pre></div>
+</div>
+</section>
+<section id="boolean-operators">
+<h3>Boolean Operators<a class="headerlink" href="#boolean-operators" title="Link to this heading">¶</a></h3>
+<p>Logical operators combine constraint expressions:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">logic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>     <span class="c1"># AND</span>
+    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">)</span>    <span class="c1"># OR</span>
+    <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">flag</span>                      <span class="c1"># NOT</span>
+    <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">read</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">)</span>    <span class="c1"># NOT of expression</span>
+</pre></div>
+</div>
+</section>
+<section id="arithmetic-operators">
+<h3>Arithmetic Operators<a class="headerlink" href="#arithmetic-operators" title="Link to this heading">¶</a></h3>
+<p>Arithmetic expressions can be used in constraints:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">arithmetic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">sum</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">diff</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">product</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">quotient</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">remainder</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">aligned</span> <span class="o">==</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="set-membership">
+<h3>Set Membership<a class="headerlink" href="#set-membership" title="Link to this heading">¶</a></h3>
+<p>Use Python’s <code class="docutils literal notranslate"><span class="pre">in</span></code> operator for set membership:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">membership</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># Value in range [0, 16)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
+
+    <span class="c1"># Value in discrete set</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="bit-operations">
+<h3>Bit Operations<a class="headerlink" href="#bit-operations" title="Link to this heading">¶</a></h3>
+<p>Subscript notation accesses bits and slices:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bit_ops</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># Bit slice (SystemVerilog style)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="c1"># Single bit</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">flags</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="helper-functions">
+<h2>Helper Functions<a class="headerlink" href="#helper-functions" title="Link to this heading">¶</a></h2>
+<section id="implies">
+<h3>implies()<a class="headerlink" href="#implies" title="Link to this heading">¶</a></h3>
+<p>Expresses implication constraints: “if condition, then consequence must hold.”</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">implications</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># If type is 0, addr must be less than 16</span>
+    <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">&lt;</span> <span class="mi">16</span><span class="p">)</span>
+
+    <span class="c1"># If type is 1, addr must be in range [16, 128)</span>
+    <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">128</span><span class="p">))</span>
+</pre></div>
+</div>
+<p><strong>Logical equivalent:</strong> <code class="docutils literal notranslate"><span class="pre">implies(a,</span> <span class="pre">b)</span></code> is <code class="docutils literal notranslate"><span class="pre">(not</span> <span class="pre">a)</span> <span class="pre">or</span> <span class="pre">b</span></code></p>
+</section>
+<section id="dist">
+<h3>dist()<a class="headerlink" href="#dist" title="Link to this heading">¶</a></h3>
+<p>Specifies weighted distribution for random variables.</p>
+<p><strong>Discrete Values:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">type_distribution</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">zdc</span><span class="o">.</span><span class="n">dist</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pkt_type</span><span class="p">,</span> <span class="p">{</span>
+        <span class="mi">0</span><span class="p">:</span> <span class="mi">40</span><span class="p">,</span>  <span class="c1"># Type 0: 40% weight</span>
+        <span class="mi">1</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>  <span class="c1"># Type 1: 30% weight</span>
+        <span class="mi">2</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>  <span class="c1"># Type 2: 20% weight</span>
+        <span class="mi">3</span><span class="p">:</span> <span class="mi">10</span>   <span class="c1"># Type 3: 10% weight</span>
+    <span class="p">})</span>
+</pre></div>
+</div>
+<p><strong>Ranges:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">addr_distribution</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">zdc</span><span class="o">.</span><span class="n">dist</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span> <span class="p">{</span>
+        <span class="c1"># Weight per value in range</span>
+        <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">64</span><span class="p">):</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="s1">&#39;per_value&#39;</span><span class="p">),</span>
+
+        <span class="c1"># Total weight for entire range</span>
+        <span class="nb">range</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">192</span><span class="p">):</span> <span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="s1">&#39;total&#39;</span><span class="p">),</span>
+
+        <span class="c1"># Another per-value range</span>
+        <span class="nb">range</span><span class="p">(</span><span class="mi">192</span><span class="p">,</span> <span class="mi">256</span><span class="p">):</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="s1">&#39;per_value&#39;</span><span class="p">)</span>
+    <span class="p">})</span>
+</pre></div>
+</div>
+<p><strong>Weight Types:</strong></p>
+<ul class="simple">
+<li><p>Integer: Absolute weight for discrete values</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">(weight,</span> <span class="pre">'per_value')</span></code>: Weight per value in range</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">(weight,</span> <span class="pre">'total')</span></code>: Total weight for entire range</p></li>
+</ul>
+</section>
+<section id="unique">
+<h3>unique()<a class="headerlink" href="#unique" title="Link to this heading">¶</a></h3>
+<p>Constrains a set of variables to have unique values.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">IDGenerator</span><span class="p">:</span>
+    <span class="n">id1</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">id2</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">id3</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">all_unique</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">zdc</span><span class="o">.</span><span class="n">unique</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">id1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id2</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id3</span><span class="p">])</span>
+</pre></div>
+</div>
+<p><strong>Alternative:</strong> Explicit pairwise constraints:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">all_unique_explicit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">id1</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">id2</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">id1</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">id3</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">id2</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">id3</span>
+</pre></div>
+</div>
+</section>
+<section id="solve-order">
+<h3>solve_order()<a class="headerlink" href="#solve-order" title="Link to this heading">¶</a></h3>
+<p>Provides a hint to the solver about variable ordering for better constraint
+propagation. Variables are solved in the specified order.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">order_hint</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># Solve addr before data</span>
+    <span class="n">zdc</span><span class="o">.</span><span class="n">solve_order</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">*</span> <span class="mi">2</span>
+</pre></div>
+</div>
+<p>Multiple variables can be specified:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pipeline_order</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># stage1 solved first, then stage2, then stage3</span>
+    <span class="n">zdc</span><span class="o">.</span><span class="n">solve_order</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stage1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stage2</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stage3</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="parsing-constraints">
+<h2>Parsing Constraints<a class="headerlink" href="#parsing-constraints" title="Link to this heading">¶</a></h2>
+<section id="constraintparser">
+<h3>ConstraintParser<a class="headerlink" href="#constraintparser" title="Link to this heading">¶</a></h3>
+<p>Extracts and parses constraint methods from dataclasses. Converts constraint
+expressions to IR-compatible dictionary representation.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConstraintParser</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Transaction</span><span class="p">:</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">aligned</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span>
+
+<span class="c1"># Parse constraints</span>
+<span class="n">parser</span> <span class="o">=</span> <span class="n">ConstraintParser</span><span class="p">()</span>
+<span class="n">constraints</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">extract_constraints</span><span class="p">(</span><span class="n">Transaction</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">constraints</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Constraint: </span><span class="si">{</span><span class="n">c</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Kind: </span><span class="si">{</span><span class="n">c</span><span class="p">[</span><span class="s1">&#39;kind&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># &#39;fixed&#39; or &#39;generic&#39;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Expressions: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">c</span><span class="p">[</span><span class="s1">&#39;exprs&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="extract-rand-fields">
+<h3>extract_rand_fields()<a class="headerlink" href="#extract-rand-fields" title="Link to this heading">¶</a></h3>
+<p>Extracts all random and random-cyclic fields from a dataclass with their metadata.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract_rand_fields</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="n">test_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randc</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># Extract random fields</span>
+<span class="n">rand_fields</span> <span class="o">=</span> <span class="n">extract_rand_fields</span><span class="p">(</span><span class="n">Packet</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">rand_fields</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Field: </span><span class="si">{</span><span class="n">f</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Kind: </span><span class="si">{</span><span class="n">f</span><span class="p">[</span><span class="s1">&#39;kind&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># &#39;rand&#39; or &#39;randc&#39;</span>
+    <span class="k">if</span> <span class="s1">&#39;bounds&#39;</span> <span class="ow">in</span> <span class="n">f</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Bounds: </span><span class="si">{</span><span class="n">f</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="complete-example">
+<h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BusTransaction</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bus transaction with comprehensive constraints&quot;&quot;&quot;</span>
+
+    <span class="c1"># Random fields</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">read_enable</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">write_enable</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">addr_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># Fixed constraints</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">not_both_rw</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cannot read and write simultaneously&quot;&quot;&quot;</span>
+        <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">read_enable</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_enable</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">at_least_one</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Must have read or write enabled&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">read_enable</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_enable</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">addr_aligned</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Address must be word-aligned&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">addr_type_ranges</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Address type determines address range&quot;&quot;&quot;</span>
+        <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span>
+                   <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">64</span><span class="p">))</span>
+        <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span>
+                   <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">192</span><span class="p">))</span>
+        <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">2</span><span class="p">,</span>
+                   <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">192</span><span class="p">,</span> <span class="mi">256</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">solve_order_hint</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Solve address before data&quot;&quot;&quot;</span>
+        <span class="n">zdc</span><span class="o">.</span><span class="n">solve_order</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+
+    <span class="c1"># Generic constraints</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">low_addr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generic: restrict to low addresses&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">&lt;</span> <span class="mi">128</span>
+
+<span class="c1"># Parse the constraints</span>
+<span class="n">parser</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ConstraintParser</span><span class="p">()</span>
+<span class="n">constraints</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">extract_constraints</span><span class="p">(</span><span class="n">BusTransaction</span><span class="p">)</span>
+<span class="n">rand_fields</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">extract_rand_fields</span><span class="p">(</span><span class="n">BusTransaction</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">constraints</span><span class="p">)</span><span class="si">}</span><span class="s2"> constraints&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">rand_fields</span><span class="p">)</span><span class="si">}</span><span class="s2"> random fields&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="supported-patterns">
+<h2>Supported Patterns<a class="headerlink" href="#supported-patterns" title="Link to this heading">¶</a></h2>
+<section id="constraint-language-coverage">
+<h3>Constraint Language Coverage<a class="headerlink" href="#constraint-language-coverage" title="Link to this heading">¶</a></h3>
+<p><strong>SystemVerilog:</strong></p>
+<ul class="simple">
+<li><p>✅ Basic constraints (comparisons, arithmetic)</p></li>
+<li><p>✅ Logical operators (<code class="docutils literal notranslate"><span class="pre">and</span></code>, <code class="docutils literal notranslate"><span class="pre">or</span></code>, <code class="docutils literal notranslate"><span class="pre">not</span></code>)</p></li>
+<li><p>✅ Set membership (<code class="docutils literal notranslate"><span class="pre">in</span> <span class="pre">range()</span></code>)</p></li>
+<li><p>✅ Implication (<code class="docutils literal notranslate"><span class="pre">implies()</span></code>)</p></li>
+<li><p>✅ Distribution (<code class="docutils literal notranslate"><span class="pre">dist()</span></code>)</p></li>
+<li><p>✅ Uniqueness (<code class="docutils literal notranslate"><span class="pre">unique()</span></code>)</p></li>
+<li><p>✅ Solve ordering (<code class="docutils literal notranslate"><span class="pre">solve_order()</span></code>)</p></li>
+<li><p>✅ Random-cyclic variables (<code class="docutils literal notranslate"><span class="pre">randc()</span></code>)</p></li>
+<li><p>⏳ Array constraints (<code class="docutils literal notranslate"><span class="pre">for</span></code> loops - future)</p></li>
+</ul>
+<p><strong>PSS (Portable Stimulus Standard):</strong></p>
+<ul class="simple">
+<li><p>✅ Fixed constraints (<code class="docutils literal notranslate"><span class="pre">&#64;constraint</span></code>)</p></li>
+<li><p>✅ Generic constraints (<code class="docutils literal notranslate"><span class="pre">&#64;constraint.generic</span></code>)</p></li>
+<li><p>⏳ Parameterized generics (future)</p></li>
+<li><p>⏳ Activity constraints (future)</p></li>
+<li><p>⏳ Action fields (future)</p></li>
+</ul>
+</section>
+</section>
+<section id="design-notes">
+<h2>Design Notes<a class="headerlink" href="#design-notes" title="Link to this heading">¶</a></h2>
+<section id="ast-based-parsing">
+<h3>AST-Based Parsing<a class="headerlink" href="#ast-based-parsing" title="Link to this heading">¶</a></h3>
+<p>Constraints are <strong>never executed at runtime</strong>. They are parsed from Python AST,
+enabling:</p>
+<ul class="simple">
+<li><p>Static analysis and validation</p></li>
+<li><p>Code generation to other languages</p></li>
+<li><p>Type checking without execution</p></li>
+<li><p>IDE support and autocomplete</p></li>
+</ul>
+</section>
+<section id="statement-based-syntax">
+<h3>Statement-Based Syntax<a class="headerlink" href="#statement-based-syntax" title="Link to this heading">¶</a></h3>
+<p>Unlike functions that return boolean expressions, constraints use statement syntax
+where each statement is implicitly ANDed:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bounds</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="mi">0</span>       <span class="c1"># Statement 1</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">100</span>      <span class="c1"># Statement 2</span>
+    <span class="c1"># Equivalent to: (self.x &gt;= 0) and (self.x &lt; 100)</span>
+</pre></div>
+</div>
+<p>This matches SystemVerilog and PSS syntax patterns.</p>
+</section>
+<section id="future-extensions">
+<h3>Future Extensions<a class="headerlink" href="#future-extensions" title="Link to this heading">¶</a></h3>
+<p>Planned enhancements include:</p>
+<ul class="simple">
+<li><p><strong>Soft constraints</strong> - Preferences that guide but don’t restrict solutions</p></li>
+<li><p><strong>Array constraints</strong> - <code class="docutils literal notranslate"><span class="pre">for</span></code> loop support for constraining arrays</p></li>
+<li><p><strong>Parameterized generics</strong> - Generic constraints with parameters</p></li>
+<li><p><strong>Activity constraints</strong> - PSS-specific activity and action constraints</p></li>
+<li><p><strong>Optimization</strong> - Constraint propagation and caching</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Constraints</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#quick-example">Quick Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#random-variables">Random Variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#constraint-decorators">Constraint Decorators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#constraint-expressions">Constraint Expressions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#helper-functions">Helper Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#parsing-constraints">Parsing Constraints</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#complete-example">Complete Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-patterns">Supported Patterns</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design-notes">Design Notes</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="types.html" title="previous chapter">Core Types</a></li>
+      <li>Next: <a href="runtime.html" title="next chapter">Runtime Implementation (Developer)</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2022-2026, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/constraints.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -141,6 +141,27 @@ The process re-evaluates whenever any input changes.</p>
 </pre></div>
 </div>
 </section>
+<section id="constraint">
+<h3>&#64;constraint<a class="headerlink" href="#constraint" title="Link to this heading">¶</a></h3>
+<p>Marks a method as a constraint for random variables. See <a class="reference internal" href="constraints.html"><span class="doc">Constraints</span></a> for
+complete documentation.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">min_size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="mi">64</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">small_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
+</pre></div>
+</div>
+<p>Constraint methods use statement syntax where statements are implicitly ANDed.
+See <a class="reference internal" href="constraints.html"><span class="doc">Constraints</span></a> for details on constraint expressions, helper functions
+(<code class="docutils literal notranslate"><span class="pre">implies()</span></code>, <code class="docutils literal notranslate"><span class="pre">dist()</span></code>, <code class="docutils literal notranslate"><span class="pre">unique()</span></code>, <code class="docutils literal notranslate"><span class="pre">solve_order()</span></code>), and random variables.</p>
+</section>
 </section>
 <section id="field-specifiers">
 <h2>Field Specifiers<a class="headerlink" href="#field-specifiers" title="Link to this heading">¶</a></h2>
@@ -181,6 +202,48 @@ Used for configuration and parameterization.</p>
     <span class="n">dat_w</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bitv</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">DATA_WIDTH</span><span class="p">)</span>
 </pre></div>
 </div>
+</section>
+<section id="rand">
+<h3>rand()<a class="headerlink" href="#rand" title="Link to this heading">¶</a></h3>
+<p>Marks a field as a random variable for constraint-based randomization.
+See <a class="reference internal" href="constraints.html"><span class="doc">Constraints</span></a> for complete documentation.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Transaction</span><span class="p">:</span>
+    <span class="c1"># Basic random variable</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># With value bounds</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># Random array</span>
+    <span class="n">buffer</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Parameters:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">bounds</span></code> (tuple) - <code class="docutils literal notranslate"><span class="pre">(min,</span> <span class="pre">max)</span></code> value bounds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">default</span></code> (any) - Default value when not randomized</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">size</span></code> (int) - Array size for vector fields</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">width</span></code> (int or callable) - Bit width for <code class="docutils literal notranslate"><span class="pre">bitv</span></code> types</p></li>
+</ul>
+<p>Random variables are constrained using <code class="docutils literal notranslate"><span class="pre">&#64;constraint</span></code> decorated methods.</p>
+</section>
+<section id="randc">
+<h3>randc()<a class="headerlink" href="#randc" title="Link to this heading">¶</a></h3>
+<p>Marks a field as a random-cyclic variable that cycles through all values
+before repeating.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TestSequence</span><span class="p">:</span>
+    <span class="c1"># Cycles through 0-15</span>
+    <span class="n">test_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randc</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">valid_tests</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">test_id</span> <span class="o">&lt;</span> <span class="mi">12</span>  <span class="c1"># Only 0-11 are valid</span>
+</pre></div>
+</div>
+<p>Random-cyclic variables ensure all valid values are generated before repeating.
+Parameters are the same as <code class="docutils literal notranslate"><span class="pre">rand()</span></code>. See <a class="reference internal" href="constraints.html"><span class="doc">Constraints</span></a> for details.</p>
 </section>
 <section id="input">
 <h3>input()<a class="headerlink" href="#input" title="Link to this heading">¶</a></h3>
@@ -442,6 +505,7 @@ configuration.</p>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
 </ul>
