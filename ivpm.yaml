@@ -19,7 +19,9 @@ package:
         src: pypi
 
     - name: default
-      deps: []
+      deps:
+      - name: networkx
+        src: pypi
 
 
 

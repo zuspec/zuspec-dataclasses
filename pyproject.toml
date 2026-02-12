@@ -2,6 +2,9 @@
 [project]
 name = "zuspec-dataclasses"
 version = "0.0.1"
+dependencies = [
+    "networkx>=3.0"
+]
 
 [build-system]
 requires = ["setuptools"]
