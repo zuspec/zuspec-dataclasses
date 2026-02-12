@@ -28,6 +28,7 @@ Version: 2026.1 (January 2026)
    components
    fields
    types
+   constraints
    runtime
    checker
 

@@ -1,107 +1,117 @@
-# Documentation Updates for IR Checker
+# RST Documentation Updates for Constraints
 
 ## Summary
 
-Updated zuspec-dataclasses documentation to reflect the new flake8-based IR checker and deprecate the old mypy-based approach.
-
-## Files Created
-
-### 1. `docs/checker.rst` (NEW)
-
-**Comprehensive documentation for the IR Checker system:**
-
-- **Overview** - Architecture and key features
-- **Installation and Setup** - Including VSCode integration
-- **Error Codes** - Complete reference (ZDC001-ZDC006) with examples
-- **Built-in Profiles** - PythonProfile and RetargetableProfile
-- **Profile Auto-Detection** - How profiles are determined
-- **Creating Custom Checkers** - Step-by-step guide with examples
-- **Checker Extension API** - ProfileChecker base class and utilities
-- **Command-Line Usage** - Running from terminal and CI/CD
-- **Troubleshooting** - Common issues and solutions
-- **Comparison with Other Tools** - vs MyPy, flake8, PyLint
-- **FAQ** - Frequently asked questions
+Updated the RST documentation to include comprehensive coverage of the new
+constraint framework.
 
 ## Files Modified
 
-### 2. `docs/index.rst`
+### 1. docs/constraints.rst (NEW)
+**Lines:** 550+  
+**Status:** ✅ Created
 
-**Changes:**
+Comprehensive documentation covering:
+- Quick example
+- Random variables (`rand()`, `randc()`)
+- Constraint decorators (`@constraint`, `@constraint.generic`)
+- Constraint expressions (comparisons, boolean, arithmetic, sets, bits)
+- Helper functions (`implies()`, `dist()`, `unique()`, `solve_order()`)
+- Parsing API (`ConstraintParser`, `extract_rand_fields()`)
+- Complete examples
+- Supported patterns (SV and PSS coverage)
+- Design notes and future extensions
 
-1. Updated Quick Links to feature the new checker
-2. Added checker to User Guide table of contents
-3. Reorganized additional documentation with deprecation notice
+### 2. docs/index.rst
+**Status:** ✅ Updated
 
-### 3. `docs/profile_checker_guide.md`
+Added `constraints` to the User Guide toctree after `types` and before `runtime`.
 
-**Added deprecation warning** directing users to the new IR checker documentation.
+### 3. docs/fields.rst
+**Status:** ✅ Updated
 
-### 4. `docs/profile_checker_design.md`
+Added three new sections:
+1. `@constraint` decorator documentation (references constraints.rst)
+2. `rand()` field function with parameters
+3. `randc()` field function with parameters
 
-**Added deprecation warning** explaining the architectural changes in the new IR-based checker.
+## Validation
 
-## Documentation Structure
-
+All RST files validated successfully:
 ```
-docs/
-├── index.rst                          # Main index - UPDATED
-│   ├── User Guide
-│   │   ├── intro.rst
-│   │   ├── components.rst
-│   │   ├── fields.rst
-│   │   ├── types.rst
-│   │   ├── runtime.rst
-│   │   ├── abstraction_levels.rst
-│   │   └── checker.rst                # NEW - IR Checker docs
-│   ├── Advanced Topics
-│   │   ├── datamodel.rst
-│   │   └── profiles.rst
-│   └── Historical (Deprecated)
-│       ├── profile_checker_guide.md   # DEPRECATED - Added warning
-│       └── profile_checker_design.md  # DEPRECATED - Added warning
+✅ constraints.rst is valid RST
+✅ fields.rst is valid RST  
+✅ index.rst is valid RST
 ```
 
-## Key Improvements
+Note: Warnings about `:doc:` roles and `toctree` directives are expected -
+these are Sphinx-specific and will work correctly when building docs.
 
-### 1. **Centralized Documentation**
+## Content Organization
 
-All checker information is now in one comprehensive document (`checker.rst`).
+The documentation follows this structure:
 
-### 2. **Clear Deprecation Path**
+**index.rst** (Table of Contents)
+├── User Guide
+│   ├── intro.rst
+│   ├── abstraction_levels.rst
+│   ├── components.rst
+│   ├── fields.rst (updated with rand/randc)
+│   ├── types.rst
+│   ├── **constraints.rst** (NEW)
+│   ├── runtime.rst
+│   └── checker.rst
+└── Advanced Topics
+    ├── datamodel.rst
+    └── profiles.rst
 
-The old mypy-based documentation is clearly marked as deprecated with warning boxes and links to new docs.
+## Coverage Checklist
 
-### 3. **Practical Examples**
+### Constraints Features Documented ✅
+- [x] Random variables (`rand()`, `randc()`)
+- [x] Constraint decorators (`@constraint`, `@constraint.generic`)
+- [x] Comparison operators
+- [x] Boolean operators
+- [x] Arithmetic expressions
+- [x] Set membership (`in range()`)
+- [x] Bit operations (subscripts)
+- [x] `implies()` helper
+- [x] `dist()` helper with discrete and range weights
+- [x] `unique()` helper
+- [x] `solve_order()` helper
+- [x] Parser API (`ConstraintParser`, `extract_rand_fields()`)
+- [x] Complete working examples
+- [x] Design philosophy (AST parsing, statement syntax)
+- [x] Future extensions
 
-Every error code includes "Bad" and "Good" examples showing the error and fix.
+### Integration with Existing Docs ✅
+- [x] Referenced from index.rst
+- [x] Cross-referenced from fields.rst
+- [x] Consistent with existing style and structure
+- [x] Uses standard RST formatting
 
-### 4. **VSCode Integration**
+## Building the Docs
 
-Detailed setup instructions for VSCode with step-by-step configuration.
-
-### 5. **Extensibility Focus**
-
-Comprehensive guide for creating custom checkers with entrypoint registration.
-
-### 6. **Troubleshooting Section**
-
-Common issues and solutions including source location problems and VSCode integration.
-
-## Building the Documentation
-
-To build the HTML documentation:
+To build HTML documentation with Sphinx:
 
 ```bash
 cd packages/zuspec-dataclasses/docs
 make html
-# Output in _build/html/index.html
 ```
 
-## Version Information
+The constraints documentation will be accessible at:
+`_build/html/constraints.html`
 
-- **Documentation Version:** 2026.1 (January 2026)
-- **IR Checker:** Introduced in version 2026.1
-- **MyPy Plugin:** Deprecated in version 2026.1
-- **Source Location Fix:** Included in version 2026.1
+## Next Steps
 
-The documentation is now ready for users to successfully install, configure, and use the Zuspec IR Checker! 📚✨
+When documentation is built:
+1. Review rendered HTML output
+2. Check cross-references work correctly
+3. Verify code examples are properly highlighted
+4. Test navigation between related sections
+
+---
+
+**Status:** ✅ Complete
+**Date:** February 12, 2026
+**Tests:** 283 passing

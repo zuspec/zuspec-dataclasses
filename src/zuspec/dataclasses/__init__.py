@@ -27,8 +27,10 @@ from .decorators import (
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
-    inst, tuple, view
+    inst, tuple, view, constraint, rand, randc
 )
+from .constraint_helpers import implies, dist, unique, solve_order
+from .constraint_parser import ConstraintParser, extract_rand_fields
 from .types import *
 from .tlm import *
 from . import ir
@@ -45,7 +47,11 @@ __all__ = [
     'const', 'bundle', 'mirror', 'monitor',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
-    'inst', 'tuple', 'view',
+    'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
+    # From constraint_helpers
+    'implies', 'dist', 'unique', 'solve_order',
+    # From constraint_parser
+    'ConstraintParser', 'extract_rand_fields',
     # From types (re-exported via *)
     'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',

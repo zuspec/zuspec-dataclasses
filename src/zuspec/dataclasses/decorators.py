@@ -92,6 +92,7 @@ def field(
     """Field declaration for structs and bundles.
     
     Args:
+        rand: Mark field as random variable (deprecated - use rand() function)
         width: For width-unspecified types (eg bitv), specifies the concrete width.
                May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
     """
@@ -115,11 +116,96 @@ def field(
     if width is not None:
         metadata = {} if metadata is None else metadata
         metadata["width"] = width
+    
+    if rand:
+        metadata = {} if metadata is None else metadata
+        metadata["rand"] = True
 
     if metadata is not None:
         args["metadata"] = metadata
 
     return dc.field(**args)
+
+
+def rand(
+        bounds: Optional[tuple] = None,
+        default: Any = 0,
+        size: Optional[int] = None,
+        width=None):
+    """Mark a field as a random variable.
+    
+    Random variables are solved by the constraint solver during randomization.
+    
+    Example:
+        @dataclass
+        class Packet:
+            length: rand(bounds=(64, 1500), default=64)
+            data: rand(size=16)  # Array of 16 random elements
+    
+    Args:
+        bounds: Tuple of (min, max) bounds for the variable
+        default: Default value when not randomized
+        size: For array fields, size of the array
+        width: For width-unspecified types, concrete width
+        
+    Returns:
+        Field metadata for a random variable
+    """
+    metadata = {"rand": True, "rand_kind": "rand"}
+    
+    if bounds is not None:
+        metadata["bounds"] = bounds
+    
+    if size is not None:
+        metadata["size"] = size
+    
+    if width is not None:
+        metadata["width"] = width
+    
+    return dc.field(default=default, metadata=metadata)
+
+
+def randc(
+        bounds: Optional[tuple] = None,
+        default: Any = 0,
+        size: Optional[int] = None,
+        width=None):
+    """Mark a field as a random-cyclic variable.
+    
+    Random-cyclic variables iterate through all values in their domain
+    before repeating. The solver ensures a permutation of all valid values
+    is exhausted before regenerating a new permutation.
+    
+    Example:
+        @dataclass
+        class TestSequence:
+            test_id: randc(bounds=(0, 15))  # Cycles through 0-15
+            
+            @constraint
+            def valid_test(self):
+                self.test_id < 12  # Only IDs 0-11 valid
+    
+    Args:
+        bounds: Tuple of (min, max) bounds for the variable
+        default: Default value when not randomized
+        size: For array fields, size of the array
+        width: For width-unspecified types, concrete width
+        
+    Returns:
+        Field metadata for a random-cyclic variable
+    """
+    metadata = {"rand": True, "rand_kind": "randc"}
+    
+    if bounds is not None:
+        metadata["bounds"] = bounds
+    
+    if size is not None:
+        metadata["size"] = size
+    
+    if width is not None:
+        metadata["width"] = width
+    
+    return dc.field(default=default, metadata=metadata)
     
 class Input(object): 
     """Marker type for 'input' dataclass fields"""
@@ -376,6 +462,37 @@ def invariant(func):
     """
     func._is_invariant = True
     return func
+
+
+class _ConstraintDecorator:
+    """Decorator for constraint methods with support for variants."""
+    
+    def __call__(self, func):
+        """Mark a method as a fixed constraint (always applies).
+        
+        Example:
+            @constraint
+            def valid_addr(self):
+                self.addr < 256
+        """
+        func._is_constraint = True
+        func._constraint_kind = 'fixed'
+        return func
+    
+    def generic(self, func):
+        """Mark a method as a generic constraint (only applies when referenced).
+        
+        Example:
+            @constraint.generic
+            def addr_low(self):
+                self.addr < 0x1000
+        """
+        func._is_constraint = True
+        func._constraint_kind = 'generic'
+        return func
+
+# Create singleton instance
+constraint = _ConstraintDecorator()
 
 
 def view(m):

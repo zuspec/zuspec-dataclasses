@@ -123,6 +123,30 @@ Marks a method as a structural invariant that must always hold.
         def sum_constraint(self) -> bool:
             return self.x + self.y <= 150
 
+@constraint
+===========
+
+Marks a method as a constraint for random variables. See :doc:`constraints` for
+complete documentation.
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class Packet:
+        length: int = zdc.rand(bounds=(64, 1500), default=64)
+        
+        @zdc.constraint
+        def min_size(self):
+            self.length >= 64
+        
+        @zdc.constraint.generic
+        def small_packet(self):
+            self.length < 256
+
+Constraint methods use statement syntax where statements are implicitly ANDed.
+See :doc:`constraints` for details on constraint expressions, helper functions
+(``implies()``, ``dist()``, ``unique()``, ``solve_order()``), and random variables.
+
 ****************
 Field Specifiers
 ****************
@@ -170,6 +194,54 @@ Used for configuration and parameterization.
         
         # Other fields can reference const values
         dat_w : zdc.bitv = zdc.output(width=lambda s: s.DATA_WIDTH)
+
+rand()
+======
+
+Marks a field as a random variable for constraint-based randomization.
+See :doc:`constraints` for complete documentation.
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class Transaction:
+        # Basic random variable
+        addr: int = zdc.rand(default=0)
+        
+        # With value bounds
+        data: int = zdc.rand(bounds=(0, 255), default=0)
+        
+        # Random array
+        buffer: int = zdc.rand(size=16, default=0)
+
+**Parameters:**
+
+* ``bounds`` (tuple) - ``(min, max)`` value bounds
+* ``default`` (any) - Default value when not randomized
+* ``size`` (int) - Array size for vector fields
+* ``width`` (int or callable) - Bit width for ``bitv`` types
+
+Random variables are constrained using ``@constraint`` decorated methods.
+
+randc()
+=======
+
+Marks a field as a random-cyclic variable that cycles through all values
+before repeating.
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class TestSequence:
+        # Cycles through 0-15
+        test_id: int = zdc.randc(bounds=(0, 15), default=0)
+        
+        @zdc.constraint
+        def valid_tests(self):
+            self.test_id < 12  # Only 0-11 are valid
+
+Random-cyclic variables ensure all valid values are generated before repeating.
+Parameters are the same as ``rand()``. See :doc:`constraints` for details.
 
 input()
 =======
