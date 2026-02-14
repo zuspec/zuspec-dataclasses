@@ -40,6 +40,16 @@ class Field(Base):
     width_expr : Optional[Expr] = dc.field(default=None)  # Width expression (e.g., lambda s:s.WIDTH)
     kwargs_expr : Optional[Expr] = dc.field(default=None)  # Kwargs for instantiation (e.g., lambda s:dict(W=s.WIDTH))
     is_const : bool = dc.field(default=False)  # True for const fields (structural type parameters)
+    
+    # Constraint solver metadata
+    rand_kind : Optional[str] = dc.field(default=None)  # "rand", "randc", or None
+    domain : Optional[tuple] = dc.field(default=None)  # Domain constraint (min, max) tuple or list of values
+    size : Optional[int] = dc.field(default=None)  # Array size (for fixed-size arrays)
+    
+    @property
+    def is_array(self) -> bool:
+        """Returns True if this field represents an array (has a size)."""
+        return self.size is not None
 
 @dc.dataclass(kw_only=True)
 class FieldInOut(Field):

@@ -34,48 +34,130 @@ class AddPropagator(Propagator):
         
         changed = set()
         
-        # Forward propagation: constrain result based on lhs + rhs
-        result_intervals = self._compute_sum_intervals(
-            lhs.domain.intervals, rhs.domain.intervals
-        )
-        new_result_domain = IntDomain(result_intervals, result.domain.width, result.domain.signed)
-        old_result = result.domain
-        result.domain = result.domain.intersect(new_result_domain)
-        
-        if result.domain.is_empty():
-            return PropagationResult.conflict()
-        if result.domain != old_result:
-            changed.add(result)
-        
-        # Backward propagation: constrain lhs based on result - rhs
-        lhs_intervals = self._compute_diff_intervals(
-            result.domain.intervals, rhs.domain.intervals
-        )
-        new_lhs_domain = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
-        old_lhs = lhs.domain
-        lhs.domain = lhs.domain.intersect(new_lhs_domain)
-        
-        if lhs.domain.is_empty():
-            return PropagationResult.conflict()
-        if lhs.domain != old_lhs:
-            changed.add(lhs)
-        
-        # Backward propagation: constrain rhs based on result - lhs
-        rhs_intervals = self._compute_diff_intervals(
-            result.domain.intervals, lhs.domain.intervals
-        )
-        new_rhs_domain = IntDomain(rhs_intervals, rhs.domain.width, rhs.domain.signed)
-        old_rhs = rhs.domain
-        rhs.domain = rhs.domain.intersect(new_rhs_domain)
-        
-        if rhs.domain.is_empty():
-            return PropagationResult.conflict()
-        if rhs.domain != old_rhs:
-            changed.add(rhs)
+        # For small domains, use precise enumeration
+        small_threshold = 1000
+        if lhs.domain.size() * rhs.domain.size() <= small_threshold:
+            # Precise forward propagation
+            valid_sums = set()
+            for lhs_val in lhs.domain.values():
+                for rhs_val in rhs.domain.values():
+                    valid_sums.add((lhs_val + rhs_val) % self.modulo)
+            
+            # Constrain result
+            result_intervals = self._values_to_intervals(valid_sums)
+            new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
+            old_result = result.domain
+            result.domain = result.domain.intersect(new_result)
+            
+            if result.domain.is_empty():
+                return PropagationResult.conflict()
+            if result.domain != old_result:
+                changed.add(result)
+            
+            # Precise backward propagation
+            result_values = set(result.domain.values())
+            valid_lhs = set()
+            valid_rhs = set()
+            
+            for lhs_val in lhs.domain.values():
+                for rhs_val in rhs.domain.values():
+                    if (lhs_val + rhs_val) % self.modulo in result_values:
+                        valid_lhs.add(lhs_val)
+                        valid_rhs.add(rhs_val)
+            
+            # Constrain lhs
+            if valid_lhs:
+                lhs_intervals = self._values_to_intervals(valid_lhs)
+                new_lhs = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
+                old_lhs = lhs.domain
+                lhs.domain = lhs.domain.intersect(new_lhs)
+                
+                if lhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if lhs.domain != old_lhs:
+                    changed.add(lhs)
+            else:
+                lhs.domain = IntDomain([], lhs.domain.width, lhs.domain.signed)
+                return PropagationResult.conflict()
+            
+            # Constrain rhs
+            if valid_rhs:
+                rhs_intervals = self._values_to_intervals(valid_rhs)
+                new_rhs = IntDomain(rhs_intervals, rhs.domain.width, rhs.domain.signed)
+                old_rhs = rhs.domain
+                rhs.domain = rhs.domain.intersect(new_rhs)
+                
+                if rhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if rhs.domain != old_rhs:
+                    changed.add(rhs)
+            else:
+                rhs.domain = IntDomain([], rhs.domain.width, rhs.domain.signed)
+                return PropagationResult.conflict()
+        else:
+            # Conservative interval arithmetic for large domains
+            # Forward propagation: constrain result based on lhs + rhs
+            result_intervals = self._compute_sum_intervals(
+                lhs.domain.intervals, rhs.domain.intervals
+            )
+            new_result_domain = IntDomain(result_intervals, result.domain.width, result.domain.signed)
+            old_result = result.domain
+            result.domain = result.domain.intersect(new_result_domain)
+            
+            if result.domain.is_empty():
+                return PropagationResult.conflict()
+            if result.domain != old_result:
+                changed.add(result)
+            
+            # Backward propagation: constrain lhs based on result - rhs
+            lhs_intervals = self._compute_diff_intervals(
+                result.domain.intervals, rhs.domain.intervals
+            )
+            new_lhs_domain = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
+            old_lhs = lhs.domain
+            lhs.domain = lhs.domain.intersect(new_lhs_domain)
+            
+            if lhs.domain.is_empty():
+                return PropagationResult.conflict()
+            if lhs.domain != old_lhs:
+                changed.add(lhs)
+            
+            # Backward propagation: constrain rhs based on result - lhs
+            rhs_intervals = self._compute_diff_intervals(
+                result.domain.intervals, lhs.domain.intervals
+            )
+            new_rhs_domain = IntDomain(rhs_intervals, rhs.domain.width, rhs.domain.signed)
+            old_rhs = rhs.domain
+            rhs.domain = rhs.domain.intersect(new_rhs_domain)
+            
+            if rhs.domain.is_empty():
+                return PropagationResult.conflict()
+            if rhs.domain != old_rhs:
+                changed.add(rhs)
         
         if changed:
             return PropagationResult.consistent(changed)
         return PropagationResult.fixed_point()
+    
+    def _values_to_intervals(self, values: Set[int]) -> List[Tuple[int, int]]:
+        """Convert a set of values to a list of intervals"""
+        if not values:
+            return []
+        
+        sorted_vals = sorted(values)
+        intervals = []
+        start = sorted_vals[0]
+        end = start
+        
+        for val in sorted_vals[1:]:
+            if val == end + 1:
+                end = val
+            else:
+                intervals.append((start, end))
+                start = val
+                end = val
+        intervals.append((start, end))
+        return intervals
     
     def _compute_sum_intervals(
         self, lhs_intervals: List[Tuple[int, int]], rhs_intervals: List[Tuple[int, int]]
@@ -158,59 +240,121 @@ class SubPropagator(Propagator):
         
         changed = set()
         
-        # Forward propagation: result = lhs - rhs
-        result_intervals = []
-        for lhs_lo, lhs_hi in lhs.domain.intervals:
-            for rhs_lo, rhs_hi in rhs.domain.intervals:
-                min_diff = (lhs_lo - rhs_hi) % self.modulo
-                max_diff = (lhs_hi - rhs_lo) % self.modulo
+        # For small domains, use precise enumeration
+        small_threshold = 1000
+        if lhs.domain.size() * rhs.domain.size() <= small_threshold:
+            # Precise forward propagation
+            valid_diffs = set()
+            for lhs_val in lhs.domain.values():
+                for rhs_val in rhs.domain.values():
+                    valid_diffs.add((lhs_val - rhs_val) % self.modulo)
+            
+            # Constrain result
+            result_intervals = self._values_to_intervals(valid_diffs)
+            new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
+            old_result = result.domain
+            result.domain = result.domain.intersect(new_result)
+            
+            if result.domain.is_empty():
+                return PropagationResult.conflict()
+            if result.domain != old_result:
+                changed.add(result)
+            
+            # Precise backward propagation
+            result_values = set(result.domain.values())
+            valid_lhs = set()
+            valid_rhs = set()
+            
+            for lhs_val in lhs.domain.values():
+                for rhs_val in rhs.domain.values():
+                    if (lhs_val - rhs_val) % self.modulo in result_values:
+                        valid_lhs.add(lhs_val)
+                        valid_rhs.add(rhs_val)
+            
+            # Constrain lhs
+            if valid_lhs:
+                lhs_intervals = self._values_to_intervals(valid_lhs)
+                new_lhs = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
+                old_lhs = lhs.domain
+                lhs.domain = lhs.domain.intersect(new_lhs)
                 
-                if lhs_lo - rhs_hi < 0 or lhs_hi - rhs_lo < 0:
-                    result_intervals.append((0, self.modulo - 1))
-                else:
-                    result_intervals.append((min_diff, max_diff))
-        
-        new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
-        old_result = result.domain
-        result.domain = result.domain.intersect(new_result)
-        
-        if result.domain.is_empty():
-            return PropagationResult.conflict()
-        if result.domain != old_result:
-            changed.add(result)
-        
-        # Backward: lhs = result + rhs
-        lhs_intervals = []
-        for res_lo, res_hi in result.domain.intervals:
-            for rhs_lo, rhs_hi in rhs.domain.intervals:
-                min_sum = (res_lo + rhs_lo) % self.modulo
-                max_sum = (res_hi + rhs_hi) % self.modulo
+                if lhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if lhs.domain != old_lhs:
+                    changed.add(lhs)
+            else:
+                lhs.domain = IntDomain([], lhs.domain.width, lhs.domain.signed)
+                return PropagationResult.conflict()
+            
+            # Constrain rhs
+            if valid_rhs:
+                rhs_intervals = self._values_to_intervals(valid_rhs)
+                new_rhs = IntDomain(rhs_intervals, rhs.domain.width, rhs.domain.signed)
+                old_rhs = rhs.domain
+                rhs.domain = rhs.domain.intersect(new_rhs)
                 
-                if res_lo + rhs_lo >= self.modulo or res_hi + rhs_hi >= self.modulo:
-                    lhs_intervals.append((0, self.modulo - 1))
-                else:
-                    lhs_intervals.append((min_sum, max_sum))
-        
-        new_lhs = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
-        old_lhs = lhs.domain
-        lhs.domain = lhs.domain.intersect(new_lhs)
-        
-        if lhs.domain.is_empty():
-            return PropagationResult.conflict()
-        if lhs.domain != old_lhs:
-            changed.add(lhs)
-        
-        # Backward: rhs = lhs - result
-        rhs_intervals = []
-        for lhs_lo, lhs_hi in lhs.domain.intervals:
+                if rhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if rhs.domain != old_rhs:
+                    changed.add(rhs)
+            else:
+                rhs.domain = IntDomain([], rhs.domain.width, rhs.domain.signed)
+                return PropagationResult.conflict()
+        else:
+            # Conservative interval arithmetic for large domains
+            # Forward propagation: result = lhs - rhs
+            result_intervals = []
+            for lhs_lo, lhs_hi in lhs.domain.intervals:
+                for rhs_lo, rhs_hi in rhs.domain.intervals:
+                    min_diff = (lhs_lo - rhs_hi) % self.modulo
+                    max_diff = (lhs_hi - rhs_lo) % self.modulo
+                    
+                    if lhs_lo - rhs_hi < 0 or lhs_hi - rhs_lo < 0:
+                        result_intervals.append((0, self.modulo - 1))
+                    else:
+                        result_intervals.append((min_diff, max_diff))
+            
+            new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
+            old_result = result.domain
+            result.domain = result.domain.intersect(new_result)
+            
+            if result.domain.is_empty():
+                return PropagationResult.conflict()
+            if result.domain != old_result:
+                changed.add(result)
+            
+            # Backward: lhs = result + rhs
+            lhs_intervals = []
             for res_lo, res_hi in result.domain.intervals:
-                min_diff = (lhs_lo - res_hi) % self.modulo
-                max_diff = (lhs_hi - res_lo) % self.modulo
-                
-                if lhs_lo - res_hi < 0 or lhs_hi - res_lo < 0:
-                    rhs_intervals.append((0, self.modulo - 1))
-                else:
-                    rhs_intervals.append((min_diff, max_diff))
+                for rhs_lo, rhs_hi in rhs.domain.intervals:
+                    min_sum = (res_lo + rhs_lo) % self.modulo
+                    max_sum = (res_hi + rhs_hi) % self.modulo
+                    
+                    if res_lo + rhs_lo >= self.modulo or res_hi + rhs_hi >= self.modulo:
+                        lhs_intervals.append((0, self.modulo - 1))
+                    else:
+                        lhs_intervals.append((min_sum, max_sum))
+            
+            new_lhs = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
+            old_lhs = lhs.domain
+            lhs.domain = lhs.domain.intersect(new_lhs)
+            
+            if lhs.domain.is_empty():
+                return PropagationResult.conflict()
+            if lhs.domain != old_lhs:
+                changed.add(lhs)
+            
+            # Backward: rhs = lhs - result
+            rhs_intervals = []
+            for lhs_lo, lhs_hi in lhs.domain.intervals:
+                for res_lo, res_hi in result.domain.intervals:
+                    min_diff = (lhs_lo - res_hi) % self.modulo
+                    max_diff = (lhs_hi - res_lo) % self.modulo
+                    
+                    if lhs_lo - res_hi < 0 or lhs_hi - res_lo < 0:
+                        rhs_intervals.append((0, self.modulo - 1))
+                    else:
+                        rhs_intervals.append((min_diff, max_diff))
         
         new_rhs = IntDomain(rhs_intervals, rhs.domain.width, rhs.domain.signed)
         old_rhs = rhs.domain
@@ -224,6 +368,26 @@ class SubPropagator(Propagator):
         if changed:
             return PropagationResult.consistent(changed)
         return PropagationResult.fixed_point()
+    
+    def _values_to_intervals(self, values: Set[int]) -> List[Tuple[int, int]]:
+        """Convert a set of values to a list of intervals"""
+        if not values:
+            return []
+        
+        sorted_vals = sorted(values)
+        intervals = []
+        start = sorted_vals[0]
+        end = start
+        
+        for val in sorted_vals[1:]:
+            if val == end + 1:
+                end = val
+            else:
+                intervals.append((start, end))
+                start = val
+                end = val
+        intervals.append((start, end))
+        return intervals
     
     def affected_variables(self) -> Set[str]:
         return {self.result_var, self.lhs_var, self.rhs_var}
@@ -253,7 +417,7 @@ class MultPropagator(Propagator):
         self.small_domain_threshold = small_domain_threshold
     
     def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
-        """Forward propagation for multiplication."""
+        """Forward and backward propagation for multiplication."""
         result = variables.get(self.result_var)
         lhs = variables.get(self.lhs_var)
         rhs = variables.get(self.rhs_var)
@@ -266,9 +430,10 @@ class MultPropagator(Propagator):
         
         changed = set()
         
+        # Forward propagation: constrain result based on lhs * rhs
         # Check if domains are small enough to enumerate
         if lhs.domain.size() * rhs.domain.size() <= self.small_domain_threshold:
-            # Exact enumeration
+            # Exact enumeration for forward propagation
             products = set()
             for lhs_val in lhs.domain.values():
                 for rhs_val in rhs.domain.values():
@@ -320,6 +485,82 @@ class MultPropagator(Propagator):
             if result.domain != old_result:
                 changed.add(result)
         
+        # Backward propagation: constrain lhs and rhs based on result
+        # Only do this for small domains to avoid performance issues
+        if (lhs.domain.size() * rhs.domain.size() <= self.small_domain_threshold and 
+            result.domain.size() <= 100):
+            # Enumerate valid (lhs, rhs) pairs
+            valid_lhs = set()
+            valid_rhs = set()
+            
+            # Get result values as a set for fast membership checking
+            result_values = set(result.domain.values())
+            
+            for lhs_val in lhs.domain.values():
+                for rhs_val in rhs.domain.values():
+                    product = (lhs_val * rhs_val) % self.modulo
+                    if product in result_values:
+                        valid_lhs.add(lhs_val)
+                        valid_rhs.add(rhs_val)
+            
+            # Update lhs domain
+            if valid_lhs:
+                sorted_lhs = sorted(valid_lhs)
+                lhs_intervals = []
+                start = sorted_lhs[0]
+                end = start
+                
+                for val in sorted_lhs[1:]:
+                    if val == end + 1:
+                        end = val
+                    else:
+                        lhs_intervals.append((start, end))
+                        start = val
+                        end = val
+                lhs_intervals.append((start, end))
+                
+                new_lhs = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
+                old_lhs = lhs.domain
+                lhs.domain = lhs.domain.intersect(new_lhs)
+                
+                if lhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if lhs.domain != old_lhs:
+                    changed.add(lhs)
+            else:
+                # No valid lhs values
+                lhs.domain = IntDomain([], lhs.domain.width, lhs.domain.signed)
+                return PropagationResult.conflict()
+            
+            # Update rhs domain
+            if valid_rhs:
+                sorted_rhs = sorted(valid_rhs)
+                rhs_intervals = []
+                start = sorted_rhs[0]
+                end = start
+                
+                for val in sorted_rhs[1:]:
+                    if val == end + 1:
+                        end = val
+                    else:
+                        rhs_intervals.append((start, end))
+                        start = val
+                        end = val
+                rhs_intervals.append((start, end))
+                
+                new_rhs = IntDomain(rhs_intervals, rhs.domain.width, rhs.domain.signed)
+                old_rhs = rhs.domain
+                rhs.domain = rhs.domain.intersect(new_rhs)
+                
+                if rhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if rhs.domain != old_rhs:
+                    changed.add(rhs)
+            else:
+                # No valid rhs values
+                rhs.domain = IntDomain([], rhs.domain.width, rhs.domain.signed)
+                return PropagationResult.conflict()
+        
         if changed:
             return PropagationResult.consistent(changed)
         return PropagationResult.fixed_point()
@@ -347,7 +588,7 @@ class DivPropagator(Propagator):
         self.rhs_var = rhs_var
     
     def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
-        """Forward propagation for division."""
+        """Forward and backward propagation for division."""
         result = variables.get(self.result_var)
         lhs = variables.get(self.lhs_var)
         rhs = variables.get(self.rhs_var)
@@ -368,36 +609,121 @@ class DivPropagator(Propagator):
         if rhs.domain.is_empty():
             return PropagationResult.conflict()
         
-        # Forward propagation with conservative bounds
-        result_intervals = []
-        for lhs_lo, lhs_hi in lhs.domain.intervals:
-            for rhs_lo, rhs_hi in rhs.domain.intervals:
-                if rhs_lo <= 0 <= rhs_hi:
-                    # Skip intervals containing zero
-                    continue
-                
-                quotients = []
-                if rhs_lo != 0:
-                    quotients.extend([lhs_lo // rhs_lo, lhs_hi // rhs_lo])
-                if rhs_hi != 0:
-                    quotients.extend([lhs_lo // rhs_hi, lhs_hi // rhs_hi])
-                
-                if quotients:
-                    result_intervals.append((min(quotients), max(quotients)))
-        
-        if result_intervals:
-            new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
-            old_result = result.domain
-            result.domain = result.domain.intersect(new_result)
+        # For small domains, use precise enumeration
+        small_threshold = 1000
+        if lhs.domain.size() * rhs.domain.size() <= small_threshold:
+            # Precise forward and backward propagation via enumeration
+            valid_quotients = set()
+            valid_lhs = set()
+            valid_rhs = set()
             
-            if result.domain.is_empty():
+            # Get result values as a set for fast membership checking
+            result_values = set(result.domain.values())
+            
+            for lhs_val in lhs.domain.values():
+                for rhs_val in rhs.domain.values():
+                    if rhs_val == 0:
+                        continue
+                    quotient = lhs_val // rhs_val
+                    valid_quotients.add(quotient)
+                    
+                    # Check if this combination produces a valid result
+                    if quotient in result_values:
+                        valid_lhs.add(lhs_val)
+                        valid_rhs.add(rhs_val)
+            
+            # Constrain result
+            if valid_quotients:
+                result_intervals = self._values_to_intervals(valid_quotients)
+                new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
+                old_result = result.domain
+                result.domain = result.domain.intersect(new_result)
+                
+                if result.domain.is_empty():
+                    return PropagationResult.conflict()
+                if result.domain != old_result:
+                    changed.add(result)
+            
+            # Constrain lhs (backward propagation)
+            if valid_lhs:
+                lhs_intervals = self._values_to_intervals(valid_lhs)
+                new_lhs = IntDomain(lhs_intervals, lhs.domain.width, lhs.domain.signed)
+                old_lhs = lhs.domain
+                lhs.domain = lhs.domain.intersect(new_lhs)
+                
+                if lhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if lhs.domain != old_lhs:
+                    changed.add(lhs)
+            else:
+                lhs.domain = IntDomain([], lhs.domain.width, lhs.domain.signed)
                 return PropagationResult.conflict()
-            if result.domain != old_result:
-                changed.add(result)
+            
+            # Constrain rhs (backward propagation)
+            if valid_rhs:
+                rhs_intervals = self._values_to_intervals(valid_rhs)
+                new_rhs = IntDomain(rhs_intervals, rhs.domain.width, rhs.domain.signed)
+                old_rhs = rhs.domain
+                rhs.domain = rhs.domain.intersect(new_rhs)
+                
+                if rhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if rhs.domain != old_rhs:
+                    changed.add(rhs)
+            else:
+                rhs.domain = IntDomain([], rhs.domain.width, rhs.domain.signed)
+                return PropagationResult.conflict()
+        else:
+            # Conservative bounds propagation for large domains
+            result_intervals = []
+            for lhs_lo, lhs_hi in lhs.domain.intervals:
+                for rhs_lo, rhs_hi in rhs.domain.intervals:
+                    if rhs_lo <= 0 <= rhs_hi:
+                        # Skip intervals containing zero
+                        continue
+                    
+                    quotients = []
+                    if rhs_lo != 0:
+                        quotients.extend([lhs_lo // rhs_lo, lhs_hi // rhs_lo])
+                    if rhs_hi != 0:
+                        quotients.extend([lhs_lo // rhs_hi, lhs_hi // rhs_hi])
+                    
+                    if quotients:
+                        result_intervals.append((min(quotients), max(quotients)))
+            
+            if result_intervals:
+                new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
+                old_result = result.domain
+                result.domain = result.domain.intersect(new_result)
+                
+                if result.domain.is_empty():
+                    return PropagationResult.conflict()
+                if result.domain != old_result:
+                    changed.add(result)
         
         if changed:
             return PropagationResult.consistent(changed)
         return PropagationResult.fixed_point()
+    
+    def _values_to_intervals(self, values: Set[int]) -> List[Tuple[int, int]]:
+        """Convert a set of values to a list of intervals"""
+        if not values:
+            return []
+        
+        sorted_vals = sorted(values)
+        intervals = []
+        start = sorted_vals[0]
+        end = start
+        
+        for val in sorted_vals[1:]:
+            if val == end + 1:
+                end = val
+            else:
+                intervals.append((start, end))
+                start = val
+                end = val
+        intervals.append((start, end))
+        return intervals
     
     def affected_variables(self) -> Set[str]:
         return {self.result_var, self.lhs_var, self.rhs_var}
@@ -424,7 +750,7 @@ class ModPropagator(Propagator):
         self.rhs_var = rhs_var
     
     def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
-        """Forward propagation for modulo."""
+        """Forward and backward propagation for modulo."""
         result = variables.get(self.result_var)
         lhs = variables.get(self.lhs_var)
         rhs = variables.get(self.rhs_var)
@@ -445,7 +771,7 @@ class ModPropagator(Propagator):
         if rhs.domain.is_empty():
             return PropagationResult.conflict()
         
-        # Constrain result: 0 <= result < |rhs|
+        # Forward propagation: constrain result: 0 <= result < |rhs|
         result_intervals = []
         for rhs_lo, rhs_hi in rhs.domain.intervals:
             if rhs_lo <= 0 <= rhs_hi:
@@ -462,6 +788,51 @@ class ModPropagator(Propagator):
                 return PropagationResult.conflict()
             if result.domain != old_result:
                 changed.add(result)
+        
+        # Backward propagation: constrain lhs based on result and rhs
+        # For lhs % rhs == result, lhs must be in the set of values where lhs % rhs ∈ result.domain
+        # When rhs and result are both small/constrained, filter lhs
+        if rhs.domain.size() <= 10 and result.domain.size() <= 10:
+            # Enumerate valid lhs values
+            valid_result_values = set(result.domain.values())
+            valid_lhs_values = []
+            for lhs_val in lhs.domain.values():
+                for rhs_val in rhs.domain.values():
+                    if rhs_val == 0:
+                        continue
+                    mod_result = lhs_val % rhs_val
+                    if mod_result in valid_result_values:
+                        valid_lhs_values.append(lhs_val)
+                        break  # This lhs value is valid
+            
+            if valid_lhs_values:
+                # Create new domain from valid values
+                if valid_lhs_values:
+                    valid_lhs_values = sorted(set(valid_lhs_values))
+                    new_lhs_intervals = []
+                    # Group consecutive values into intervals
+                    start = valid_lhs_values[0]
+                    end = valid_lhs_values[0]
+                    for val in valid_lhs_values[1:]:
+                        if val == end + 1:
+                            end = val
+                        else:
+                            new_lhs_intervals.append((start, end))
+                            start = val
+                            end = val
+                    new_lhs_intervals.append((start, end))
+                    
+                    new_lhs_domain = IntDomain(new_lhs_intervals, lhs.domain.width, lhs.domain.signed)
+                    old_lhs = lhs.domain
+                    lhs.domain = lhs.domain.intersect(new_lhs_domain)
+                    
+                    if lhs.domain.is_empty():
+                        return PropagationResult.conflict()
+                    if lhs.domain != old_lhs:
+                        changed.add(lhs)
+            else:
+                # No valid lhs values
+                return PropagationResult.conflict()
         
         if changed:
             return PropagationResult.consistent(changed)

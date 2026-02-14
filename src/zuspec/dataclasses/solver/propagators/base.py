@@ -35,6 +35,18 @@ class PropagationResult:
     def fixed_point() -> 'PropagationResult':
         """Create a fixed point result."""
         return PropagationResult(PropagationStatus.FIXED_POINT, set())
+    
+    def is_conflict(self) -> bool:
+        """Check if result is a conflict."""
+        return self.status == PropagationStatus.CONFLICT
+    
+    def is_fixed_point(self) -> bool:
+        """Check if result is a fixed point."""
+        return self.status == PropagationStatus.FIXED_POINT
+    
+    def is_consistent(self) -> bool:
+        """Check if result is consistent (domains changed)."""
+        return self.status == PropagationStatus.CONSISTENT
 
 
 class Propagator(ABC):

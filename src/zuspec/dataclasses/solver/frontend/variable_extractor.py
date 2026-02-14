@@ -18,6 +18,9 @@ class VariableExtractor:
         # Field index mapping: index -> name
         self.field_index_map: Dict[int, str] = {}
         
+        # Array metadata for solution reconstruction: field_name -> {'size': N, 'element_names': [names]}
+        self.array_metadata: Dict[str, dict] = {}
+        
         # Type mapper for creating domains
         self.type_mapper = TypeMapper()
     
@@ -35,9 +38,12 @@ class VariableExtractor:
         extracted = []
         
         for idx, field in enumerate(struct_type.fields):
-            var = self._extract_from_field(field, idx, prefix)
-            if var is not None:
-                extracted.append(var)
+            vars = self._extract_from_field(field, idx, prefix)
+            if vars is not None:
+                if isinstance(vars, list):
+                    extracted.extend(vars)
+                else:
+                    extracted.append(vars)
         
         return extracted
     
@@ -48,7 +54,7 @@ class VariableExtractor:
         prefix: str
     ) -> Optional[Variable]:
         """
-        Extract a variable from a single field.
+        Extract a variable from a single field (or multiple variables for arrays).
         
         Args:
             field: IR field to extract from
@@ -56,19 +62,22 @@ class VariableExtractor:
             prefix: Name prefix for nested fields
             
         Returns:
-            Variable if field is rand/randc, None otherwise
+            Variable if field is rand/randc, List[Variable] for arrays, None otherwise
         """
         # Check if this is a randomizable type
         if not self.type_mapper.can_convert_to_domain(field.datatype):
             return None
         
         # Get field metadata - check for rand/randc markers
-        # In IR, metadata is typically stored on the Field's initial_value or in py_type
         rand_kind = self._get_rand_kind(field)
         
         if rand_kind is None:
             # Not a random variable
             return None
+        
+        # Check if this is an array field
+        if field.is_array:
+            return self._extract_array_field(field, index, prefix, rand_kind)
         
         # Build variable name
         var_name = f"{prefix}{field.name}" if prefix else field.name
@@ -76,8 +85,8 @@ class VariableExtractor:
         # Create domain from type
         domain = self.type_mapper.to_domain(field.datatype, use_bitvector=True)
         
-        # Apply bounds constraints if present
-        domain = self._apply_bounds(domain, field)
+        # Apply domain constraints if present
+        domain = self._apply_domain(domain, field)
         
         # Determine variable kind
         if rand_kind == "randc":
@@ -100,6 +109,75 @@ class VariableExtractor:
         
         return variable
     
+    def _extract_array_field(
+        self,
+        field: Field,
+        index: int,
+        prefix: str,
+        rand_kind: str
+    ) -> List[Variable]:
+        """
+        Extract variables for an array field.
+        
+        Creates N variables for array of size N: field[0], field[1], ..., field[N-1]
+        
+        Args:
+            field: IR field (must have size set)
+            index: Field index in parent struct
+            prefix: Name prefix for nested fields
+            rand_kind: 'rand' or 'randc'
+            
+        Returns:
+            List of variables for array elements
+        """
+        assert field.size is not None, f"Array field {field.name} must have size"
+        
+        # Build base name
+        base_name = f"{prefix}{field.name}" if prefix else field.name
+        
+        # Create domain from type
+        domain = self.type_mapper.to_domain(field.datatype, use_bitvector=True)
+        
+        # Apply domain constraints if present
+        domain = self._apply_domain(domain, field)
+        
+        # Determine variable kind
+        if rand_kind == "randc":
+            var_kind = VarKind.RANDC
+        elif rand_kind == "rand":
+            var_kind = VarKind.RAND
+        else:
+            var_kind = VarKind.RAND
+        
+        # Create N variables for array elements
+        variables = []
+        element_names = []
+        
+        for i in range(field.size):
+            var_name = f"{base_name}[{i}]"
+            element_names.append(var_name)
+            
+            variable = Variable(
+                name=var_name,
+                domain=domain.copy(),  # Each element gets its own domain copy
+                kind=var_kind
+            )
+            
+            # Register variable
+            self.variables[var_name] = variable
+            variables.append(variable)
+        
+        # Store array metadata for solution reconstruction
+        self.array_metadata[base_name] = {
+            'size': field.size,
+            'element_names': element_names
+        }
+        
+        # Register field index to base name mapping
+        self.field_index_map[index] = base_name
+        
+        return variables
+    
     def _get_rand_kind(self, field: Field) -> Optional[str]:
         """
         Determine if field is rand/randc and return the kind.
@@ -110,44 +188,37 @@ class VariableExtractor:
         Returns:
             'rand', 'randc', or None
         """
-        # In the IR, the python dataclass metadata is typically preserved
-        # in the py_type field or through the initial value
-        
-        # For now, we'll check if the datatype has metadata
-        # This is a simplification - in practice, the metadata might be
-        # stored differently depending on how the IR was generated
-        
-        if hasattr(field.datatype, 'py_type') and field.datatype.py_type is not None:
-            py_type = field.datatype.py_type
-            if hasattr(py_type, '__metadata__'):
-                metadata = py_type.__metadata__
-                if metadata.get('rand', False):
-                    return metadata.get('rand_kind', 'rand')
+        # Check the field's rand_kind attribute (set by DataModelFactory)
+        if field.rand_kind is not None:
+            return field.rand_kind
         
         # Check for is_const flag - const fields are not random
         if field.is_const:
             return None
         
-        # For testing/demo purposes, we'll also accept a simple heuristic:
-        # If the field has initial_value=None and datatype is int, assume it might be rand
-        # This is just for development - real implementation would use proper metadata
-        
         return None  # Not a random variable by default
     
-    def _apply_bounds(self, domain: Domain, field: Field) -> Domain:
+    def _apply_domain(self, domain: Domain, field: Field) -> Domain:
         """
-        Apply bounds constraints from field metadata to domain.
+        Apply domain constraints from field metadata to domain.
         
         Args:
             domain: Base domain from type
-            field: IR field with potential bounds metadata
+            field: IR field with potential domain metadata
             
         Returns:
-            Domain with bounds applied (if any)
+            Domain with constraints applied (if any)
         """
-        # In practice, bounds would be extracted from metadata
-        # For now, just return the domain as-is
-        # This will be enhanced when we have access to the actual metadata
+        # Check if field has domain attribute (set by DataModelFactory)
+        if field.domain is not None:
+            from ..core.domain import IntDomain
+            min_val, max_val = field.domain
+            # Create a new domain with the interval
+            # Use the width and signedness from the existing domain
+            if isinstance(domain, IntDomain):
+                domain_constraint = IntDomain([(min_val, max_val)], domain.width, domain.signed)
+                # Intersect with existing domain
+                domain = domain.intersect(domain_constraint)
         
         return domain
     
@@ -206,19 +277,19 @@ class VariableExtractor:
         # Create domain from type
         domain = self.type_mapper.to_domain(field.datatype, use_bitvector=True)
         
-        # Apply bounds if present
-        if 'bounds' in metadata:
-            bounds = metadata['bounds']
-            if isinstance(bounds, tuple) and len(bounds) == 2:
+        # Apply domain constraints if present (try both 'domain' and legacy 'bounds')
+        domain_constraint = metadata.get('domain') or metadata.get('bounds')
+        if domain_constraint:
+            if isinstance(domain_constraint, tuple) and len(domain_constraint) == 2:
                 from ..core.domain import IntDomain
                 if isinstance(domain, IntDomain):
-                    # Intersect with bounds
-                    bounds_domain = IntDomain(
-                        [(bounds[0], bounds[1])],
+                    # Intersect with domain constraint
+                    constraint_domain = IntDomain(
+                        [(domain_constraint[0], domain_constraint[1])],
                         domain.width,
                         domain.signed
                     )
-                    domain = domain.intersect(bounds_domain)
+                    domain = domain.intersect(constraint_domain)
         
         # Determine variable kind
         rand_kind = metadata.get('rand_kind', 'rand')

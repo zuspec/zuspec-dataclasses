@@ -21,6 +21,9 @@ class ConstraintSystem:
         # Constraint storage
         self.constraints: List[Constraint] = []
         
+        # Array metadata for solution reconstruction: field_name -> {'size': N, 'element_names': [names]}
+        self.array_metadata: Dict[str, dict] = {}
+        
         # Dependency graph: edges from variables to variables
         # Edge (a, b) means "a depends on b" or "solve b before a"
         self.dependency_graph: nx.DiGraph = nx.DiGraph()

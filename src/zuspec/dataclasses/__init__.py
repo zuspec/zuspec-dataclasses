@@ -29,7 +29,7 @@ from .decorators import (
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view, constraint, rand, randc
 )
-from .constraint_helpers import implies, dist, unique, solve_order
+from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
 from .types import *
 from .tlm import *
@@ -37,6 +37,7 @@ from . import ir
 from . import profiles
 from .data_model_factory import DataModelFactory
 from .rt.edge import posedge, negedge, edge
+from .solver.api import randomize, randomize_with, RandomizationError
 from typing import Type
 
 __all__ = [
@@ -48,8 +49,10 @@ __all__ = [
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
+    # From solver API
+    'randomize', 'randomize_with', 'RandomizationError',
     # From constraint_helpers
-    'implies', 'dist', 'unique', 'solve_order',
+    'implies', 'dist', 'unique', 'sum', 'ascending', 'descending', 'solve_order',
     # From constraint_parser
     'ConstraintParser', 'extract_rand_fields',
     # From types (re-exported via *)

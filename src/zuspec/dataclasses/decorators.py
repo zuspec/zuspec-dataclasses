@@ -87,12 +87,13 @@ def field(
         default : Optional[Any] = None,
         metadata : Optional[Dict[str,object]]=None,
         size : Optional[int]=None,
-        bounds : Optional[tuple]=None,
+        domain : Optional[tuple]=None,
         width=None):
     """Field declaration for structs and bundles.
     
     Args:
         rand: Mark field as random variable (deprecated - use rand() function)
+        domain: Domain constraint for random variable (tuple of (min, max) or list of values)
         width: For width-unspecified types (eg bitv), specifies the concrete width.
                May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
     """
@@ -109,9 +110,9 @@ def field(
         metadata = {} if metadata is None else metadata
         metadata["size"] = size
     
-    if bounds is not None:
+    if domain is not None:
         metadata = {} if metadata is None else metadata
-        metadata["bounds"] = bounds
+        metadata["domain"] = domain
     
     if width is not None:
         metadata = {} if metadata is None else metadata
@@ -128,7 +129,7 @@ def field(
 
 
 def rand(
-        bounds: Optional[tuple] = None,
+        domain: Optional[tuple] = None,
         default: Any = 0,
         size: Optional[int] = None,
         width=None):
@@ -139,22 +140,30 @@ def rand(
     Example:
         @dataclass
         class Packet:
-            length: rand(bounds=(64, 1500), default=64)
-            data: rand(size=16)  # Array of 16 random elements
+            length: rand(domain=(64, 1500), default=64)
+            # Array of 16 random elements
+            buffer: List[int] = rand(size=16, domain=(0, 255))
     
     Args:
-        bounds: Tuple of (min, max) bounds for the variable
+        domain: Domain constraint - tuple of (min, max) or list of allowed values
         default: Default value when not randomized
-        size: For array fields, size of the array
+        size: For array fields, size of the array (must be positive integer)
         width: For width-unspecified types, concrete width
         
     Returns:
         Field metadata for a random variable
     """
+    # Validate size parameter
+    if size is not None:
+        if not isinstance(size, int):
+            raise TypeError(f"size must be an integer, got {type(size).__name__}")
+        if size <= 0:
+            raise ValueError(f"size must be positive, got {size}")
+    
     metadata = {"rand": True, "rand_kind": "rand"}
     
-    if bounds is not None:
-        metadata["bounds"] = bounds
+    if domain is not None:
+        metadata["domain"] = domain
     
     if size is not None:
         metadata["size"] = size
@@ -166,7 +175,7 @@ def rand(
 
 
 def randc(
-        bounds: Optional[tuple] = None,
+        domain: Optional[tuple] = None,
         default: Any = 0,
         size: Optional[int] = None,
         width=None):
@@ -179,25 +188,32 @@ def randc(
     Example:
         @dataclass
         class TestSequence:
-            test_id: randc(bounds=(0, 15))  # Cycles through 0-15
+            test_id: randc(domain=(0, 15))  # Cycles through 0-15
             
             @constraint
             def valid_test(self):
                 self.test_id < 12  # Only IDs 0-11 valid
     
     Args:
-        bounds: Tuple of (min, max) bounds for the variable
+        domain: Domain constraint - tuple of (min, max) or list of allowed values
         default: Default value when not randomized
-        size: For array fields, size of the array
+        size: For array fields, size of the array (must be positive integer)
         width: For width-unspecified types, concrete width
         
     Returns:
         Field metadata for a random-cyclic variable
     """
+    # Validate size parameter
+    if size is not None:
+        if not isinstance(size, int):
+            raise TypeError(f"size must be an integer, got {type(size).__name__}")
+        if size <= 0:
+            raise ValueError(f"size must be positive, got {size}")
+    
     metadata = {"rand": True, "rand_kind": "randc"}
     
-    if bounds is not None:
-        metadata["bounds"] = bounds
+    if domain is not None:
+        metadata["domain"] = domain
     
     if size is not None:
         metadata["size"] = size

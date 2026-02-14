@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from zuspec.dataclasses.ir.data_type import (
     DataType, DataTypeStruct, DataTypeClass, Function
 )
-from zuspec.dataclasses.ir.stmt import Stmt, StmtExpr
+from zuspec.dataclasses.ir.stmt import Stmt, StmtExpr, StmtAssert, StmtReturn, StmtFor
 from zuspec.dataclasses.ir.expr import Expr
 from ..core.constraint_system import ConstraintSystem
 from ..core.constraint import Constraint, SourceLocation
@@ -79,6 +79,9 @@ class ConstraintSystemBuilder:
         for var in variables:
             self.system.add_variable(var)
         
+        # Copy array metadata from extractor to system
+        self.system.array_metadata = self.variable_extractor.array_metadata.copy()
+        
         # Register variables in parser
         for var in variables:
             self.expr_parser.register_variable(var.name, var)
@@ -86,6 +89,9 @@ class ConstraintSystemBuilder:
         # Register field index mappings
         for idx, name in self.variable_extractor.field_index_map.items():
             self.expr_parser.register_field(idx, name)
+        
+        # Register array field metadata for array indexing support
+        self.expr_parser.register_array_fields(self.variable_extractor.array_metadata)
         
         # Step 2: Extract and parse constraint functions
         self._extract_constraint_functions(struct_type)
@@ -143,15 +149,19 @@ class ConstraintSystemBuilder:
         # Parse each statement in function body
         for stmt in func.body:
             try:
-                constraint = self._parse_constraint_stmt(stmt, source_loc)
-                if constraint is not None:
+                constraints_from_stmt = self._parse_constraint_stmt(stmt, source_loc)
+                for constraint in constraints_from_stmt:
                     # Add to system
                     self.system.add_constraint(constraint)
                     func_constraints.append(constraint)
                     
                     # Track mapping for error reporting
+                    # Extract the expression from the statement
                     if isinstance(stmt, StmtExpr):
                         self.constraint_to_ir_map[constraint] = stmt.expr
+                    elif isinstance(stmt, StmtAssert):
+                        self.constraint_to_ir_map[constraint] = stmt.test
+                    # For StmtFor, we don't have a single expression
             
             except ParseError as e:
                 # Enhance error with function context
@@ -167,7 +177,7 @@ class ConstraintSystemBuilder:
         self,
         stmt: Stmt,
         source_loc: Optional[SourceLocation]
-    ) -> Optional[Constraint]:
+    ) -> List[Constraint]:
         """
         Parse a constraint statement.
         
@@ -176,15 +186,13 @@ class ConstraintSystemBuilder:
             source_loc: Source location for error reporting
             
         Returns:
-            Parsed constraint or None if not a constraint statement
+            List of parsed constraints (may be empty)
         """
-        # Most constraints are expression statements
-        if isinstance(stmt, StmtExpr):
-            return self.expr_parser.parse(stmt.expr, source_loc)
+        # Set source location in parser
+        self.expr_parser.current_source = source_loc
         
-        # Other statement types might contain constraints
-        # For now, we only handle expression statements
-        return None
+        # Use the parser's statement parsing method (handles loops, etc.)
+        return self.expr_parser.parse_statement(stmt)
     
     def _validate_system(self):
         """
@@ -193,20 +201,24 @@ class ConstraintSystemBuilder:
         Raises:
             BuildError: If validation fails
         """
-        # Check that we have at least one constraint
-        if not self.system.constraints:
-            raise BuildError("No constraints found in system")
+        # Check that we have at least one variable
+        if not self.system.variables:
+            raise BuildError("No random variables found in system")
+        
+        # Note: We allow systems with no constraints - this just means
+        # we're picking random values from variable domains without additional constraints
         
         # Check that all variables are used in at least one constraint
         # (This is a warning, not an error)
-        used_vars = set()
-        for constraint in self.system.constraints:
-            used_vars.update(constraint.variables)
-        
-        unused_vars = set(self.system.variables.values()) - used_vars
-        if unused_vars:
-            # Just track for now, might want to warn
-            pass
+        if self.system.constraints:
+            used_vars = set()
+            for constraint in self.system.constraints:
+                used_vars.update(constraint.variables)
+            
+            unused_vars = set(self.system.variables.values()) - used_vars
+            if unused_vars:
+                # Just track for now, might want to warn
+                pass
     
     def add_ordering_constraint(
         self,

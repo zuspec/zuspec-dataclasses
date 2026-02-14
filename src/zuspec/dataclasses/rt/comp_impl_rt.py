@@ -124,6 +124,12 @@ class CompImplRT(object):
         if not datamodel:
             return
         
+        # Attach IR to component instance and class for solver access
+        # This enables randomize() to extract constraints without user code changes
+        comp._zdc_struct = datamodel
+        if not hasattr(original_cls, '_zdc_struct'):
+            original_cls._zdc_struct = datamodel
+        
         # Store processes
         self._sync_processes = datamodel.sync_processes
         self._comb_processes = datamodel.comb_processes

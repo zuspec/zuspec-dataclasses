@@ -426,6 +426,13 @@ class DataModelFactory(object):
         # Check for @invariant decorator
         is_invariant = hasattr(member, '_is_invariant') and member._is_invariant
         
+        # Build metadata dict for function markers
+        func_metadata = {}
+        if hasattr(member, '_is_constraint') and member._is_constraint:
+            func_metadata['_is_constraint'] = True
+            if hasattr(member, '_constraint_kind'):
+                func_metadata['_constraint_kind'] = member._constraint_kind
+        
         # Create conversion scope
         scope = ConversionScope(
             field_indices=field_indices if field_indices else {},
@@ -441,7 +448,8 @@ class DataModelFactory(object):
             body=body,
             returns=returns,
             is_async=is_async,
-            is_invariant=is_invariant
+            is_invariant=is_invariant,
+            metadata=func_metadata
         )
 
     def _type_to_expr(self, annotation) -> Optional[Any]:
@@ -593,6 +601,37 @@ class DataModelFactory(object):
                         module = sys.modules.get(t.__module__)
                         if module and hasattr(module, field_type):
                             field_type = getattr(module, field_type)
+            
+            # Check if field_type is actually a dc.Field (from rand() or randc() decorator)
+            # If so, extract metadata from it
+            field_metadata = {}
+            if isinstance(field_type, dc.Field):
+                # rand() or randc() returns a Field with metadata
+                if field_type.metadata:
+                    field_metadata = dict(field_type.metadata)
+                # Get the actual type from the field's default value or annotation
+                # Check if width is specified in metadata
+                if 'width' in field_metadata:
+                    # Create an int type with the specified width
+                    from .types import U
+                    from typing import Annotated
+                    width = field_metadata['width']
+                    field_type = Annotated[int, U(width)]
+                else:
+                    # Default to int32 for random variables without explicit width
+                    from .types import U
+                    from typing import Annotated
+                    field_type = Annotated[int, U(32)]
+            elif f.metadata:
+                field_metadata = dict(f.metadata)
+                
+                # If this is a rand/randc field with int type and no width, default to int32
+                if field_type == int and field_metadata.get('rand', False):
+                    if 'width' not in field_metadata:
+                        from .types import U
+                        from typing import Annotated
+                        field_type = Annotated[int, U(32)]
+            
             if f.name.startswith('_'):
                 # Include Lock fields even if they start with _
                 # Also include fields explicitly marked with zdc.field() by checking if they have a datatype annotation
@@ -646,6 +685,38 @@ class DataModelFactory(object):
                 if elem_py_t is not None and hasattr(elem_py_t, '__mro__'):
                     if self._is_protocol(elem_py_t) or self._is_extern(elem_py_t) or self._is_component(elem_py_t) or self._is_struct(elem_py_t):
                         self._add_pending(elem_py_t)
+            elif origin is list:
+                # Handle List[T] for array fields
+                args = get_args(field_type)
+                elem_py_t = args[0] if args else None
+                
+                # For array rand fields without explicit width, default element type to int32
+                if elem_py_t == int and field_metadata and field_metadata.get('rand', False):
+                    if 'width' not in field_metadata:
+                        # Default to int32 for random array elements
+                        from .types import U
+                        from typing import Annotated
+                        elem_py_t = Annotated[int, U(32)]
+                
+                elem_dt = self._resolve_field_type(elem_py_t)
+                
+                # For now, just resolve as the element type
+                # Array handling is done at the solver level via size metadata
+                datatype = elem_dt
+                
+                # Validate that array fields with rand/randc have size specified (Phase 1A requirement)
+                if field_metadata and field_metadata.get('rand', False):
+                    if 'size' not in field_metadata or field_metadata['size'] is None:
+                        raise ValueError(
+                            f"Array field '{f.name}' with rand/randc must specify size parameter. "
+                            f"Variable-size arrays not yet supported. "
+                            f"Example: {f.name}: List[T] = rand(size=16, domain=(0, 255))"
+                        )
+                
+                # Add referenced element type to pending
+                if elem_py_t is not None and hasattr(elem_py_t, '__mro__'):
+                    if self._is_protocol(elem_py_t) or self._is_extern(elem_py_t) or self._is_component(elem_py_t) or self._is_struct(elem_py_t):
+                        self._add_pending(elem_py_t)
             else:
                 datatype = self._resolve_field_type(field_type)
 
@@ -660,21 +731,41 @@ class DataModelFactory(object):
             
             # Check if this is a const field
             is_const = False
-            if f.metadata and f.metadata.get('kind') == 'const':
+            if field_metadata and field_metadata.get('kind') == 'const':
                 is_const = True
+            
+            # Extract rand/randc metadata for constraint solver
+            rand_kind = None
+            domain = None
+            array_size = None  # Extract array size for solver
+            if field_metadata:
+                # Check for rand/randc markers
+                if field_metadata.get('rand', False):
+                    rand_kind = field_metadata.get('rand_kind', 'rand')
+                
+                # Extract domain for random variables (try both 'domain' and legacy 'bounds')
+                if 'domain' in field_metadata:
+                    domain = field_metadata['domain']
+                elif 'bounds' in field_metadata:
+                    # Support legacy 'bounds' for backward compatibility
+                    domain = field_metadata['bounds']
+                
+                # Extract array size
+                if 'size' in field_metadata:
+                    array_size = field_metadata['size']
             
             # Extract width expression if present
             width_expr = None
-            if f.metadata and 'width' in f.metadata:
-                width_val = f.metadata['width']
+            if field_metadata and 'width' in field_metadata:
+                width_val = field_metadata['width']
                 if callable(width_val):
                     from .ir.expr import ExprLambda
                     width_expr = ExprLambda(callable=width_val)
             
             # Extract kwargs expression if present
             kwargs_expr = None
-            if f.metadata and 'kwargs' in f.metadata:
-                kwargs_val = f.metadata['kwargs']
+            if field_metadata and 'kwargs' in field_metadata:
+                kwargs_val = field_metadata['kwargs']
                 if callable(kwargs_val):
                     from .ir.expr import ExprLambda
                     kwargs_expr = ExprLambda(callable=kwargs_val)
@@ -692,6 +783,9 @@ class DataModelFactory(object):
                     width_expr=width_expr,
                     kwargs_expr=kwargs_expr,
                     is_const=is_const,
+                    rand_kind=rand_kind,
+                    domain=domain,
+                    size=array_size,
                     loc=field_loc
                 )
             else:
@@ -702,6 +796,9 @@ class DataModelFactory(object):
                     width_expr=width_expr,
                     kwargs_expr=kwargs_expr,
                     is_const=is_const,
+                    rand_kind=rand_kind,
+                    domain=domain,
+                    size=array_size,
                     loc=field_loc
                 )
             fields.append(field_dm)
