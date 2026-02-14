@@ -45,11 +45,13 @@ class Field(Base):
     rand_kind : Optional[str] = dc.field(default=None)  # "rand", "randc", or None
     domain : Optional[tuple] = dc.field(default=None)  # Domain constraint (min, max) tuple or list of values
     size : Optional[int] = dc.field(default=None)  # Array size (for fixed-size arrays)
+    max_size : Optional[int] = dc.field(default=None)  # Maximum size for variable-size arrays
+    is_variable_size : bool = dc.field(default=False)  # True if array has variable size
     
     @property
     def is_array(self) -> bool:
         """Returns True if this field represents an array (has a size)."""
-        return self.size is not None
+        return self.size is not None or self.is_variable_size
 
 @dc.dataclass(kw_only=True)
 class FieldInOut(Field):

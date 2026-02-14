@@ -119,18 +119,25 @@ class VariableExtractor:
         """
         Extract variables for an array field.
         
-        Creates N variables for array of size N: field[0], field[1], ..., field[N-1]
+        For fixed-size: Creates N variables: field[0], field[1], ..., field[N-1]
+        For variable-size: Creates max_size variables + length variable _length_field
         
         Args:
-            field: IR field (must have size set)
+            field: IR field (must have size or max_size set)
             index: Field index in parent struct
             prefix: Name prefix for nested fields
             rand_kind: 'rand' or 'randc'
             
         Returns:
-            List of variables for array elements
+            List of variables (array elements + length variable for variable-size)
         """
-        assert field.size is not None, f"Array field {field.name} must have size"
+        # Determine actual size to allocate
+        if field.is_variable_size:
+            actual_size = field.max_size if field.max_size else 32  # Default max
+            assert actual_size is not None, f"Variable-size array {field.name} must have max_size"
+        else:
+            actual_size = field.size
+            assert actual_size is not None, f"Fixed-size array {field.name} must have size"
         
         # Build base name
         base_name = f"{prefix}{field.name}" if prefix else field.name
@@ -149,11 +156,34 @@ class VariableExtractor:
         else:
             var_kind = VarKind.RAND
         
-        # Create N variables for array elements
+        # Create variables list
         variables = []
         element_names = []
         
-        for i in range(field.size):
+        # For variable-size arrays, create length variable first
+        length_var_name = None
+        if field.is_variable_size:
+            length_var_name = f"_length_{base_name}"
+            
+            # Length domain: [0, max_size]
+            # Use smallest power of 2 that can represent max_size
+            from ..core.domain import IntDomain
+            import math
+            length_width = max(8, math.ceil(math.log2(actual_size + 1))) if actual_size > 0 else 8
+            length_domain = IntDomain(intervals=[(0, actual_size)], width=length_width, signed=False)
+            
+            length_var = Variable(
+                name=length_var_name,
+                domain=length_domain,
+                kind=var_kind
+            )
+            
+            # Register length variable
+            self.variables[length_var_name] = length_var
+            variables.append(length_var)
+        
+        # Create actual_size variables for array elements
+        for i in range(actual_size):
             var_name = f"{base_name}[{i}]"
             element_names.append(var_name)
             
@@ -169,8 +199,10 @@ class VariableExtractor:
         
         # Store array metadata for solution reconstruction
         self.array_metadata[base_name] = {
-            'size': field.size,
-            'element_names': element_names
+            'size': actual_size,  # Max size for variable-size, actual size for fixed
+            'element_names': element_names,
+            'is_variable_size': field.is_variable_size,
+            'length_var_name': length_var_name
         }
         
         # Register field index to base name mapping

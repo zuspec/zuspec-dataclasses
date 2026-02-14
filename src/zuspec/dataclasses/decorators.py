@@ -132,6 +132,7 @@ def rand(
         domain: Optional[tuple] = None,
         default: Any = 0,
         size: Optional[int] = None,
+        max_size: Optional[int] = None,
         width=None):
     """Mark a field as a random variable.
     
@@ -141,24 +142,41 @@ def rand(
         @dataclass
         class Packet:
             length: rand(domain=(64, 1500), default=64)
-            # Array of 16 random elements
+            # Fixed-size array of 16 elements
             buffer: List[int] = rand(size=16, domain=(0, 255))
+            # Variable-size array (max 32 elements, determined by constraints)
+            payload: List[int] = rand(max_size=32, domain=(0, 255))
     
     Args:
         domain: Domain constraint - tuple of (min, max) or list of allowed values
         default: Default value when not randomized
-        size: For array fields, size of the array (must be positive integer)
+        size: For array fields, fixed size of the array (must be positive integer)
+        max_size: For variable-size arrays, maximum array size (defaults to 32)
         width: For width-unspecified types, concrete width
         
     Returns:
         Field metadata for a random variable
+    
+    Note:
+        - If size is specified: Creates fixed-size array
+        - If max_size is specified: Creates variable-size array (length determined by constraints)
+        - Cannot specify both size and max_size
     """
-    # Validate size parameter
+    # Validate size parameters
+    if size is not None and max_size is not None:
+        raise ValueError("Cannot specify both 'size' and 'max_size' - use one or the other")
+    
     if size is not None:
         if not isinstance(size, int):
             raise TypeError(f"size must be an integer, got {type(size).__name__}")
         if size <= 0:
             raise ValueError(f"size must be positive, got {size}")
+    
+    if max_size is not None:
+        if not isinstance(max_size, int):
+            raise TypeError(f"max_size must be an integer, got {type(max_size).__name__}")
+        if max_size <= 0:
+            raise ValueError(f"max_size must be positive, got {max_size}")
     
     metadata = {"rand": True, "rand_kind": "rand"}
     
@@ -167,6 +185,9 @@ def rand(
     
     if size is not None:
         metadata["size"] = size
+    
+    if max_size is not None:
+        metadata["max_size"] = max_size
     
     if width is not None:
         metadata["width"] = width

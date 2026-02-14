@@ -704,14 +704,21 @@ class DataModelFactory(object):
                 # Array handling is done at the solver level via size metadata
                 datatype = elem_dt
                 
-                # Validate that array fields with rand/randc have size specified (Phase 1A requirement)
+                # Handle variable-size arrays (Phase 3)
+                # If max_size is specified, this is a variable-size array
                 if field_metadata and field_metadata.get('rand', False):
-                    if 'size' not in field_metadata or field_metadata['size'] is None:
-                        raise ValueError(
-                            f"Array field '{f.name}' with rand/randc must specify size parameter. "
-                            f"Variable-size arrays not yet supported. "
-                            f"Example: {f.name}: List[T] = rand(size=16, domain=(0, 255))"
-                        )
+                    has_size = 'size' in field_metadata and field_metadata['size'] is not None
+                    has_max_size = 'max_size' in field_metadata and field_metadata['max_size'] is not None
+                    
+                    if not has_size and not has_max_size:
+                        # No size or max_size - default to variable-size with default max
+                        # This allows: buffer: List[int] = rand(domain=(0, 255))
+                        field_metadata['max_size'] = 32  # Default maximum size
+                        field_metadata['is_variable_size'] = True
+                    elif has_max_size:
+                        # Explicit max_size - variable-size array
+                        field_metadata['is_variable_size'] = True
+                    # If has_size, it's a fixed-size array (existing behavior)
                 
                 # Add referenced element type to pending
                 if elem_py_t is not None and hasattr(elem_py_t, '__mro__'):
@@ -738,6 +745,9 @@ class DataModelFactory(object):
             rand_kind = None
             domain = None
             array_size = None  # Extract array size for solver
+            max_array_size = None  # Extract max size for variable-size arrays
+            is_variable_size = False  # Flag for variable-size arrays
+            
             if field_metadata:
                 # Check for rand/randc markers
                 if field_metadata.get('rand', False):
@@ -750,9 +760,17 @@ class DataModelFactory(object):
                     # Support legacy 'bounds' for backward compatibility
                     domain = field_metadata['bounds']
                 
-                # Extract array size
+                # Extract array size (fixed-size)
                 if 'size' in field_metadata:
                     array_size = field_metadata['size']
+                
+                # Extract max_size (variable-size)
+                if 'max_size' in field_metadata:
+                    max_array_size = field_metadata['max_size']
+                
+                # Extract variable-size flag
+                if 'is_variable_size' in field_metadata:
+                    is_variable_size = field_metadata['is_variable_size']
             
             # Extract width expression if present
             width_expr = None
@@ -786,6 +804,8 @@ class DataModelFactory(object):
                     rand_kind=rand_kind,
                     domain=domain,
                     size=array_size,
+                    max_size=max_array_size,
+                    is_variable_size=is_variable_size,
                     loc=field_loc
                 )
             else:
@@ -799,6 +819,8 @@ class DataModelFactory(object):
                     rand_kind=rand_kind,
                     domain=domain,
                     size=array_size,
+                    max_size=max_array_size,
+                    is_variable_size=is_variable_size,
                     loc=field_loc
                 )
             fields.append(field_dm)

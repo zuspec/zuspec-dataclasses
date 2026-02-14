@@ -355,10 +355,23 @@ def _apply_solution(obj: Any,
     for field_name, metadata in system.array_metadata.items():
         element_names = metadata['element_names']
         size = metadata['size']
+        is_variable_size = metadata.get('is_variable_size', False)
+        length_var_name = metadata.get('length_var_name', None)
         
-        # Collect values for array elements
+        # For variable-size arrays, get the actual length from the solution
+        actual_length = size  # Default to full size for fixed arrays
+        if is_variable_size and length_var_name:
+            if length_var_name in assignment:
+                actual_length = assignment[length_var_name]
+            else:
+                # No length constraint - could be any value in [0, max_size]
+                # For now, default to 0 (empty array)
+                actual_length = 0
+        
+        # Collect values for array elements (only up to actual_length)
         array_values = []
-        for elem_name in element_names:
+        for i in range(actual_length):
+            elem_name = element_names[i]
             if elem_name in assignment:
                 array_values.append(assignment[elem_name])
             else:

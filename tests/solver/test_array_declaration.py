@@ -121,16 +121,19 @@ def test_array_invalid_size_type():
             arr: List[int] = rand(size="10", domain=(0, 10))
 
 
-def test_array_without_size_errors():
-    """Test that List[T] without size parameter fails in Phase 1A"""
-    with pytest.raises(Exception, match="must specify size parameter"):
-        # This should fail during dataclass IR build or randomization
-        @dataclass
-        class VariableSize:
-            buffer: List[int] = rand(domain=(0, 255))
-        
-        obj = VariableSize()
-        randomize(obj)
+def test_array_without_size_defaults_to_variable():
+    """Test that List[T] without size parameter defaults to variable-size (max_size=32)"""
+    @dataclass
+    class VariableSize:
+        buffer: List[int] = rand(domain=(0, 255))
+    
+    obj = VariableSize()
+    randomize(obj)
+    
+    # Should work now - defaults to variable-size with max_size=32
+    assert hasattr(obj, 'buffer')
+    assert isinstance(obj.buffer, list)
+    assert 0 <= len(obj.buffer) <= 32
 
 
 def test_array_reproducible_with_seed():
