@@ -8,7 +8,7 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
+# distributed under the leverages these projectsLicense is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -17,8 +17,12 @@ from __future__ import annotations
 import abc
 import dataclasses as dc
 import enum
-from typing import Callable, ClassVar, Dict, Generic, List, Optional, TypeVar, Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, Self
+from typing import (
+    Callable, cast, ClassVar, Dict, Generic, List, Optional, TypeVar, 
+    Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, 
+    Self, Union, Awaitable)
 from .decorators import dataclass, field, export
+from . import Event
 
 
 @dc.dataclass
@@ -371,40 +375,86 @@ class XtorComponent[T](Component):
 class Pool[T](Protocol):
     pass
 
-@dc.dataclass
-class ListPool[T](Pool[T]):
-    # Bind target to specify pool elements
-    elems : List[T] = dc.field()
+# Selection
+# - Allow consumer to filter allowed items (pool determines selection)
+# - Allow consumer to select from acceptable items (pool delegates selection)
+# - Consumer must deem acceptable
+# - Pool 
 
-    @abc.abstractmethod
-    def __getitem__(self, idx : int) -> T:
+class BufferPool[T](Pool[T]):
+
+    async def get(self, 
+                  where : Optional[Callable[[T],bool]] = None,
+                  select : Optional[Callable[[List[T]],Awaitable[T]]] = None) -> T:
+        """Get an item from the pool using optional filter and selection functions"""
         ...
 
-    @abc.abstractmethod
-    def get(self, idx : int) -> T:
+    def put(self, item : T):
+        """Add a new item to the pool"""
+        ...
+
+    @staticmethod
+    def fromList(items: List[T]) -> BufferPool[T]:
+        from .rt.list_buffer_pool import ListBufferPool
+        return ListBufferPool[T](items)
+
+
+# Various 'policy' classes
+# - Must implement 'get'
+# - May accept other arguments (pool size, constructor, etc)
+
+class Claim[T](Protocol):
+    """Handle to a specific claim managed by a ClaimPool"""
+
+    @property
+    def id(self) -> int:
         ...
 
     @property
-    @abc.abstractmethod
-    def size(self) -> int:
+    def t(self) -> T:
+        ...
+
+    @t.setter
+    def t(self, v: T):
+        ...
+
+    def drop(self):
+        """Release the claimed resource back to the pool"""
         ...
 
 
-class ClaimPool[T,Tc](Pool[T]):
+class ClaimPool[T](Pool[T]):
+    """Manages a pool of claimable resources"""
 
     @abc.abstractmethod
-    def lock(self, i : int) -> T: 
-        """Acquires the specified object for read-write access"""
+    async def lock(
+            self,
+            claim_id: Optional[Any] = None,
+            filter: Optional[Callable[[T, int], bool]] = None) -> Claim[T]:
+        """Acquires a resource exclusively. In the case of mutable resources,
+        the claimant may mutate the resource.
+        """
         ...
 
     @abc.abstractmethod
-    def share(self, i : int) -> T: 
-        """Acquires the specified object for read-only access"""
+    async def share(
+            self,
+            claim_id: Optional[Any] = None,
+            filter: Optional[Callable[[T, int], bool]] = None) -> Claim[T]:
+        """Acquires a resource non-exclusively. In the case of mutable resources,
+        the claimant may not mutate the resource.
+        """
         ...
 
-    def drop(self, i : int): ...
+    def drop(self, claim : Claim[T]):
+        """Claim auto-drops with garbage collection, but it can be dropped early"""
+        ...
 
-    pass
+    @staticmethod
+    def fromList(resources: List[T]) -> ClaimPool[T]:
+        """Returns a ClaimPool populated by 'resources'"""
+        from .rt.list_claim_pool import ListClaimPool
+        return ListClaimPool(resources)
 
 class Lock(Protocol):
     """A mutex lock for coordinating access to shared resources.

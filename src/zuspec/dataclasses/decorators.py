@@ -126,6 +126,8 @@ def field(
 
     return dc.field(**args)
 
+def pool(default_factory=None):
+    pass
 
 def rand(
         bounds: Optional[tuple] = None,
@@ -389,6 +391,8 @@ class ExecSync(Exec):
 class ExecComb(Exec):
     """Combinational process"""
     pass
+
+
 
 def process(T):
     """
