@@ -22,7 +22,6 @@ from typing import (
     Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, 
     Self, Union, Awaitable)
 from .decorators import dataclass, field, export
-from . import Event
 
 
 @dc.dataclass

@@ -1,66 +1,8 @@
 """Unit tests for ListClaimPool and ListBufferPool."""
 from __future__ import annotations
 import asyncio
-import dataclasses
-import importlib.util
-import sys
-import types as pytypes
-import os
 
-# ---------------------------------------------------------------------------
-# Bootstrap: load the rt modules without triggering the circular import in
-# zuspec/dataclasses/__init__.py (Event is defined there but also imported by
-# types.py before __init__ finishes loading).
-# ---------------------------------------------------------------------------
-def _bootstrap_modules():
-    """Set up sys.modules stubs so the rt submodules can be imported."""
-    if 'zuspec.dataclasses.rt.list_claim_pool' in sys.modules:
-        return  # already done
-
-    _src = os.path.join(os.path.dirname(__file__), '../../src/zuspec/dataclasses')
-
-    zdc = pytypes.ModuleType('zuspec.dataclasses')
-    zdc.__path__ = [_src]
-    zdc.__package__ = 'zuspec.dataclasses'
-    zdc.Event = asyncio.Event          # satisfies `from . import Event` in types.py
-
-    zuspec = pytypes.ModuleType('zuspec')
-    zuspec.__path__ = [os.path.dirname(_src)]
-    zuspec.dataclasses = zdc
-    sys.modules.setdefault('zuspec', zuspec)
-    sys.modules.setdefault('zuspec.dataclasses', zdc)
-
-    # Minimal stubs for zuspec.dataclasses.decorators (imported by types.py)
-    dec = pytypes.ModuleType('zuspec.dataclasses.decorators')
-    dec.dataclass = dataclasses.dataclass
-    dec.field = dataclasses.field
-    dec.export = lambda *a, **kw: None
-    sys.modules.setdefault('zuspec.dataclasses.decorators', dec)
-
-    def _load(name, path):
-        spec = importlib.util.spec_from_file_location(name, path)
-        mod = importlib.util.module_from_spec(spec)
-        mod.__package__ = name.rsplit('.', 1)[0]
-        sys.modules[name] = mod
-        spec.loader.exec_module(mod)
-        return mod
-
-    _load('zuspec.dataclasses.types', os.path.join(_src, 'types.py'))
-
-    zdc_rt = pytypes.ModuleType('zuspec.dataclasses.rt')
-    zdc_rt.__path__ = [os.path.join(_src, 'rt')]
-    zdc_rt.__package__ = 'zuspec.dataclasses.rt'
-    sys.modules.setdefault('zuspec.dataclasses.rt', zdc_rt)
-
-    _load('zuspec.dataclasses.rt.list_claim_pool',
-          os.path.join(_src, 'rt', 'list_claim_pool.py'))
-    _load('zuspec.dataclasses.rt.list_buffer_pool',
-          os.path.join(_src, 'rt', 'list_buffer_pool.py'))
-
-
-_bootstrap_modules()
-
-from zuspec.dataclasses.types import ClaimPool, BufferPool, u32, u8  # noqa: E402
+from zuspec.dataclasses.types import ClaimPool, BufferPool, u32, u8
 
 
 # ---------------------------------------------------------------------------

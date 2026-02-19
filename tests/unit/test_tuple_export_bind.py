@@ -6,7 +6,6 @@ These tests cover the patterns used in op_op_alg.py:
 2. Using for loops with cast and bind to specify implementations for export element methods
 """
 
-import pytest
 import asyncio
 import zuspec.dataclasses as zdc
 from typing import Protocol, Tuple, cast
@@ -63,18 +62,20 @@ class TestTupleExportRuntime:
             assert hasattr(comp.req[i], 'req_transfer'), f"req[{i}] should have req_transfer"
             assert callable(comp.req[i].req_transfer), f"req[{i}].req_transfer should be callable"
     
-    @pytest.mark.asyncio
-    async def test_tuple_export_call_through(self):
+    def test_tuple_export_call_through(self):
         """Test that calling export methods invokes the implementation."""
-        comp = SimpleExportTuple()
+        async def _run():
+            comp = SimpleExportTuple()
+            
+            # Call through each export
+            for i in range(2):
+                await comp.req[i].req_transfer()
+            
+            # Verify implementations were called
+            for i in range(2):
+                assert comp.channels[i]._call_count == 1, f"channels[{i}] should have been called once"
         
-        # Call through each export
-        for i in range(2):
-            await comp.req[i].req_transfer()
-        
-        # Verify implementations were called
-        for i in range(2):
-            assert comp.channels[i]._call_count == 1, f"channels[{i}] should have been called once"
+        asyncio.run(_run())
 
 
 class IMultiMethod(Protocol):
@@ -126,24 +127,26 @@ class TestMultiMethodTupleExport:
         assert len(comp.api) == 3
         assert len(comp.impls) == 3
     
-    @pytest.mark.asyncio
-    async def test_call_through_multiple_methods(self):
+    def test_call_through_multiple_methods(self):
         """Test that multiple methods can be called through exports."""
-        comp = MultiMethodExportTuple()
+        async def _run():
+            comp = MultiMethodExportTuple()
+            
+            # Call method_a on api[0], method_b on api[1]
+            await comp.api[0].method_a()
+            await comp.api[1].method_b(42)
+            await comp.api[2].method_a()
+            await comp.api[2].method_b(10)
+            
+            # Verify calls
+            assert comp.impls[0]._a_count == 1
+            assert comp.impls[0]._b_sum == 0
+            assert comp.impls[1]._a_count == 0
+            assert comp.impls[1]._b_sum == 42
+            assert comp.impls[2]._a_count == 1
+            assert comp.impls[2]._b_sum == 10
         
-        # Call method_a on api[0], method_b on api[1]
-        await comp.api[0].method_a()
-        await comp.api[1].method_b(42)
-        await comp.api[2].method_a()
-        await comp.api[2].method_b(10)
-        
-        # Verify calls
-        assert comp.impls[0]._a_count == 1
-        assert comp.impls[0]._b_sum == 0
-        assert comp.impls[1]._a_count == 0
-        assert comp.impls[1]._b_sum == 42
-        assert comp.impls[2]._a_count == 1
-        assert comp.impls[2]._b_sum == 10
+        asyncio.run(_run())
 
 
 class TestTupleExportIR:
