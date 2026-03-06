@@ -2,16 +2,18 @@
 Constraints
 ###########
 
-Zuspec provides a SystemVerilog/PSS-style constraint framework for declarative
-specification of constraints on random variables. Constraints are declared using
-decorated methods and parsed from Python AST without runtime execution.
+Zuspec provides a comprehensive SystemVerilog/PSS-style constraint framework for
+declarative specification of constraints on random variables. Constraints are
+declared using decorated methods and parsed from Python AST without runtime execution.
 
 **Key Features:**
 
 * Pythonic syntax with statement-based constraints
 * Full AST parsing (no runtime execution)
 * Support for SystemVerilog and PSS constraint patterns
-* Fixed and generic constraints
+* Fixed-size arrays with indexing and iterative constraints
+* Constraint helper functions (sum, unique, ascending, descending)
+* Inline constraints with ``randomize_with``
 * Distribution, implication, uniqueness, and solve ordering
 * Type-safe with IDE support
 
@@ -22,33 +24,39 @@ Quick Example
 .. code-block:: python3
 
     import zuspec.dataclasses as zdc
+    from typing import List
 
     @zdc.dataclass
     class Packet:
-        # Random fields
-        length: int = zdc.rand(bounds=(64, 1500), default=64)
-        header_len: int = zdc.rand(bounds=(20, 60), default=20)
-        pkt_type: int = zdc.rand(bounds=(0, 3), default=0)
+        # Scalar random fields
+        length: int = zdc.rand(domain=(64, 1500))
+        header_len: int = zdc.rand(domain=(20, 60))
+        pkt_type: int = zdc.rand(domain=(0, 3))
         
-        # Fixed constraint (always applied)
+        # Array random field
+        payload: List[int] = zdc.rand(size=8, domain=(0, 255))
+        
+        # Constraint using helper functions
+        @zdc.constraint
+        def valid_payload(self):
+            assert zdc.unique(self.payload)  # All bytes unique
+            assert zdc.sum(self.payload) < 1000  # Checksum limit
+        
+        # Iterative constraint with for loop
+        @zdc.constraint
+        def byte_ordering(self):
+            for i in range(7):
+                assert self.payload[i] < self.payload[i+1]
+        
+        # Traditional constraints
         @zdc.constraint
         def valid_length(self):
-            self.length >= self.header_len
-        
-        # Distribution constraint
-        @zdc.constraint
-        def type_distribution(self):
-            zdc.dist(self.pkt_type, {
-                0: 40,  # 40% weight
-                1: 30,  # 30% weight
-                2: 20,  # 20% weight
-                3: 10   # 10% weight
-            })
-        
-        # Generic constraint (conditionally applied)
-        @zdc.constraint.generic
-        def small_packet(self):
-            self.length < 256
+            assert self.length >= self.header_len
+    
+    # Randomize and use
+    pkt = Packet()
+    zdc.randomize(pkt, seed=42)
+    print(f"Payload: {pkt.payload}, sum={sum(pkt.payload)}")
 
 ********************
 Random Variables
@@ -58,26 +66,46 @@ rand()
 ======
 
 Declares a random variable that will be assigned a value by the constraint solver.
+Supports both scalar fields and fixed-size arrays.
+
+**Scalar Fields:**
 
 .. code-block:: python3
 
     @zdc.dataclass
     class Transaction:
         # Basic random variable
-        addr: int = zdc.rand(default=0)
+        addr: int = zdc.rand()
         
-        # With bounds
-        data: int = zdc.rand(bounds=(0, 255), default=0)
+        # With domain bounds
+        data: int = zdc.rand(domain=(0, 255))
         
-        # Random array
-        buffer: int = zdc.rand(size=16, default=0)
+        # With explicit bit width
+        flags: int = zdc.rand(domain=(0, 15))
+
+**Array Fields:**
+
+.. code-block:: python3
+
+    from typing import List
+    
+    @zdc.dataclass
+    class BufferTransaction:
+        # Fixed-size array of 16 random integers
+        buffer: List[int] = zdc.rand(size=16, domain=(0, 255))
+        
+        # Array with wider domain
+        values: List[int] = zdc.rand(size=8, domain=(0, 1023))
 
 **Parameters:**
 
-* ``bounds`` (tuple, optional) - ``(min, max)`` value bounds
-* ``default`` (any) - Default value when not randomized
-* ``size`` (int, optional) - Array size for vector fields
+* ``domain`` (tuple, optional) - ``(min, max)`` value bounds (inclusive)
+* ``size`` (int, optional) - Array size for List[T] fields
 * ``width`` (int or callable, optional) - Bit width for ``bitv`` types
+
+.. note::
+   The parameter name changed from ``bounds`` to ``domain`` in recent versions.
+   ``domain`` better reflects support for both ranges and discrete value sets.
 
 randc()
 =======
@@ -91,16 +119,17 @@ a new one.
     @zdc.dataclass
     class TestSequence:
         # Random-cyclic: cycles through 0-15
-        test_id: int = zdc.randc(bounds=(0, 15), default=0)
+        test_id: int = zdc.randc(domain=(0, 15))
         
         @zdc.constraint
         def valid_tests(self):
             # Only IDs 0-11 are valid
-            self.test_id < 12
+            assert self.test_id < 12
 
 **Parameters:**
 
 * Same as ``rand()``
+* Currently only supports scalar fields (not arrays)
 
 **********************
 Constraint Decorators
@@ -110,30 +139,37 @@ Constraint Decorators
 ===========
 
 Marks a method as a fixed constraint that is always applied during randomization.
+Constraints use ``assert`` statement syntax.
 
 .. code-block:: python3
 
     @zdc.dataclass
     class BusTransaction:
-        addr: int = zdc.rand(bounds=(0, 255), default=0)
-        data: int = zdc.rand(default=0)
+        addr: int = zdc.rand(domain=(0, 255))
+        data: int = zdc.rand(domain=(0, 255))
         
         @zdc.constraint
         def addr_aligned(self):
             """Address must be word-aligned"""
-            self.addr % 4 == 0
+            assert self.addr % 4 == 0
+        
+        @zdc.constraint
+        def data_bounds(self):
+            """Multiple constraints in one method"""
+            assert self.data > 0
+            assert self.data < 200
 
 **Statement Syntax:**
 
-Constraints use statement syntax (not returns). Multiple statements are implicitly ANDed:
+Constraints use ``assert`` statement syntax. Multiple assertions are implicitly ANDed:
 
 .. code-block:: python3
 
     @zdc.constraint
     def bounds_check(self):
-        self.x >= 0      # Statement 1
-        self.x < 100     # Statement 2
-        self.y > self.x  # Statement 3
+        assert self.x >= 0      # Statement 1
+        assert self.x < 100     # Statement 2
+        assert self.y > self.x  # Statement 3
         # All three must be true
 
 @constraint.generic
@@ -146,17 +182,128 @@ activated. Used for conditional constraint sets.
 
     @zdc.dataclass
     class Packet:
-        length: int = zdc.rand(bounds=(64, 1500), default=64)
+        length: int = zdc.rand(domain=(64, 1500))
         
         @zdc.constraint.generic
         def small_packet(self):
-            self.length < 256
+            assert self.length < 256
         
         @zdc.constraint.generic
         def large_packet(self):
-            self.length >= 1024
+            assert self.length >= 1024
 
 Generic constraints can be selectively enabled based on test scenarios.
+
+***********************
+Array Constraints
+***********************
+
+Arrays are declared using Python's ``List`` type annotation with a fixed size.
+Individual array elements can be constrained using indexing.
+
+Array Declaration
+=================
+
+.. code-block:: python3
+
+    from typing import List
+    
+    @zdc.dataclass
+    class ArrayExample:
+        # Fixed-size array of 8 elements
+        buffer: List[int] = zdc.rand(size=8, domain=(0, 255))
+        
+        # Multiple arrays
+        data: List[int] = zdc.rand(size=16, domain=(0, 1023))
+        mask: List[int] = zdc.rand(size=16, domain=(0, 1))
+
+Array Indexing
+==============
+
+Access individual array elements using subscript notation:
+
+.. code-block:: python3
+
+    @zdc.constraint
+    def element_constraints(self):
+        # First element must be even
+        assert self.buffer[0] % 2 == 0
+        
+        # Last element larger than first
+        assert self.buffer[7] > self.buffer[0]
+        
+        # Element relationships
+        assert self.data[3] == self.data[2] + 1
+
+Computed Indices
+================
+
+Use arithmetic expressions in array indices:
+
+.. code-block:: python3
+
+    @zdc.constraint
+    def computed_indices(self):
+        # Adjacent elements
+        for i in range(7):
+            assert self.buffer[i] <= self.buffer[i + 1]
+        
+        # Stride access
+        for i in range(4):
+            assert self.matrix[i * 3] != 0
+
+Iterative Constraints
+=====================
+
+Use Python ``for`` loops to express constraints over array elements:
+
+**Simple Loops:**
+
+.. code-block:: python3
+
+    @zdc.constraint
+    def all_positive(self):
+        for i in range(8):
+            assert self.buffer[i] > 0
+
+**Nested Loops:**
+
+.. code-block:: python3
+
+    @zdc.constraint
+    def all_unique(self):
+        # Ensure all elements are unique
+        for i in range(8):
+            for j in range(i + 1, 8):
+                assert self.buffer[i] != self.buffer[j]
+
+**Variable-Bounded Loops:**
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class VariableBuffer:
+        count: int = zdc.rand(domain=(1, 8))
+        buffer: List[int] = zdc.rand(size=8, domain=(0, 100))
+        
+        @zdc.constraint
+        def active_elements(self):
+            # Only first 'count' elements constrained
+            for i in range(self.count):
+                assert self.buffer[i] < 50
+
+**Using len():**
+
+.. code-block:: python3
+
+    @zdc.constraint
+    def full_array(self):
+        for i in range(len(self.buffer)):
+            assert self.buffer[i] != 0
+
+.. note::
+   Loops are expanded at parse time, not executed at runtime.
+   Variable-bounded loops use implication constraints.
 
 ***********************
 Constraint Expressions
@@ -171,13 +318,13 @@ Standard comparison operators are supported:
 
     @zdc.constraint
     def comparisons(self):
-        self.a < 100          # Less than
-        self.b <= 100         # Less than or equal
-        self.c > 0            # Greater than
-        self.d >= 10          # Greater than or equal
-        self.e == 50          # Equal
-        self.f != 0           # Not equal
-        0 <= self.g < 100     # Chained comparison
+        assert self.a < 100          # Less than
+        assert self.b <= 100         # Less than or equal
+        assert self.c > 0            # Greater than
+        assert self.d >= 10          # Greater than or equal
+        assert self.e == 50          # Equal
+        assert self.f != 0           # Not equal
+        assert 0 <= self.g < 100     # Chained comparison
 
 Boolean Operators
 =================
@@ -188,10 +335,10 @@ Logical operators combine constraint expressions:
 
     @zdc.constraint
     def logic(self):
-        (self.a > 0) and (self.b > 0)     # AND
-        (self.x < 10) or (self.y < 10)    # OR
-        not self.flag                      # NOT
-        not (self.read and self.write)    # NOT of expression
+        assert (self.a > 0) and (self.b > 0)     # AND
+        assert (self.x < 10) or (self.y < 10)    # OR
+        assert not self.flag                      # NOT
+        assert not (self.read and self.write)    # NOT of expression
 
 Arithmetic Operators
 ====================
@@ -202,12 +349,12 @@ Arithmetic expressions can be used in constraints:
 
     @zdc.constraint
     def arithmetic(self):
-        self.sum == self.a + self.b
-        self.diff == self.a - self.b
-        self.product == self.a * self.b
-        self.quotient == self.a / self.b
-        self.remainder == self.a % self.b
-        self.aligned == (self.addr % 4 == 0)
+        assert self.sum == self.a + self.b
+        assert self.diff == self.a - self.b
+        assert self.product == self.a * self.b
+        assert self.quotient == self.a / self.b
+        assert self.remainder == self.a % self.b
+        assert self.aligned == (self.addr % 4 == 0)
 
 Set Membership
 ==============
@@ -219,10 +366,10 @@ Use Python's ``in`` operator for set membership:
     @zdc.constraint
     def membership(self):
         # Value in range [0, 16)
-        self.x in range(0, 16)
+        assert self.x in range(0, 16)
         
         # Value in discrete set
-        self.type in [0, 1, 2, 5, 7]
+        assert self.type in [0, 1, 2, 5, 7]
 
 Bit Operations
 ==============
@@ -234,14 +381,163 @@ Subscript notation accesses bits and slices:
     @zdc.constraint
     def bit_ops(self):
         # Bit slice (SystemVerilog style)
-        self.addr[1:0] == 0
+        assert self.addr[1:0] == 0
         
         # Single bit
-        self.flags[0] == 1
+        assert self.flags[0] == 1
 
 *****************
 Helper Functions
 *****************
+
+Zuspec provides helper functions that expand common constraint patterns into
+equivalent loop-based constraints. All helpers expand at parse time with zero
+runtime overhead.
+
+sum()
+=====
+
+Returns the sum of all elements in an array. Use in expressions and comparisons.
+
+.. code-block:: python3
+
+    from typing import List
+    
+    @zdc.dataclass
+    class Packet:
+        payload: List[int] = zdc.rand(size=8, domain=(0, 31))
+        checksum: int = zdc.rand(domain=(100, 150))
+        
+        @zdc.constraint
+        def checksum_constraint(self):
+            # Sum of payload must equal checksum
+            assert zdc.sum(self.payload) == self.checksum
+        
+        @zdc.constraint
+        def bounded_sum(self):
+            # Sum must be in range
+            assert zdc.sum(self.payload) >= 50
+            assert zdc.sum(self.payload) <= 200
+
+**Expansion:**
+
+``sum(arr)`` expands to ``arr[0] + arr[1] + ... + arr[N-1]``
+
+**Works with:**
+* Equality: ``sum(arr) == 100``
+* Comparisons: ``sum(arr) < 200``, ``sum(arr) >= 50``
+* Arithmetic: ``sum(arr) * 2 == target``
+
+unique()
+========
+
+Ensures all elements in an array are distinct (no duplicates).
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class IDGenerator:
+        ids: List[int] = zdc.rand(size=8, domain=(0, 15))
+        
+        @zdc.constraint
+        def all_unique(self):
+            # All IDs must be different
+            assert zdc.unique(self.ids)
+
+**Expansion:**
+
+.. code-block:: python3
+
+    # Expands to:
+    for i in range(N):
+        for j in range(i+1, N):
+            assert arr[i] != arr[j]
+
+**Use Cases:**
+* Unique identifiers
+* Distinct test values
+* Permutation generation
+
+ascending()
+===========
+
+Constrains array elements to strictly ascending order (each element < next element).
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class SortedSequence:
+        sequence: List[int] = zdc.rand(size=6, domain=(0, 100))
+        
+        @zdc.constraint
+        def ordered(self):
+            # Elements must be strictly increasing
+            assert zdc.ascending(self.sequence)
+            
+            # Can combine with other constraints
+            assert self.sequence[0] >= 10
+
+**Expansion:**
+
+.. code-block:: python3
+
+    # Expands to:
+    for i in range(N-1):
+        assert arr[i] < arr[i+1]
+
+**Use Cases:**
+* Sorted data generation
+* Timestamp sequences
+* Priority ordering
+
+descending()
+============
+
+Constrains array elements to strictly descending order (each element > next element).
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class PriorityQueue:
+        priorities: List[int] = zdc.rand(size=5, domain=(0, 50))
+        
+        @zdc.constraint
+        def priority_order(self):
+            # Priorities decrease from first to last
+            assert zdc.descending(self.priorities)
+
+**Expansion:**
+
+.. code-block:: python3
+
+    # Expands to:
+    for i in range(N-1):
+        assert arr[i] > arr[i+1]
+
+**Use Cases:**
+* Priority queues
+* Reverse-sorted data
+* Deadline scheduling
+
+Combining Helpers
+=================
+
+Multiple helpers can be combined in the same constraint:
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class CombinedExample:
+        values: List[int] = zdc.rand(size=5, domain=(1, 30))
+        
+        @zdc.constraint
+        def all_constraints(self):
+            assert zdc.unique(self.values)      # All different
+            assert zdc.ascending(self.values)   # Sorted order
+            assert zdc.sum(self.values) >= 60   # Minimum total
+
+    # Result: 5 unique, ascending values with sum ≥ 60
+    # Example: [11, 12, 13, 14, 15] (sum = 65)
 
 implies()
 =========
@@ -253,11 +549,11 @@ Expresses implication constraints: "if condition, then consequence must hold."
     @zdc.constraint
     def implications(self):
         # If type is 0, addr must be less than 16
-        zdc.implies(self.addr_type == 0, self.addr < 16)
+        assert zdc.implies(self.addr_type == 0, self.addr < 16)
         
         # If type is 1, addr must be in range [16, 128)
-        zdc.implies(self.addr_type == 1, 
-                    self.addr in range(16, 128))
+        assert zdc.implies(self.addr_type == 1, 
+                          self.addr in range(16, 128))
 
 **Logical equivalent:** ``implies(a, b)`` is ``(not a) or b``
 
@@ -302,33 +598,6 @@ Specifies weighted distribution for random variables.
 * ``(weight, 'per_value')``: Weight per value in range
 * ``(weight, 'total')``: Total weight for entire range
 
-unique()
-========
-
-Constrains a set of variables to have unique values.
-
-.. code-block:: python3
-
-    @zdc.dataclass
-    class IDGenerator:
-        id1: int = zdc.rand(bounds=(0, 15), default=0)
-        id2: int = zdc.rand(bounds=(0, 15), default=0)
-        id3: int = zdc.rand(bounds=(0, 15), default=0)
-        
-        @zdc.constraint
-        def all_unique(self):
-            zdc.unique([self.id1, self.id2, self.id3])
-
-**Alternative:** Explicit pairwise constraints:
-
-.. code-block:: python3
-
-    @zdc.constraint
-    def all_unique_explicit(self):
-        self.id1 != self.id2
-        self.id1 != self.id3
-        self.id2 != self.id3
-
 solve_order()
 =============
 
@@ -341,7 +610,7 @@ propagation. Variables are solved in the specified order.
     def order_hint(self):
         # Solve addr before data
         zdc.solve_order(self.addr, self.data)
-        self.data == self.addr * 2
+        assert self.data == self.addr * 2
 
 Multiple variables can be specified:
 
@@ -351,6 +620,85 @@ Multiple variables can be specified:
     def pipeline_order(self):
         # stage1 solved first, then stage2, then stage3
         zdc.solve_order(self.stage1, self.stage2, self.stage3)
+
+***********************
+Inline Constraints
+***********************
+
+randomize_with
+==============
+
+The ``randomize_with`` context manager allows adding constraints inline without
+modifying the dataclass definition. Useful for scenario-specific constraints.
+
+**Basic Usage:**
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class Packet:
+        length: int = zdc.rand(domain=(64, 1500))
+        data: List[int] = zdc.rand(size=8, domain=(0, 255))
+    
+    pkt = Packet()
+    
+    # Add inline constraints
+    with zdc.randomize_with(pkt):
+        assert pkt.length < 256
+        assert zdc.sum(pkt.data) == 100
+
+**With Loops:**
+
+.. code-block:: python3
+
+    with zdc.randomize_with(obj):
+        # Iterative constraint
+        for i in range(8):
+            assert obj.buffer[i] > 0
+        
+        # Nested loops
+        for i in range(8):
+            for j in range(i+1, 8):
+                assert obj.buffer[i] != obj.buffer[j]
+
+**With Helper Functions:**
+
+.. code-block:: python3
+
+    with zdc.randomize_with(obj):
+        assert zdc.unique(obj.ids)
+        assert zdc.ascending(obj.sequence)
+        assert zdc.sum(obj.values) >= 50
+
+**With Seed:**
+
+.. code-block:: python3
+
+    with zdc.randomize_with(obj, seed=42):
+        assert obj.x > 10
+        assert obj.y < 100
+
+**Combining with Class Constraints:**
+
+Inline constraints are ANDed with any existing ``@constraint`` methods:
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class Transaction:
+        addr: int = zdc.rand(domain=(0, 255))
+        
+        @zdc.constraint
+        def aligned(self):
+            assert self.addr % 4 == 0
+    
+    txn = Transaction()
+    
+    # Both constraints apply
+    with zdc.randomize_with(txn):
+        assert txn.addr < 128  # Additional constraint
+    
+    # Result: addr is word-aligned AND < 128
 
 *********************
 Parsing Constraints
@@ -413,62 +761,69 @@ Complete Example
 .. code-block:: python3
 
     import zuspec.dataclasses as zdc
+    from typing import List
 
     @zdc.dataclass
-    class BusTransaction:
-        """Bus transaction with comprehensive constraints"""
+    class NetworkPacket:
+        """Network packet with comprehensive constraints"""
         
-        # Random fields
-        addr: int = zdc.rand(bounds=(0, 255), default=0)
-        data: int = zdc.rand(bounds=(0, 255), default=0)
-        read_enable: int = zdc.rand(default=0)
-        write_enable: int = zdc.rand(default=0)
-        addr_type: int = zdc.rand(bounds=(0, 2), default=0)
+        # Scalar random fields
+        packet_type: int = zdc.rand(domain=(0, 3))
+        priority: int = zdc.rand(domain=(0, 7))
+        length: int = zdc.rand(domain=(64, 1500))
         
-        # Fixed constraints
+        # Array random fields
+        header: List[int] = zdc.rand(size=4, domain=(0, 255))
+        payload: List[int] = zdc.rand(size=16, domain=(0, 255))
+        
+        # Basic constraints
         @zdc.constraint
-        def not_both_rw(self):
-            """Cannot read and write simultaneously"""
-            not (self.read_enable and self.write_enable)
-        
-        @zdc.constraint
-        def at_least_one(self):
-            """Must have read or write enabled"""
-            self.read_enable or self.write_enable
+        def valid_length(self):
+            """Length must accommodate header + payload"""
+            assert self.length >= 64
         
         @zdc.constraint
-        def addr_aligned(self):
-            """Address must be word-aligned"""
-            self.addr % 4 == 0
+        def priority_rules(self):
+            """High-priority packets use specific types"""
+            assert zdc.implies(self.priority >= 6, 
+                              self.packet_type in [0, 1])
         
+        # Array constraints with helpers
         @zdc.constraint
-        def addr_type_ranges(self):
-            """Address type determines address range"""
-            zdc.implies(self.addr_type == 0, 
-                       self.addr in range(0, 64))
-            zdc.implies(self.addr_type == 1, 
-                       self.addr in range(64, 192))
-            zdc.implies(self.addr_type == 2, 
-                       self.addr in range(192, 256))
+        def payload_constraints(self):
+            """Payload must be unique and checksum bounded"""
+            assert zdc.unique(self.payload)
+            assert zdc.sum(self.payload) < 2000
         
+        # Iterative constraint
         @zdc.constraint
-        def solve_order_hint(self):
-            """Solve address before data"""
-            zdc.solve_order(self.addr, self.data)
+        def header_ordering(self):
+            """Header bytes must be ascending"""
+            for i in range(3):
+                assert self.header[i] < self.header[i+1]
         
-        # Generic constraints
+        # Generic constraint
         @zdc.constraint.generic
-        def low_addr(self):
-            """Generic: restrict to low addresses"""
-            self.addr < 128
+        def small_packet(self):
+            """Generic: restrict to small packets"""
+            assert self.length < 256
     
-    # Parse the constraints
-    parser = zdc.ConstraintParser()
-    constraints = parser.extract_constraints(BusTransaction)
-    rand_fields = zdc.extract_rand_fields(BusTransaction)
+    # Create and randomize
+    pkt = NetworkPacket()
+    zdc.randomize(pkt, seed=42)
     
-    print(f"Found {len(constraints)} constraints")
-    print(f"Found {len(rand_fields)} random fields")
+    print(f"Type: {pkt.packet_type}, Priority: {pkt.priority}")
+    print(f"Header: {pkt.header}")
+    print(f"Payload sum: {sum(pkt.payload)}")
+    
+    # Randomize with inline constraints
+    pkt2 = NetworkPacket()
+    with zdc.randomize_with(pkt2, seed=123):
+        assert pkt2.priority == 7  # Force high priority
+        assert zdc.ascending(pkt2.payload)  # Sorted payload
+    
+    print(f"High-priority packet: {pkt2.priority}")
+    print(f"Sorted payload: {pkt2.payload}")
 
 *********************
 Supported Patterns
@@ -487,12 +842,17 @@ Constraint Language Coverage
 * ✅ Uniqueness (``unique()``)
 * ✅ Solve ordering (``solve_order()``)
 * ✅ Random-cyclic variables (``randc()``)
-* ⏳ Array constraints (``for`` loops - future)
+* ✅ Array constraints (fixed-size with indexing)
+* ✅ Iterative constraints (``for`` loops with ranges)
+* ✅ Helper functions (``sum``, ``unique``, ``ascending``, ``descending``)
+* ⏳ Variable-size arrays (future)
+* ⏳ Jagged arrays (future)
 
 **PSS (Portable Stimulus Standard):**
 
 * ✅ Fixed constraints (``@constraint``)
 * ✅ Generic constraints (``@constraint.generic``)
+* ✅ Inline constraints (``randomize_with``)
 * ⏳ Parameterized generics (future)
 * ⏳ Activity constraints (future)
 * ⏳ Action fields (future)
@@ -516,14 +876,14 @@ Statement-Based Syntax
 ======================
 
 Unlike functions that return boolean expressions, constraints use statement syntax
-where each statement is implicitly ANDed:
+with explicit ``assert`` where each statement is implicitly ANDed:
 
 .. code-block:: python3
 
     @zdc.constraint
     def bounds(self):
-        self.x >= 0       # Statement 1
-        self.x < 100      # Statement 2
+        assert self.x >= 0       # Statement 1
+        assert self.x < 100      # Statement 2
         # Equivalent to: (self.x >= 0) and (self.x < 100)
 
 This matches SystemVerilog and PSS syntax patterns.
@@ -533,8 +893,9 @@ Future Extensions
 
 Planned enhancements include:
 
+* **Variable-size arrays** - Arrays with runtime-determined length
 * **Soft constraints** - Preferences that guide but don't restrict solutions
-* **Array constraints** - ``for`` loop support for constraining arrays
 * **Parameterized generics** - Generic constraints with parameters
 * **Activity constraints** - PSS-specific activity and action constraints
+* **Additional helpers** - sorted(), product(), count(), min(), max()
 * **Optimization** - Constraint propagation and caching

@@ -35,48 +35,56 @@
             
   <section id="constraints">
 <h1>Constraints<a class="headerlink" href="#constraints" title="Link to this heading">¶</a></h1>
-<p>Zuspec provides a SystemVerilog/PSS-style constraint framework for declarative
-specification of constraints on random variables. Constraints are declared using
-decorated methods and parsed from Python AST without runtime execution.</p>
+<p>Zuspec provides a comprehensive SystemVerilog/PSS-style constraint framework for
+declarative specification of constraints on random variables. Constraints are
+declared using decorated methods and parsed from Python AST without runtime execution.</p>
 <p><strong>Key Features:</strong></p>
 <ul class="simple">
 <li><p>Pythonic syntax with statement-based constraints</p></li>
 <li><p>Full AST parsing (no runtime execution)</p></li>
 <li><p>Support for SystemVerilog and PSS constraint patterns</p></li>
-<li><p>Fixed and generic constraints</p></li>
+<li><p>Fixed-size arrays with indexing and iterative constraints</p></li>
+<li><p>Constraint helper functions (sum, unique, ascending, descending)</p></li>
+<li><p>Inline constraints with <code class="docutils literal notranslate"><span class="pre">randomize_with</span></code></p></li>
 <li><p>Distribution, implication, uniqueness, and solve ordering</p></li>
 <li><p>Type-safe with IDE support</p></li>
 </ul>
 <section id="quick-example">
 <h2>Quick Example<a class="headerlink" href="#quick-example" title="Link to this heading">¶</a></h2>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
 
 <span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
-    <span class="c1"># Random fields</span>
-    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
-    <span class="n">header_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">60</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
-    <span class="n">pkt_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="c1"># Scalar random fields</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">))</span>
+    <span class="n">header_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">60</span><span class="p">))</span>
+    <span class="n">pkt_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
 
-    <span class="c1"># Fixed constraint (always applied)</span>
+    <span class="c1"># Array random field</span>
+    <span class="n">payload</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+
+    <span class="c1"># Constraint using helper functions</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">valid_payload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>  <span class="c1"># All bytes unique</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1000</span>  <span class="c1"># Checksum limit</span>
+
+    <span class="c1"># Iterative constraint with for loop</span>
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">byte_ordering</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">7</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="c1"># Traditional constraints</span>
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">valid_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header_len</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header_len</span>
 
-    <span class="c1"># Distribution constraint</span>
-    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">type_distribution</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="n">zdc</span><span class="o">.</span><span class="n">dist</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pkt_type</span><span class="p">,</span> <span class="p">{</span>
-            <span class="mi">0</span><span class="p">:</span> <span class="mi">40</span><span class="p">,</span>  <span class="c1"># 40% weight</span>
-            <span class="mi">1</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>  <span class="c1"># 30% weight</span>
-            <span class="mi">2</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>  <span class="c1"># 20% weight</span>
-            <span class="mi">3</span><span class="p">:</span> <span class="mi">10</span>   <span class="c1"># 10% weight</span>
-        <span class="p">})</span>
-
-    <span class="c1"># Generic constraint (conditionally applied)</span>
-    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">small_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
+<span class="c1"># Randomize and use</span>
+<span class="n">pkt</span> <span class="o">=</span> <span class="n">Packet</span><span class="p">()</span>
+<span class="n">zdc</span><span class="o">.</span><span class="n">randomize</span><span class="p">(</span><span class="n">pkt</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Payload: </span><span class="si">{</span><span class="n">pkt</span><span class="o">.</span><span class="n">payload</span><span class="si">}</span><span class="s2">, sum=</span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">pkt</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -84,26 +92,44 @@ decorated methods and parsed from Python AST without runtime execution.</p>
 <h2>Random Variables<a class="headerlink" href="#random-variables" title="Link to this heading">¶</a></h2>
 <section id="rand">
 <h3>rand()<a class="headerlink" href="#rand" title="Link to this heading">¶</a></h3>
-<p>Declares a random variable that will be assigned a value by the constraint solver.</p>
+<p>Declares a random variable that will be assigned a value by the constraint solver.
+Supports both scalar fields and fixed-size arrays.</p>
+<p><strong>Scalar Fields:</strong></p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Transaction</span><span class="p">:</span>
     <span class="c1"># Basic random variable</span>
-    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span>
 
-    <span class="c1"># With bounds</span>
-    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="c1"># With domain bounds</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
 
-    <span class="c1"># Random array</span>
-    <span class="n">buffer</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="c1"># With explicit bit width</span>
+    <span class="n">flags</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">))</span>
+</pre></div>
+</div>
+<p><strong>Array Fields:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BufferTransaction</span><span class="p">:</span>
+    <span class="c1"># Fixed-size array of 16 random integers</span>
+    <span class="n">buffer</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+
+    <span class="c1"># Array with wider domain</span>
+    <span class="n">values</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1023</span><span class="p">))</span>
 </pre></div>
 </div>
 <p><strong>Parameters:</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">bounds</span></code> (tuple, optional) - <code class="docutils literal notranslate"><span class="pre">(min,</span> <span class="pre">max)</span></code> value bounds</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">default</span></code> (any) - Default value when not randomized</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">size</span></code> (int, optional) - Array size for vector fields</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">domain</span></code> (tuple, optional) - <code class="docutils literal notranslate"><span class="pre">(min,</span> <span class="pre">max)</span></code> value bounds (inclusive)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">size</span></code> (int, optional) - Array size for List[T] fields</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">width</span></code> (int or callable, optional) - Bit width for <code class="docutils literal notranslate"><span class="pre">bitv</span></code> types</p></li>
 </ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The parameter name changed from <code class="docutils literal notranslate"><span class="pre">bounds</span></code> to <code class="docutils literal notranslate"><span class="pre">domain</span></code> in recent versions.
+<code class="docutils literal notranslate"><span class="pre">domain</span></code> better reflects support for both ranges and discrete value sets.</p>
+</div>
 </section>
 <section id="randc">
 <h3>randc()<a class="headerlink" href="#randc" title="Link to this heading">¶</a></h3>
@@ -113,17 +139,18 @@ a new one.</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">TestSequence</span><span class="p">:</span>
     <span class="c1"># Random-cyclic: cycles through 0-15</span>
-    <span class="n">test_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randc</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">test_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randc</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">))</span>
 
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">valid_tests</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="c1"># Only IDs 0-11 are valid</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">test_id</span> <span class="o">&lt;</span> <span class="mi">12</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_id</span> <span class="o">&lt;</span> <span class="mi">12</span>
 </pre></div>
 </div>
 <p><strong>Parameters:</strong></p>
 <ul class="simple">
 <li><p>Same as <code class="docutils literal notranslate"><span class="pre">rand()</span></code></p></li>
+<li><p>Currently only supports scalar fields (not arrays)</p></li>
 </ul>
 </section>
 </section>
@@ -131,25 +158,32 @@ a new one.</p>
 <h2>Constraint Decorators<a class="headerlink" href="#constraint-decorators" title="Link to this heading">¶</a></h2>
 <section id="constraint">
 <h3>&#64;constraint<a class="headerlink" href="#constraint" title="Link to this heading">¶</a></h3>
-<p>Marks a method as a fixed constraint that is always applied during randomization.</p>
+<p>Marks a method as a fixed constraint that is always applied during randomization.
+Constraints use <code class="docutils literal notranslate"><span class="pre">assert</span></code> statement syntax.</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">BusTransaction</span><span class="p">:</span>
-    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
 
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">addr_aligned</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Address must be word-aligned&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">data_bounds</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Multiple constraints in one method&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">&lt;</span> <span class="mi">200</span>
 </pre></div>
 </div>
 <p><strong>Statement Syntax:</strong></p>
-<p>Constraints use statement syntax (not returns). Multiple statements are implicitly ANDed:</p>
+<p>Constraints use <code class="docutils literal notranslate"><span class="pre">assert</span></code> statement syntax. Multiple assertions are implicitly ANDed:</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">bounds_check</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="mi">0</span>      <span class="c1"># Statement 1</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">100</span>     <span class="c1"># Statement 2</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span>  <span class="c1"># Statement 3</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="mi">0</span>      <span class="c1"># Statement 1</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">100</span>     <span class="c1"># Statement 2</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span>  <span class="c1"># Statement 3</span>
     <span class="c1"># All three must be true</span>
 </pre></div>
 </div>
@@ -160,18 +194,114 @@ a new one.</p>
 activated. Used for conditional constraint sets.</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
-    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">))</span>
 
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">small_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
 
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">large_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="mi">1024</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="mi">1024</span>
 </pre></div>
 </div>
 <p>Generic constraints can be selectively enabled based on test scenarios.</p>
+</section>
+</section>
+<section id="array-constraints">
+<h2>Array Constraints<a class="headerlink" href="#array-constraints" title="Link to this heading">¶</a></h2>
+<p>Arrays are declared using Python’s <code class="docutils literal notranslate"><span class="pre">List</span></code> type annotation with a fixed size.
+Individual array elements can be constrained using indexing.</p>
+<section id="array-declaration">
+<h3>Array Declaration<a class="headerlink" href="#array-declaration" title="Link to this heading">¶</a></h3>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ArrayExample</span><span class="p">:</span>
+    <span class="c1"># Fixed-size array of 8 elements</span>
+    <span class="n">buffer</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+
+    <span class="c1"># Multiple arrays</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1023</span><span class="p">))</span>
+    <span class="n">mask</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+</pre></div>
+</div>
+</section>
+<section id="array-indexing">
+<h3>Array Indexing<a class="headerlink" href="#array-indexing" title="Link to this heading">¶</a></h3>
+<p>Access individual array elements using subscript notation:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">element_constraints</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># First element must be even</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="c1"># Last element larger than first</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="mi">7</span><span class="p">]</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c1"># Element relationships</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div>
+</div>
+</section>
+<section id="computed-indices">
+<h3>Computed Indices<a class="headerlink" href="#computed-indices" title="Link to this heading">¶</a></h3>
+<p>Use arithmetic expressions in array indices:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">computed_indices</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># Adjacent elements</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">7</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+
+    <span class="c1"># Stride access</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="mi">3</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span>
+</pre></div>
+</div>
+</section>
+<section id="iterative-constraints">
+<h3>Iterative Constraints<a class="headerlink" href="#iterative-constraints" title="Link to this heading">¶</a></h3>
+<p>Use Python <code class="docutils literal notranslate"><span class="pre">for</span></code> loops to express constraints over array elements:</p>
+<p><strong>Simple Loops:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">all_positive</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span>
+</pre></div>
+</div>
+<p><strong>Nested Loops:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">all_unique</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># Ensure all elements are unique</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>Variable-Bounded Loops:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">VariableBuffer</span><span class="p">:</span>
+    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+    <span class="n">buffer</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">active_elements</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Only first &#39;count&#39; elements constrained</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">50</span>
+</pre></div>
+</div>
+<p><strong>Using len():</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">full_array</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">)):</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Loops are expanded at parse time, not executed at runtime.
+Variable-bounded loops use implication constraints.</p>
+</div>
 </section>
 </section>
 <section id="constraint-expressions">
@@ -181,13 +311,13 @@ activated. Used for conditional constraint sets.</p>
 <p>Standard comparison operators are supported:</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">comparisons</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">&lt;</span> <span class="mi">100</span>          <span class="c1"># Less than</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">&lt;=</span> <span class="mi">100</span>         <span class="c1"># Less than or equal</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span>            <span class="c1"># Greater than</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">&gt;=</span> <span class="mi">10</span>          <span class="c1"># Greater than or equal</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">==</span> <span class="mi">50</span>          <span class="c1"># Equal</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="o">!=</span> <span class="mi">0</span>           <span class="c1"># Not equal</span>
-    <span class="mi">0</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">g</span> <span class="o">&lt;</span> <span class="mi">100</span>     <span class="c1"># Chained comparison</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">&lt;</span> <span class="mi">100</span>          <span class="c1"># Less than</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">&lt;=</span> <span class="mi">100</span>         <span class="c1"># Less than or equal</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span>            <span class="c1"># Greater than</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">&gt;=</span> <span class="mi">10</span>          <span class="c1"># Greater than or equal</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">e</span> <span class="o">==</span> <span class="mi">50</span>          <span class="c1"># Equal</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="o">!=</span> <span class="mi">0</span>           <span class="c1"># Not equal</span>
+    <span class="k">assert</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">g</span> <span class="o">&lt;</span> <span class="mi">100</span>     <span class="c1"># Chained comparison</span>
 </pre></div>
 </div>
 </section>
@@ -196,10 +326,10 @@ activated. Used for conditional constraint sets.</p>
 <p>Logical operators combine constraint expressions:</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">logic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>     <span class="c1"># AND</span>
-    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">)</span>    <span class="c1"># OR</span>
-    <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">flag</span>                      <span class="c1"># NOT</span>
-    <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">read</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">)</span>    <span class="c1"># NOT of expression</span>
+    <span class="k">assert</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">b</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>     <span class="c1"># AND</span>
+    <span class="k">assert</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">)</span>    <span class="c1"># OR</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">flag</span>                      <span class="c1"># NOT</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">read</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">)</span>    <span class="c1"># NOT of expression</span>
 </pre></div>
 </div>
 </section>
@@ -208,12 +338,12 @@ activated. Used for conditional constraint sets.</p>
 <p>Arithmetic expressions can be used in constraints:</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">arithmetic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">sum</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">diff</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">product</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">quotient</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">remainder</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">aligned</span> <span class="o">==</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">sum</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">diff</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">product</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">quotient</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">remainder</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">aligned</span> <span class="o">==</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -223,10 +353,10 @@ activated. Used for conditional constraint sets.</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">membership</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
     <span class="c1"># Value in range [0, 16)</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
 
     <span class="c1"># Value in discrete set</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">]</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">]</span>
 </pre></div>
 </div>
 </section>
@@ -236,27 +366,153 @@ activated. Used for conditional constraint sets.</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">bit_ops</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
     <span class="c1"># Bit slice (SystemVerilog style)</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span>
 
     <span class="c1"># Single bit</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">flags</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">flags</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span>
 </pre></div>
 </div>
 </section>
 </section>
 <section id="helper-functions">
 <h2>Helper Functions<a class="headerlink" href="#helper-functions" title="Link to this heading">¶</a></h2>
+<p>Zuspec provides helper functions that expand common constraint patterns into
+equivalent loop-based constraints. All helpers expand at parse time with zero
+runtime overhead.</p>
+<section id="sum">
+<h3>sum()<a class="headerlink" href="#sum" title="Link to this heading">¶</a></h3>
+<p>Returns the sum of all elements in an array. Use in expressions and comparisons.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
+    <span class="n">payload</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">31</span><span class="p">))</span>
+    <span class="n">checksum</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">150</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">checksum_constraint</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Sum of payload must equal checksum</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">checksum</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bounded_sum</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Sum must be in range</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">50</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">200</span>
+</pre></div>
+</div>
+<p><strong>Expansion:</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">sum(arr)</span></code> expands to <code class="docutils literal notranslate"><span class="pre">arr[0]</span> <span class="pre">+</span> <span class="pre">arr[1]</span> <span class="pre">+</span> <span class="pre">...</span> <span class="pre">+</span> <span class="pre">arr[N-1]</span></code></p>
+<p><strong>Works with:</strong>
+* Equality: <code class="docutils literal notranslate"><span class="pre">sum(arr)</span> <span class="pre">==</span> <span class="pre">100</span></code>
+* Comparisons: <code class="docutils literal notranslate"><span class="pre">sum(arr)</span> <span class="pre">&lt;</span> <span class="pre">200</span></code>, <code class="docutils literal notranslate"><span class="pre">sum(arr)</span> <span class="pre">&gt;=</span> <span class="pre">50</span></code>
+* Arithmetic: <code class="docutils literal notranslate"><span class="pre">sum(arr)</span> <span class="pre">*</span> <span class="pre">2</span> <span class="pre">==</span> <span class="pre">target</span></code></p>
+</section>
+<section id="unique">
+<h3>unique()<a class="headerlink" href="#unique" title="Link to this heading">¶</a></h3>
+<p>Ensures all elements in an array are distinct (no duplicates).</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">IDGenerator</span><span class="p">:</span>
+    <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">all_unique</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># All IDs must be different</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ids</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Expansion:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Expands to:</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">N</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">arr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="n">arr</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>Use Cases:</strong>
+* Unique identifiers
+* Distinct test values
+* Permutation generation</p>
+</section>
+<section id="ascending">
+<h3>ascending()<a class="headerlink" href="#ascending" title="Link to this heading">¶</a></h3>
+<p>Constrains array elements to strictly ascending order (each element &lt; next element).</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SortedSequence</span><span class="p">:</span>
+    <span class="n">sequence</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ordered</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Elements must be strictly increasing</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ascending</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sequence</span><span class="p">)</span>
+
+        <span class="c1"># Can combine with other constraints</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">sequence</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">10</span>
+</pre></div>
+</div>
+<p><strong>Expansion:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Expands to:</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">arr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">arr</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>Use Cases:</strong>
+* Sorted data generation
+* Timestamp sequences
+* Priority ordering</p>
+</section>
+<section id="descending">
+<h3>descending()<a class="headerlink" href="#descending" title="Link to this heading">¶</a></h3>
+<p>Constrains array elements to strictly descending order (each element &gt; next element).</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PriorityQueue</span><span class="p">:</span>
+    <span class="n">priorities</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">50</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">priority_order</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Priorities decrease from first to last</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">descending</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">priorities</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Expansion:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Expands to:</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">arr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">arr</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>Use Cases:</strong>
+* Priority queues
+* Reverse-sorted data
+* Deadline scheduling</p>
+</section>
+<section id="combining-helpers">
+<h3>Combining Helpers<a class="headerlink" href="#combining-helpers" title="Link to this heading">¶</a></h3>
+<p>Multiple helpers can be combined in the same constraint:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">CombinedExample</span><span class="p">:</span>
+    <span class="n">values</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">all_constraints</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>      <span class="c1"># All different</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ascending</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>   <span class="c1"># Sorted order</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">60</span>   <span class="c1"># Minimum total</span>
+
+<span class="c1"># Result: 5 unique, ascending values with sum ≥ 60</span>
+<span class="c1"># Example: [11, 12, 13, 14, 15] (sum = 65)</span>
+</pre></div>
+</div>
+</section>
 <section id="implies">
 <h3>implies()<a class="headerlink" href="#implies" title="Link to this heading">¶</a></h3>
 <p>Expresses implication constraints: “if condition, then consequence must hold.”</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">implications</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
     <span class="c1"># If type is 0, addr must be less than 16</span>
-    <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">&lt;</span> <span class="mi">16</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">&lt;</span> <span class="mi">16</span><span class="p">)</span>
 
     <span class="c1"># If type is 1, addr must be in range [16, 128)</span>
-    <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">128</span><span class="p">))</span>
+    <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span>
+                      <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">128</span><span class="p">))</span>
 </pre></div>
 </div>
 <p><strong>Logical equivalent:</strong> <code class="docutils literal notranslate"><span class="pre">implies(a,</span> <span class="pre">b)</span></code> is <code class="docutils literal notranslate"><span class="pre">(not</span> <span class="pre">a)</span> <span class="pre">or</span> <span class="pre">b</span></code></p>
@@ -297,29 +553,6 @@ activated. Used for conditional constraint sets.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">(weight,</span> <span class="pre">'total')</span></code>: Total weight for entire range</p></li>
 </ul>
 </section>
-<section id="unique">
-<h3>unique()<a class="headerlink" href="#unique" title="Link to this heading">¶</a></h3>
-<p>Constrains a set of variables to have unique values.</p>
-<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">IDGenerator</span><span class="p">:</span>
-    <span class="n">id1</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">id2</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">id3</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-
-    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">all_unique</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="n">zdc</span><span class="o">.</span><span class="n">unique</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">id1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id2</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">id3</span><span class="p">])</span>
-</pre></div>
-</div>
-<p><strong>Alternative:</strong> Explicit pairwise constraints:</p>
-<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">all_unique_explicit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">id1</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">id2</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">id1</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">id3</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">id2</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">id3</span>
-</pre></div>
-</div>
-</section>
 <section id="solve-order">
 <h3>solve_order()<a class="headerlink" href="#solve-order" title="Link to this heading">¶</a></h3>
 <p>Provides a hint to the solver about variable ordering for better constraint
@@ -328,7 +561,7 @@ propagation. Variables are solved in the specified order.</p>
 <span class="k">def</span><span class="w"> </span><span class="nf">order_hint</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
     <span class="c1"># Solve addr before data</span>
     <span class="n">zdc</span><span class="o">.</span><span class="n">solve_order</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">*</span> <span class="mi">2</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">*</span> <span class="mi">2</span>
 </pre></div>
 </div>
 <p>Multiple variables can be specified:</p>
@@ -336,6 +569,72 @@ propagation. Variables are solved in the specified order.</p>
 <span class="k">def</span><span class="w"> </span><span class="nf">pipeline_order</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
     <span class="c1"># stage1 solved first, then stage2, then stage3</span>
     <span class="n">zdc</span><span class="o">.</span><span class="n">solve_order</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stage1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stage2</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stage3</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="inline-constraints">
+<h2>Inline Constraints<a class="headerlink" href="#inline-constraints" title="Link to this heading">¶</a></h2>
+<section id="randomize-with">
+<h3>randomize_with<a class="headerlink" href="#randomize-with" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">randomize_with</span></code> context manager allows adding constraints inline without
+modifying the dataclass definition. Useful for scenario-specific constraints.</p>
+<p><strong>Basic Usage:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Packet</span><span class="p">:</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">))</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+
+<span class="n">pkt</span> <span class="o">=</span> <span class="n">Packet</span><span class="p">()</span>
+
+<span class="c1"># Add inline constraints</span>
+<span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randomize_with</span><span class="p">(</span><span class="n">pkt</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">pkt</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
+    <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">pkt</span><span class="o">.</span><span class="n">data</span><span class="p">)</span> <span class="o">==</span> <span class="mi">100</span>
+</pre></div>
+</div>
+<p><strong>With Loops:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randomize_with</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+    <span class="c1"># Iterative constraint</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">obj</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span>
+
+    <span class="c1"># Nested loops</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="n">obj</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="n">obj</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>With Helper Functions:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randomize_with</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">ids</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ascending</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">sequence</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">50</span>
+</pre></div>
+</div>
+<p><strong>With Seed:</strong></p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randomize_with</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">obj</span><span class="o">.</span><span class="n">x</span> <span class="o">&gt;</span> <span class="mi">10</span>
+    <span class="k">assert</span> <span class="n">obj</span><span class="o">.</span><span class="n">y</span> <span class="o">&lt;</span> <span class="mi">100</span>
+</pre></div>
+</div>
+<p><strong>Combining with Class Constraints:</strong></p>
+<p>Inline constraints are ANDed with any existing <code class="docutils literal notranslate"><span class="pre">&#64;constraint</span></code> methods:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Transaction</span><span class="p">:</span>
+    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">aligned</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span>
+
+<span class="n">txn</span> <span class="o">=</span> <span class="n">Transaction</span><span class="p">()</span>
+
+<span class="c1"># Both constraints apply</span>
+<span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randomize_with</span><span class="p">(</span><span class="n">txn</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">txn</span><span class="o">.</span><span class="n">addr</span> <span class="o">&lt;</span> <span class="mi">128</span>  <span class="c1"># Additional constraint</span>
+
+<span class="c1"># Result: addr is word-aligned AND &lt; 128</span>
 </pre></div>
 </div>
 </section>
@@ -392,62 +691,69 @@ expressions to IR-compatible dictionary representation.</p>
 <section id="complete-example">
 <h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
 
 <span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">BusTransaction</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bus transaction with comprehensive constraints&quot;&quot;&quot;</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">NetworkPacket</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Network packet with comprehensive constraints&quot;&quot;&quot;</span>
 
-    <span class="c1"># Random fields</span>
-    <span class="n">addr</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">read_enable</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">write_enable</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">addr_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="c1"># Scalar random fields</span>
+    <span class="n">packet_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">priority</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">7</span><span class="p">))</span>
+    <span class="n">length</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1500</span><span class="p">))</span>
 
-    <span class="c1"># Fixed constraints</span>
+    <span class="c1"># Array random fields</span>
+    <span class="n">header</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+    <span class="n">payload</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+
+    <span class="c1"># Basic constraints</span>
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">not_both_rw</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cannot read and write simultaneously&quot;&quot;&quot;</span>
-        <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">read_enable</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_enable</span><span class="p">)</span>
-
-    <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">at_least_one</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Must have read or write enabled&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">read_enable</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_enable</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">valid_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Length must accommodate header + payload&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="mi">64</span>
 
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">addr_aligned</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Address must be word-aligned&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">%</span> <span class="mi">4</span> <span class="o">==</span> <span class="mi">0</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">priority_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;High-priority packets use specific types&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">priority</span> <span class="o">&gt;=</span> <span class="mi">6</span><span class="p">,</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">packet_type</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
 
+    <span class="c1"># Array constraints with helpers</span>
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">addr_type_ranges</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Address type determines address range&quot;&quot;&quot;</span>
-        <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span>
-                   <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">64</span><span class="p">))</span>
-        <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span>
-                   <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">192</span><span class="p">))</span>
-        <span class="n">zdc</span><span class="o">.</span><span class="n">implies</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">==</span> <span class="mi">2</span><span class="p">,</span>
-                   <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">192</span><span class="p">,</span> <span class="mi">256</span><span class="p">))</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">payload_constraints</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Payload must be unique and checksum bounded&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2000</span>
 
+    <span class="c1"># Iterative constraint</span>
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">solve_order_hint</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Solve address before data&quot;&quot;&quot;</span>
-        <span class="n">zdc</span><span class="o">.</span><span class="n">solve_order</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">header_ordering</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Header bytes must be ascending&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
 
-    <span class="c1"># Generic constraints</span>
+    <span class="c1"># Generic constraint</span>
     <span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span><span class="o">.</span><span class="n">generic</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">low_addr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generic: restrict to low addresses&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">&lt;</span> <span class="mi">128</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">small_packet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generic: restrict to small packets&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">&lt;</span> <span class="mi">256</span>
 
-<span class="c1"># Parse the constraints</span>
-<span class="n">parser</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ConstraintParser</span><span class="p">()</span>
-<span class="n">constraints</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">extract_constraints</span><span class="p">(</span><span class="n">BusTransaction</span><span class="p">)</span>
-<span class="n">rand_fields</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">extract_rand_fields</span><span class="p">(</span><span class="n">BusTransaction</span><span class="p">)</span>
+<span class="c1"># Create and randomize</span>
+<span class="n">pkt</span> <span class="o">=</span> <span class="n">NetworkPacket</span><span class="p">()</span>
+<span class="n">zdc</span><span class="o">.</span><span class="n">randomize</span><span class="p">(</span><span class="n">pkt</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">constraints</span><span class="p">)</span><span class="si">}</span><span class="s2"> constraints&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">rand_fields</span><span class="p">)</span><span class="si">}</span><span class="s2"> random fields&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Type: </span><span class="si">{</span><span class="n">pkt</span><span class="o">.</span><span class="n">packet_type</span><span class="si">}</span><span class="s2">, Priority: </span><span class="si">{</span><span class="n">pkt</span><span class="o">.</span><span class="n">priority</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Header: </span><span class="si">{</span><span class="n">pkt</span><span class="o">.</span><span class="n">header</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Payload sum: </span><span class="si">{</span><span class="nb">sum</span><span class="p">(</span><span class="n">pkt</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Randomize with inline constraints</span>
+<span class="n">pkt2</span> <span class="o">=</span> <span class="n">NetworkPacket</span><span class="p">()</span>
+<span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">randomize_with</span><span class="p">(</span><span class="n">pkt2</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">123</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">pkt2</span><span class="o">.</span><span class="n">priority</span> <span class="o">==</span> <span class="mi">7</span>  <span class="c1"># Force high priority</span>
+    <span class="k">assert</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ascending</span><span class="p">(</span><span class="n">pkt2</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span>  <span class="c1"># Sorted payload</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;High-priority packet: </span><span class="si">{</span><span class="n">pkt2</span><span class="o">.</span><span class="n">priority</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Sorted payload: </span><span class="si">{</span><span class="n">pkt2</span><span class="o">.</span><span class="n">payload</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -465,12 +771,17 @@ expressions to IR-compatible dictionary representation.</p>
 <li><p>✅ Uniqueness (<code class="docutils literal notranslate"><span class="pre">unique()</span></code>)</p></li>
 <li><p>✅ Solve ordering (<code class="docutils literal notranslate"><span class="pre">solve_order()</span></code>)</p></li>
 <li><p>✅ Random-cyclic variables (<code class="docutils literal notranslate"><span class="pre">randc()</span></code>)</p></li>
-<li><p>⏳ Array constraints (<code class="docutils literal notranslate"><span class="pre">for</span></code> loops - future)</p></li>
+<li><p>✅ Array constraints (fixed-size with indexing)</p></li>
+<li><p>✅ Iterative constraints (<code class="docutils literal notranslate"><span class="pre">for</span></code> loops with ranges)</p></li>
+<li><p>✅ Helper functions (<code class="docutils literal notranslate"><span class="pre">sum</span></code>, <code class="docutils literal notranslate"><span class="pre">unique</span></code>, <code class="docutils literal notranslate"><span class="pre">ascending</span></code>, <code class="docutils literal notranslate"><span class="pre">descending</span></code>)</p></li>
+<li><p>⏳ Variable-size arrays (future)</p></li>
+<li><p>⏳ Jagged arrays (future)</p></li>
 </ul>
 <p><strong>PSS (Portable Stimulus Standard):</strong></p>
 <ul class="simple">
 <li><p>✅ Fixed constraints (<code class="docutils literal notranslate"><span class="pre">&#64;constraint</span></code>)</p></li>
 <li><p>✅ Generic constraints (<code class="docutils literal notranslate"><span class="pre">&#64;constraint.generic</span></code>)</p></li>
+<li><p>✅ Inline constraints (<code class="docutils literal notranslate"><span class="pre">randomize_with</span></code>)</p></li>
 <li><p>⏳ Parameterized generics (future)</p></li>
 <li><p>⏳ Activity constraints (future)</p></li>
 <li><p>⏳ Action fields (future)</p></li>
@@ -493,11 +804,11 @@ enabling:</p>
 <section id="statement-based-syntax">
 <h3>Statement-Based Syntax<a class="headerlink" href="#statement-based-syntax" title="Link to this heading">¶</a></h3>
 <p>Unlike functions that return boolean expressions, constraints use statement syntax
-where each statement is implicitly ANDed:</p>
+with explicit <code class="docutils literal notranslate"><span class="pre">assert</span></code> where each statement is implicitly ANDed:</p>
 <div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">constraint</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">bounds</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="mi">0</span>       <span class="c1"># Statement 1</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">100</span>      <span class="c1"># Statement 2</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="mi">0</span>       <span class="c1"># Statement 1</span>
+    <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">100</span>      <span class="c1"># Statement 2</span>
     <span class="c1"># Equivalent to: (self.x &gt;= 0) and (self.x &lt; 100)</span>
 </pre></div>
 </div>
@@ -507,10 +818,11 @@ where each statement is implicitly ANDed:</p>
 <h3>Future Extensions<a class="headerlink" href="#future-extensions" title="Link to this heading">¶</a></h3>
 <p>Planned enhancements include:</p>
 <ul class="simple">
+<li><p><strong>Variable-size arrays</strong> - Arrays with runtime-determined length</p></li>
 <li><p><strong>Soft constraints</strong> - Preferences that guide but don’t restrict solutions</p></li>
-<li><p><strong>Array constraints</strong> - <code class="docutils literal notranslate"><span class="pre">for</span></code> loop support for constraining arrays</p></li>
 <li><p><strong>Parameterized generics</strong> - Generic constraints with parameters</p></li>
 <li><p><strong>Activity constraints</strong> - PSS-specific activity and action constraints</p></li>
+<li><p><strong>Additional helpers</strong> - sorted(), product(), count(), min(), max()</p></li>
 <li><p><strong>Optimization</strong> - Constraint propagation and caching</p></li>
 </ul>
 </section>
@@ -554,8 +866,10 @@ where each statement is implicitly ANDed:</p>
 <li class="toctree-l2"><a class="reference internal" href="#quick-example">Quick Example</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#random-variables">Random Variables</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#constraint-decorators">Constraint Decorators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#array-constraints">Array Constraints</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#constraint-expressions">Constraint Expressions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#helper-functions">Helper Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#inline-constraints">Inline Constraints</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#parsing-constraints">Parsing Constraints</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#complete-example">Complete Example</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#supported-patterns">Supported Patterns</a></li>
