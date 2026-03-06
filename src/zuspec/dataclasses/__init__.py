@@ -38,6 +38,10 @@ from . import profiles
 from .data_model_factory import DataModelFactory
 from .rt.edge import posedge, negedge, edge
 from .solver.api import randomize, randomize_with, RandomizationError
+from .coverage import (
+    Covergroup, coverpoint, cross,
+    binsof, cross_bins, cross_ignore, cross_illegal
+)
 from typing import Type
 
 __all__ = [
@@ -51,6 +55,8 @@ __all__ = [
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
+    # From coverage
+    'Covergroup', 'coverpoint', 'cross',
     # From constraint_helpers
     'implies', 'dist', 'unique', 'sum', 'ascending', 'descending', 'solve_order',
     # From constraint_parser
