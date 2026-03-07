@@ -62,6 +62,7 @@ __all__ = [
     # From constraint_parser
     'ConstraintParser', 'extract_rand_fields',
     # From types (re-exported via *)
+    'Action',
     'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',

@@ -47,6 +47,10 @@ class SignalDescriptor:
         if hasattr(obj, '_impl') and obj._impl:
             return obj._impl._signal_values.get(self.name, self.default_value)
         
+        # _impl not yet set — return any pending pre-init value stored in __dict__
+        pending_key = f'_sig_{self.name}'
+        if pending_key in obj.__dict__:
+            return obj.__dict__[pending_key]
         return self.default_value
     
     def __set__(self, obj, value):
@@ -62,6 +66,9 @@ class SignalDescriptor:
                 # Still notify tracer if signal tracing is enabled
                 if old_value != value and obj._impl._enable_signal_tracing:
                     obj._impl._notify_signal_tracer(obj, self.name, old_value, value, self.width)
+        else:
+            # _impl not yet set — buffer the value until __comp_build__ runs
+            obj.__dict__[f'_sig_{self.name}'] = value
 
 class BindPath:
     """Represents a path in the binding system (e.g., self.cons.call or self.p.prod)"""
@@ -673,6 +680,12 @@ class ObjFactory(ObjFactoryP):
             _tracer=tracer,
             _enable_signal_tracing=enable_signal_tracing
         )
+        
+        # Flush any signal values buffered before _impl was available (e.g. set in __post_init__)
+        for key in list(comp.__dict__.keys()):
+            if key.startswith('_sig_'):
+                sig_name = key[5:]
+                comp._impl._signal_values[sig_name] = comp.__dict__.pop(key)
         
         # Register signals with tracer if signal tracing is enabled
         if enable_signal_tracing and tracer is not None:

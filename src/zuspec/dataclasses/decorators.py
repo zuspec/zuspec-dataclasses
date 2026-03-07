@@ -19,11 +19,48 @@
 import dataclasses
 import dataclasses as dc
 import enum
+import inspect
+import sys
 from typing import Any, Callable, Dict, Optional, Self, TypeVar, TYPE_CHECKING, Union, TypeVarTuple, Generic, Literal
 from typing import dataclass_transform
 
 if TYPE_CHECKING:
     from .profiles import Profile
+
+
+def _resolve_annotations(cls) -> None:
+    """Resolve any string annotations caused by 'from __future__ import annotations'.
+
+    When classes are defined inside functions the module globals alone are not
+    sufficient to evaluate deferred annotations.  We walk up the call stack
+    collecting locals from every frame so that locally-defined types (like a
+    component class defined inside a test function) can be resolved.
+    """
+    if not cls.__annotations__:
+        return
+
+    # Build a combined namespace: module globals + all enclosing frame locals
+    try:
+        mod_globals = vars(sys.modules.get(cls.__module__, None) or {})
+    except Exception:
+        mod_globals = {}
+
+    localns: Dict[str, Any] = {}
+    frame = inspect.currentframe()
+    while frame is not None:
+        localns.update(frame.f_locals)
+        frame = frame.f_back
+
+    resolved: Dict[str, Any] = {}
+    for name, ann in cls.__annotations__.items():
+        if isinstance(ann, str):
+            try:
+                resolved[name] = eval(ann, mod_globals, localns)
+            except Exception:
+                resolved[name] = ann  # leave unresolved strings as-is
+        else:
+            resolved[name] = ann
+    cls.__annotations__ = resolved
 
 
 @dataclass_transform()
@@ -53,7 +90,11 @@ def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
         if profile is not None:
             cls.__profile__ = profile
         # If no profile specified, MyPy plugin will use DEFAULT_PROFILE
-        
+
+        # Resolve deferred string annotations (from __future__ import annotations)
+        # before dc.dataclass processes them, so runtime code sees real type objects.
+        _resolve_annotations(cls)
+
         # TODO: Add type annotations to decorated methods
         cls_annotations = cls.__annotations__
 

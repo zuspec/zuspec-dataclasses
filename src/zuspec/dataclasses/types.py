@@ -17,6 +17,8 @@ from __future__ import annotations
 import abc
 import dataclasses as dc
 import enum
+import random
+import typing
 from typing import (
     Callable, cast, ClassVar, Dict, Generic, List, Optional, TypeVar, 
     Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, 
@@ -364,6 +366,77 @@ class Component(TypeBase):
         else:
             ret = object.__new__(cls)
         return ret
+    
+def _find_comp_instances(comp: 'Component', comp_type: type) -> list:
+    """Recursively find all instances of comp_type within a component's fields."""
+    result = []
+    try:
+        fields = dc.fields(comp)
+    except TypeError:
+        return result
+    for f in fields:
+        if f.name.startswith('_'):
+            continue
+        val = getattr(comp, f.name, None)
+        if val is None:
+            continue
+        if isinstance(val, comp_type):
+            result.append(val)
+        elif isinstance(val, Component):
+            result.extend(_find_comp_instances(val, comp_type))
+    return result
+
+
+@dc.dataclass
+class Action[T]:
+    comp: T = field()
+
+    async def __call__(self, comp: 'Component') -> Self:
+        # Determine the component type parameter T from the concrete subclass
+        comp_type = None
+        for base in type(self).__orig_bases__:
+            origin = typing.get_origin(base)
+            if origin is not None and issubclass(origin, Action):
+                args = typing.get_args(base)
+                if args:
+                    comp_type = args[0]
+                    break
+
+        if comp_type is None:
+            raise RuntimeError(
+                f"Cannot determine component type parameter for {type(self).__name__}"
+            )
+
+        # Collect all matching component instances from the context component
+        candidates = _find_comp_instances(comp, comp_type)
+
+        if not candidates:
+            raise RuntimeError(
+                f"No instances of {comp_type.__name__} found within {type(comp).__name__}"
+            )
+
+        # Randomly select one and bind it
+        self.comp = random.choice(candidates)
+
+        # Execute the action body
+        await self.activity()
+
+        return self
+
+    async def activity(self) -> None:
+        self.pre_solve()
+        self.post_solve()
+        await self.body()
+
+    def pre_solve(self) -> None:
+        pass
+
+    def post_solve(self) -> None:
+        pass
+
+    async def body(self) -> None:
+        pass
+
 
 @dc.dataclass
 class XtorComponent[T](Component):
