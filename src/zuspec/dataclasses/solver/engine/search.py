@@ -16,27 +16,33 @@ class SearchState:
     Represents the state of the search at a given point.
     Used for efficient backtracking via copy-on-write domains.
     """
-    
-    def __init__(self, variables: Dict[str, Variable]):
+
+    def __init__(self, variables: Dict[str, Variable],
+                 decision_vars: Optional[Set[str]] = None):
         self.variables = variables
         self.assignment: Dict[str, int] = {}
         self.trail: List[Tuple[str, IntDomain]] = []  # Stack of (var_name, old_domain)
-    
+        # decision_vars: variables that the search assigns (rand vars).
+        # All other vars in self.variables are tracked for backtracking only.
+        self._decision_vars: Set[str] = (
+            set(decision_vars) if decision_vars is not None else set(variables.keys())
+        )
+
     def save_domain(self, var_name: str, domain: IntDomain) -> None:
         """Save current domain before modification."""
         self.trail.append((var_name, domain.copy()))
-    
+
     def assign(self, var_name: str, value: int) -> None:
         """Assign a value to a variable."""
         self.assignment[var_name] = value
         var = self.variables[var_name]
-        
+
         # Save old domain
         self.save_domain(var_name, var.domain)
-        
+
         # Set to singleton domain
         var.domain = IntDomain([(value, value)], var.domain.width, var.domain.signed)
-    
+
     def backtrack_to(self, trail_size: int) -> None:
         """Restore domains to a previous trail size."""
         while len(self.trail) > trail_size:
@@ -44,14 +50,14 @@ class SearchState:
             self.variables[var_name].domain = old_domain
             if var_name in self.assignment:
                 del self.assignment[var_name]
-    
+
     def is_complete(self) -> bool:
-        """Check if all variables are assigned."""
-        return len(self.assignment) == len(self.variables)
-    
+        """Check if all decision variables are assigned."""
+        return self._decision_vars.issubset(self.assignment)
+
     def get_unassigned_variables(self) -> List[str]:
-        """Get list of unassigned variable names."""
-        return [name for name in self.variables.keys() if name not in self.assignment]
+        """Get list of unassigned decision variable names."""
+        return [name for name in self._decision_vars if name not in self.assignment]
 
 
 class VariableOrderingHeuristic:
@@ -190,34 +196,44 @@ class BacktrackingSearch:
     def solve(self, variables: Dict[str, Variable]) -> Optional[Dict[str, int]]:
         """
         Find a satisfying assignment for the variables.
-        
+
         Args:
-            variables: Dictionary of variables to solve
-            
+            variables: Dictionary of decision variables to solve (rand/randc fields).
+                       Additional propagated variables (reification bools, temps) are
+                       taken from the engine and tracked for backtracking.
+
         Returns:
             Assignment dict if solution found, None if unsatisfiable
         """
         # Reset statistics
         self.backtracks = 0
         self.nodes_explored = 0
-        
+
         # Build constraint counts
         self.build_constraint_counts()
-        
+
         # Initial propagation
         result = self.engine.propagate()
         if result.status == PropagationStatus.CONFLICT:
             return None  # UNSAT
-        
-        # Create search state
-        state = SearchState(variables)
-        
+
+        # Build the full variable dict for backtracking state:
+        # includes all engine variables (temp bool vars, consts, etc.)
+        # so they are properly saved/restored on backtrack.
+        all_vars = dict(self.engine.variables)
+        # Merge in the rand variables (they may already be in engine.variables)
+        all_vars.update(variables)
+
+        # Create search state with all variables but only decision vars assigned
+        state = SearchState(all_vars, decision_vars=set(variables.keys()))
+
         # Run backtracking search
         solution = self._search(state)
-        
+
         if solution:
             return solution.assignment
         return None
+
     
     def _search(self, state: SearchState) -> Optional[SearchState]:
         """
@@ -261,29 +277,30 @@ class BacktrackingSearch:
         for value in values:
             # Save trail position for backtracking
             trail_size = len(state.trail)
-            
+
             # Assign value
             state.assign(var_name, value)
-            
-            # Propagate constraints
-            result = self.engine.propagate()
-            
+
+            # Propagate constraints — pass trail callback so propagated
+            # variable domains are saved for backtracking
+            result = self.engine.propagate(trail_callback=state.save_domain)
+
             if result.status == PropagationStatus.CONFLICT:
                 # Backtrack
                 self.backtracks += 1
                 state.backtrack_to(trail_size)
                 continue
-            
+
             # Recurse
             solution = self._search(state)
-            
+
             if solution is not None:
                 return solution
-            
+
             # Backtrack
             self.backtracks += 1
             state.backtrack_to(trail_size)
-        
+
         # No solution found
         return None
     
@@ -326,12 +343,12 @@ class BacktrackingSearch:
             
             # Save trail position for backtracking
             trail_size = len(state.trail)
-            
+
             # Assign value
             state.assign(var_name, value)
-            
+
             # Propagate constraints
-            result = self.engine.propagate()
+            result = self.engine.propagate(trail_callback=state.save_domain)
             
             if result.status == PropagationStatus.CONFLICT:
                 # Conflict - backtrack and try next value in permutation

@@ -753,12 +753,9 @@ class DataModelFactory(object):
                 if field_metadata.get('rand', False):
                     rand_kind = field_metadata.get('rand_kind', 'rand')
                 
-                # Extract domain for random variables (try both 'domain' and legacy 'bounds')
+                # Extract domain for random variables
                 if 'domain' in field_metadata:
                     domain = field_metadata['domain']
-                elif 'bounds' in field_metadata:
-                    # Support legacy 'bounds' for backward compatibility
-                    domain = field_metadata['bounds']
                 
                 # Extract array size (fixed-size)
                 if 'size' in field_metadata:

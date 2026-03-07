@@ -50,7 +50,9 @@ def json_converter(pmod, *args, **kwargs):
 from .fields import Bind, BindSet, Field, FieldInOut, FieldKind, SignalDirection
 from .data_type import (
     DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass, DataTypeComponent, DataTypeExtern,
-    DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeLock, DataTypeEvent, DataTypeMemory,
+    DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeChandle,
+    DataTypeList, DataTypeArray, DataTypeMap, DataTypeSet,
+    DataTypeLock, DataTypeEvent, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
     DataTypeGetIF, DataTypePutIF, DataTypeChannel, DataTypeTuple,
     Function, Process, ProcessKind,
@@ -81,7 +83,7 @@ from .expr_phase2 import (
 from .stmt import (
     Stmt, StmtExpr, StmtAssign, StmtAnnAssign, StmtAugAssign, StmtReturn, StmtIf, StmtFor,
     StmtWhile, StmtBreak, StmtContinue, StmtPass, StmtRaise, StmtAssert, Alias, Arg, Arguments,
-    StmtAssume, StmtCover,
+    StmtAssume, StmtCover, StmtUnique,
     WithItem, StmtWith, StmtExceptHandler, StmtTry, TypeIgnore, Module,
     StmtMatch, StmtMatchCase, Pattern, PatternValue, PatternAs, PatternOr, PatternSequence,
     # PSS-specific statements
@@ -92,7 +94,9 @@ __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
     "Bind","BindSet","Field","FieldInOut","FieldKind","SignalDirection",
     "DataType","DataTypeInt","DataTypeUptr","DataTypeStruct","DataTypeClass","DataTypeComponent","DataTypeExtern",
-    "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeLock","DataTypeEvent","DataTypeMemory",
+    "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeChandle",
+    "DataTypeList","DataTypeArray","DataTypeMap","DataTypeSet",
+    "DataTypeLock","DataTypeEvent","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
     "DataTypeGetIF","DataTypePutIF","DataTypeChannel","DataTypeTuple",
     "Function","Process","ProcessKind",
@@ -112,7 +116,7 @@ __all__ = [
     "ExprCast","ExprStringMethod","ExprHierarchical","ExprHierarchicalElem",
     "ExprStaticRef","ExprCompileHas","ExprNull",
     "Stmt","StmtExpr","StmtAssign","StmtAnnAssign","StmtAugAssign","StmtReturn","StmtIf","StmtFor","StmtWhile",
-    "StmtBreak","StmtContinue","StmtPass","StmtRaise","StmtAssert","StmtAssume","StmtCover","Alias","Arg","Arguments",
+    "StmtBreak","StmtContinue","StmtPass","StmtRaise","StmtAssert","StmtAssume","StmtCover","StmtUnique","Alias","Arg","Arguments",
     # PSS-specific statements
     "StmtRepeat","StmtRepeatWhile","StmtForeach","StmtYield","StmtRandomize",
 "ExprList","ExprTuple","ExprDict","ExprSet","Comprehension","ExprListComp","ExprDictComp",

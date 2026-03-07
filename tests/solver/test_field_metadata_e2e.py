@@ -20,11 +20,11 @@ class ConstrainedPacket:
     
     @constraint
     def addr_aligned(self):
-        return self.addr % 4 == 0
+        assert self.addr % 4 == 0
     
     @constraint
     def data_nonzero(self):
-        return self.data > 0
+        assert self.data > 0
 
 
 def test_simple_randomization():
@@ -96,7 +96,7 @@ def test_unsatisfiable_constraints():
         
         @constraint
         def impossible(self):
-            return self.value > 20
+            assert self.value > 20
     
     obj = Impossible()
     with pytest.raises(RandomizationError, match="No solution found"):

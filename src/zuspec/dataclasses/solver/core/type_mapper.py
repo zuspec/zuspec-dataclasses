@@ -1,7 +1,7 @@
 """Type system integration - maps IR data types to solver domains"""
 
 from typing import Optional, Union
-from zuspec.dataclasses.ir.data_type import DataType, DataTypeInt, DataTypeEnum, DataTypeUptr
+from zuspec.dataclasses.ir.data_type import DataType, DataTypeInt, DataTypeEnum, DataTypeUptr, DataTypeArray
 from .domain import Domain, IntDomain, EnumDomain, BitVectorDomain
 
 
@@ -152,7 +152,9 @@ class TypeMapper:
         Returns:
             True if type can be converted to a domain
         """
-        return isinstance(datatype, (DataTypeInt, DataTypeEnum, DataTypeUptr))
+        return isinstance(datatype, (DataTypeInt, DataTypeEnum, DataTypeUptr)) or (
+            isinstance(datatype, DataTypeArray) and TypeMapper.can_convert_to_domain(datatype.element_type)
+        )
 
 
 class TypeInference:

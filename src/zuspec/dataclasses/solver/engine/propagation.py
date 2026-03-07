@@ -71,66 +71,88 @@ class PropagationEngine:
         """Set the variables to propagate on."""
         self.variables = variables
     
-    def propagate(self) -> PropagationResult:
+    def propagate(self, trail_callback=None) -> PropagationResult:
         """
         Run propagation until fixed point or conflict.
-        
+
         Uses AC-3 algorithm:
         1. Initialize queue with all constraints
         2. Pop constraint and run propagator
         3. If domains changed, enqueue dependent constraints
         4. Repeat until fixed point or conflict
-        
+
+        Args:
+            trail_callback: Optional callable(var_name, old_domain) called before
+                            each domain modification so callers can restore on backtrack.
+
         Returns:
             PropagationResult with final status
         """
         # Reset stats
         self.stats = PropagationStats()
-        
+
         # Initialize queue with all propagators
         queue = deque(self.propagators)
         in_queue = set(self.propagators)
-        
+
         all_changed_vars = set()
-        
+
         while queue and self.stats.iterations < self.max_iterations:
             self.stats.record_iteration()
-            
+
             # Pop next propagator
             propagator = queue.popleft()
             in_queue.discard(propagator)
-            
+
+            # Snapshot domains of affected variables before propagation
+            # so we can save only the ones that actually change to the trail
+            if trail_callback is not None:
+                pre_domains = {
+                    var_name: self.variables[var_name].domain.copy()
+                    for var_name in propagator.affected_variables()
+                    if var_name in self.variables
+                }
+            else:
+                pre_domains = None
+
             # Run propagation
             self.stats.record_propagation(propagator)
             result = propagator.propagate(self.variables)
-            
+
             if result.status == PropagationStatus.CONFLICT:
                 # Conflict detected - propagation fails
                 self.stats.record_conflict()
                 return PropagationResult.conflict()
-            
+
             elif result.status == PropagationStatus.CONSISTENT:
-                # Domains changed - enqueue dependent propagators
+                # Domains changed - save old domains to trail, enqueue dependents
+                if trail_callback is not None and pre_domains is not None:
+                    for var in result.changed_vars:
+                        if var.name in pre_domains:
+                            trail_callback(var.name, pre_domains[var.name])
+
                 all_changed_vars.update(result.changed_vars)
-                
+
                 for var in result.changed_vars:
                     # Find propagators that depend on this variable
                     dependent_props = self._var_to_propagators.get(var.name, set())
-                    
+
                     for dep_prop in dependent_props:
                         if dep_prop not in in_queue:
                             queue.append(dep_prop)
                             in_queue.add(dep_prop)
-        
+
+
         # Check for cycle (max iterations exceeded)
         if self.stats.iterations >= self.max_iterations:
             # Treat as conflict (possible infinite loop)
             return PropagationResult.conflict()
-        
+
         # Fixed point reached
         if all_changed_vars:
             return PropagationResult.consistent(all_changed_vars)
         return PropagationResult.fixed_point()
+
     
     def get_stats(self) -> PropagationStats:
         """Get propagation statistics."""

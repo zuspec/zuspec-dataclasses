@@ -388,7 +388,7 @@ def extract_rand_fields(cls: type) -> List[Dict[str, Any]]:
         List of field info dicts with:
             - name: field name
             - kind: 'rand' or 'randc'
-            - bounds: optional (min, max) tuple
+            - domain: optional (min, max) tuple
             - size: optional array size
     """
     import dataclasses
@@ -406,8 +406,8 @@ def extract_rand_fields(cls: type) -> List[Dict[str, Any]]:
                 'type': field.type,
             }
             
-            if 'bounds' in metadata:
-                field_info['bounds'] = metadata['bounds']
+            if 'domain' in metadata:
+                field_info['domain'] = metadata['domain']
             
             if 'size' in metadata:
                 field_info['size'] = metadata['size']

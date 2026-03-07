@@ -7,7 +7,7 @@ from ..core.constraint import Constraint
 from ..core.constraints import (
     ConstantConstraint, VariableRefConstraint, BinaryOpConstraint,
     UnaryOpConstraint, BoolOpConstraint, CompareConstraint,
-    CompareChainConstraint, ImplicationConstraint
+    CompareChainConstraint, ImplicationConstraint, InConstraint, UniqueConstraint
 )
 from ..core.variable import Variable
 from ..core.domain import IntDomain
@@ -21,8 +21,9 @@ from ..propagators.arithmetic import (
     AddPropagator, SubPropagator, MultPropagator,
     ModPropagator, DivPropagator
 )
-from ..propagators.implication import ImplicationPropagator
+from ..propagators.implication import ImplicationPropagator, BoolNotPropagator, BoolOrPropagator
 from ..propagators.reification import ComparisonReifier
+from ..propagators.uniqueness import UniquePropagator, PairwiseUniquePropagator
 
 
 class CompilationError(Exception):
@@ -98,7 +99,13 @@ class ConstraintCompiler:
             
         elif isinstance(constraint, ImplicationConstraint):
             return self._compile_implication(constraint)
-            
+
+        elif isinstance(constraint, InConstraint):
+            return self._compile_in(constraint)
+
+        elif isinstance(constraint, UniqueConstraint):
+            return self._compile_unique(constraint)
+
         else:
             raise CompilationError(
                 f"Unsupported constraint type: {constraint.__class__.__name__}"
@@ -191,7 +198,7 @@ class ConstraintCompiler:
         Compile a boolean operation (AND/OR).
         
         For AND: all sub-constraints must be satisfied (just compile each)
-        For OR: requires disjunction support (not yet implemented)
+        For OR: reify each operand into a boolean variable, add BoolOrPropagator
         """
         if constraint.op == BoolOp.And:
             # AND: compile each sub-constraint independently
@@ -199,46 +206,130 @@ class ConstraintCompiler:
                 self._compile_constraint(value)
             return None
         elif constraint.op == BoolOp.Or:
-            # OR: requires disjunction support
-            raise CompilationError("OR operator not yet implemented")
+            # OR: reify each operand, then enforce "at least one is true"
+            bool_vars = []
+            for value in constraint.values:
+                bool_var = self._compile_constraint(value, reify=True)
+                if bool_var is None:
+                    raise CompilationError("OR operand cannot be reified")
+                bool_vars.append(bool_var)
+            self.propagators.append(BoolOrPropagator(bool_vars))
+            return None
         else:
             raise CompilationError(f"Unsupported boolean operator: {constraint.op}")
     
-    def _compile_unary_op(self, constraint: UnaryOpConstraint) -> str:
+    def _compile_unary_op(self, constraint: UnaryOpConstraint) -> Optional[str]:
         """
-        Compile a unary operation.
-        
-        Currently only NOT is common, but propagation is complex.
+        Compile a unary NOT constraint.
+
+        For NOT of a comparison, flip the comparison operator.
+        For NOT of a boolean op, apply De Morgan's law recursively.
         """
-        raise CompilationError("Unary operators not yet implemented")
+        if constraint.op != UnaryOp.Not:
+            raise CompilationError(f"Unsupported unary operator: {constraint.op}")
+
+        inner = constraint.operand
+
+        if isinstance(inner, CompareConstraint):
+            # Flip the comparison operator: !(a op b) → (a negated_op b)
+            negated_op = {
+                CmpOp.Eq:  CmpOp.NotEq,
+                CmpOp.NotEq: CmpOp.Eq,
+                CmpOp.Lt:  CmpOp.GtE,
+                CmpOp.LtE: CmpOp.Gt,
+                CmpOp.Gt:  CmpOp.LtE,
+                CmpOp.GtE: CmpOp.Lt,
+            }.get(inner.op)
+            if negated_op is None:
+                raise CompilationError(f"Cannot negate comparison operator: {inner.op}")
+            from ..core.constraints import CompareConstraint as CC
+            negated = CC(left=inner.left, op=negated_op, right=inner.right,
+                         source_location=inner.source_location)
+            return self._compile_compare(negated, reify=False)
+
+        elif isinstance(inner, BoolOpConstraint):
+            # De Morgan: !(A && B) = !A || !B;  !(A || B) = !A && !B
+            from ..core.constraints import UnaryOpConstraint as UOC
+            negated_values = [
+                UOC(op=UnaryOp.Not, operand=v, source_location=inner.source_location)
+                for v in inner.values
+            ]
+            flipped_op = BoolOp.Or if inner.op == BoolOp.And else BoolOp.And
+            negated_bool = BoolOpConstraint(
+                op=flipped_op,
+                values=negated_values,
+                source_location=inner.source_location,
+            )
+            return self._compile_bool_op(negated_bool)
+
+        else:
+            raise CompilationError(
+                f"NOT of {type(inner).__name__} is not supported"
+            )
     
     def _compile_implication(self, constraint: ImplicationConstraint) -> Optional[str]:
         """
-        Compile an implication constraint.
-        
-        For: condition -> then_constraint
-        
-        The ImplicationPropagator works with boolean variables (0 or 1).
-        We need to:
-        1. Compile condition to a boolean variable (reify=True)
-        2. Compile then_constraint to a boolean variable (reify=True)
-        3. Create ImplicationPropagator between them
+        Compile an implication constraint (if-else).
+
+        For: if condition -> then_constraint [else else_constraint]
+
+        Compiled as:
+          condition_var  -> then_var   (condition → then)
+          !condition_var -> else_var   (else branch, if present)
         """
-        # Compile condition with reification to get a boolean variable
         condition_var = self._compile_constraint(constraint.condition, reify=True)
-        
-        # Compile then_constraint with reification to get a boolean variable
         then_var = self._compile_constraint(constraint.then_constraint, reify=True)
-        
+
         if condition_var is None or then_var is None:
             raise CompilationError("Implication operands must produce boolean values")
-        
-        # Create the implication propagator
-        prop = ImplicationPropagator(condition_var, then_var)
-        self.propagators.append(prop)
-        
-        return None  # Top-level constraint, no result variable
-    
+
+        self.propagators.append(ImplicationPropagator(condition_var, then_var))
+
+        if constraint.else_constraint is not None:
+            else_var = self._compile_constraint(constraint.else_constraint, reify=True)
+            if else_var is None:
+                raise CompilationError("Else constraint must produce a boolean value")
+
+            neg_cond_var = self._create_bool_var()
+            self.propagators.append(BoolNotPropagator(condition_var, neg_cond_var))
+            self.propagators.append(ImplicationPropagator(neg_cond_var, else_var))
+
+        return None
+
+    def _compile_in(self, constraint: InConstraint) -> None:
+        """
+        Compile an 'in' constraint by restricting the variable's domain.
+
+        Intersects the variable's current domain with the valid value set.
+        If the intersection is empty, raises CompilationError.
+        """
+        var = constraint.variable
+        valid = constraint.values
+
+        # Build an IntDomain from the valid values (each value as a singleton interval)
+        intervals = [(v, v) for v in sorted(valid)]
+        new_domain = IntDomain(intervals, var.domain.width, var.domain.signed)
+
+        restricted = var.domain.intersect(new_domain)
+        if restricted.is_empty():
+            raise CompilationError(
+                f"'in' constraint for '{var.name}' results in an empty domain"
+            )
+        var.domain = restricted
+        return None
+
+    def _compile_unique(self, constraint: UniqueConstraint) -> None:
+        """
+        Compile a unique constraint by adding a UniquePropagator or PairwiseUniquePropagator.
+        """
+        var_names = [v.name for v in constraint.unique_variables]
+        if len(var_names) == 2:
+            self.propagators.append(PairwiseUniquePropagator(var_names[0], var_names[1]))
+        else:
+            self.propagators.append(UniquePropagator(var_names))
+        return None
+
+
     def _create_temp_var(self) -> str:
         """Create a temporary variable for intermediate results"""
         name = f"_temp_{self.temp_var_counter}"

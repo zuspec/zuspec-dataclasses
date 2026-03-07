@@ -106,6 +106,11 @@ class StmtCover(Stmt):
     test: Expr = dc.field()
     msg: Optional[Expr] = dc.field(default=None)
 
+@dc.dataclass(kw_only=True)
+class StmtUnique(Stmt):
+    """Represents a uniqueness constraint: all listed variables must have distinct values."""
+    vars: List[str] = dc.field(default_factory=list)
+
 # Phase3: With/Try/Except + Phase2 module-level nodes
 @dc.dataclass(kw_only=True)
 class WithItem(Base):

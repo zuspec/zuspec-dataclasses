@@ -5,10 +5,12 @@ from zuspec.dataclasses.ir.expr import (
     Expr, ExprConstant, ExprBin, ExprUnary, ExprBool, ExprCompare,
     ExprRef, ExprRefField, ExprRefParam, ExprRefLocal, ExprRefBottomUp, ExprRefUnresolved,
     ExprSlice, ExprSubscript, ExprIfExp, ExprIn, ExprCall, ExprAttribute,
+    ExprRange, ExprRangeList,
     BinOp, UnaryOp, BoolOp, CmpOp,
     TypeExprRefSelf
 )
-from zuspec.dataclasses.ir.stmt import Stmt, StmtFor, StmtAssert, StmtExpr, StmtIf
+import warnings
+from zuspec.dataclasses.ir.stmt import Stmt, StmtFor, StmtAssert, StmtExpr, StmtIf, StmtReturn, StmtUnique, StmtForeach
 from zuspec.dataclasses.ir.data_type import DataType
 from ..core.variable import Variable
 from ..core.constraint import Constraint, SourceLocation
@@ -16,7 +18,7 @@ from ..core.constraints import (
     ConstantConstraint, VariableRefConstraint, BinaryOpConstraint,
     UnaryOpConstraint, BoolOpConstraint, CompareConstraint,
     CompareChainConstraint, InConstraint, BitSliceConstraint,
-    ImplicationConstraint
+    ImplicationConstraint, UniqueConstraint
 )
 from ..core.type_mapper import TypeMapper, TypeInference
 
@@ -96,6 +98,9 @@ class IRExpressionParser:
         elif isinstance(expr, ExprRef):
             return self._parse_ref(expr)
         
+        elif isinstance(expr, ExprAttribute):
+            return self._parse_attribute(expr)
+        
         elif isinstance(expr, ExprSubscript):
             return self._parse_subscript(expr)
         
@@ -136,6 +141,15 @@ class IRExpressionParser:
                 left=left,
                 op=cmp_op,
                 right=right,
+                source_location=self.current_source
+            )
+        
+        # Check if this is a logical boolean operation (&&, ||)
+        if expr.op in (BinOp.And, BinOp.Or):
+            bool_op = BoolOp.And if expr.op == BinOp.And else BoolOp.Or
+            return BoolOpConstraint(
+                op=bool_op,
+                values=[left, right],
                 source_location=self.current_source
             )
         
@@ -217,6 +231,56 @@ class IRExpressionParser:
             source_location=self.current_source
         )
     
+    def _parse_attribute(self, expr: ExprAttribute) -> Constraint:
+        """Parse an attribute access (PSS-style field reference: self.field or obj.field).
+
+        The PSS translator emits ``ExprAttribute(value=TypeExprRefSelf(), attr='name')``
+        for field references inside constraint bodies.  We resolve this by looking up
+        the field name directly in the variable map.
+        """
+        # Drill down through any chain to find the leaf attribute name
+        # e.g. ExprAttribute(value=TypeExprRefSelf(), attr='addr') → 'addr'
+        attr_name = expr.attr
+        base = expr.value
+
+        # If base is 'self' (TypeExprRefSelf), the attr is a plain field name
+        if isinstance(base, TypeExprRefSelf):
+            var_name = attr_name
+        else:
+            # Nested: resolve base first and build dotted name (e.g. "sub.field")
+            try:
+                base_name = self._resolve_attribute_name(base)
+                var_name = f"{base_name}.{attr_name}"
+            except ParseError:
+                raise ParseError(
+                    f"Unsupported attribute base expression: {base.__class__.__name__}"
+                )
+
+        if var_name not in self.variable_map:
+            raise ParseError(
+                f"Unknown variable: {var_name}. "
+                f"Available variables: {list(self.variable_map.keys())}"
+            )
+
+        variable = self.variable_map[var_name]
+        return VariableRefConstraint(
+            variable=variable,
+            source_location=self.current_source
+        )
+
+    def _resolve_attribute_name(self, expr) -> str:
+        """Recursively resolve an expression to a dotted name string."""
+        if isinstance(expr, TypeExprRefSelf):
+            return "self"
+        elif isinstance(expr, ExprAttribute):
+            base = self._resolve_attribute_name(expr.value)
+            return f"{base}.{expr.attr}"
+        elif isinstance(expr, ExprRef):
+            return self._resolve_ref(expr)
+        else:
+            raise ParseError(f"Cannot resolve attribute name from {expr.__class__.__name__}")
+
+
     def _resolve_ref(self, expr: ExprRef) -> str:
         """Resolve a reference to a variable name"""
         if isinstance(expr, TypeExprRefSelf):
@@ -352,33 +416,49 @@ class IRExpressionParser:
     
     def _parse_in(self, expr: ExprIn) -> Constraint:
         """Parse an 'in' constraint (membership test)"""
-        # Get the variable
-        if not isinstance(expr.value, ExprRef):
-            raise ParseError("'in' expression left side must be a variable")
-        
-        var_name = self._resolve_ref(expr.value)
-        if var_name not in self.variable_map:
-            raise ParseError(f"Unknown variable: {var_name}")
-        
+        # Resolve the variable — accepts ExprRef, ExprAttribute (PSS field ref), or ExprRefUnresolved
+        var_name = None
+        if isinstance(expr.value, ExprRef):
+            var_name = self._resolve_ref(expr.value)
+        elif isinstance(expr.value, ExprAttribute):
+            var_name = expr.value.attr
+        elif isinstance(expr.value, ExprRefUnresolved):
+            var_name = expr.value.name
+
+        if var_name is None or var_name not in self.variable_map:
+            raise ParseError(f"'in' expression: cannot resolve variable from {expr.value!r}")
+
         variable = self.variable_map[var_name]
-        
-        # Extract the set of values
-        # For now, we'll support simple cases
-        # More complex range expressions will be added later
+
         values = self._extract_value_set(expr.container)
-        
+
         return InConstraint(
             variable=variable,
             values=values,
             source_location=self.current_source
         )
-    
+
     def _extract_value_set(self, container: Expr) -> set:
-        """Extract a set of values from a container expression"""
-        # This is a placeholder - will be expanded to handle:
-        # - ExprRangeList
-        # - ExprList
-        # - etc.
+        """Extract a set of integer values from a range-list container."""
+        if isinstance(container, ExprRangeList):
+            result = set()
+            for r in container.ranges:
+                if not isinstance(r, ExprRange):
+                    raise ParseError(f"Unsupported range element: {r!r}")
+                lo_expr = r.lower
+                hi_expr = r.upper
+                if not isinstance(lo_expr, ExprConstant):
+                    raise ParseError(f"Range lower bound must be a constant, got {lo_expr!r}")
+                lo = int(lo_expr.value)
+                if hi_expr is None:
+                    # Single value
+                    result.add(lo)
+                else:
+                    if not isinstance(hi_expr, ExprConstant):
+                        raise ParseError(f"Range upper bound must be a constant, got {hi_expr!r}")
+                    hi = int(hi_expr.value)
+                    result.update(range(lo, hi + 1))
+            return result
         raise ParseError(f"Value set extraction not yet implemented for {container.__class__.__name__}")
     
     def _parse_call(self, expr: ExprCall) -> Constraint:
@@ -423,6 +503,18 @@ class IRExpressionParser:
             elif func_name == "len":
                 # len() should be handled specially - convert to length variable reference
                 return self._parse_len_call(expr)
+            elif func_name == "implies":
+                # PSS-style free function: implies(condition, consequence)
+                if len(expr.args) != 2:
+                    raise ParseError(f"implies() expects 2 arguments, got {len(expr.args)}")
+                condition = self._parse_expr(expr.args[0])
+                then_constraint = self._parse_expr(expr.args[1])
+                return ImplicationConstraint(
+                    condition=condition,
+                    then_constraint=then_constraint,
+                    else_constraint=None,
+                    source_location=self.current_source
+                )
             else:
                 raise ParseError(f"Unsupported function call: {func_name}")
         
@@ -496,6 +588,15 @@ class IRExpressionParser:
         
         return sum_expr
     
+    def _parse_unique_stmt(self, stmt: StmtUnique) -> List[Constraint]:
+        """Parse a StmtUnique into a UniqueConstraint."""
+        variables = []
+        for name in stmt.vars:
+            if name not in self.variable_map:
+                raise ParseError(f"'unique' constraint references unknown variable '{name}'")
+            variables.append(self.variable_map[name])
+        return [UniqueConstraint(variables=variables, source_location=self.current_source)]
+
     def _expand_unique_call(self, expr: ExprCall) -> List[Constraint]:
         """
         Expand unique(array) to nested loop constraints ensuring all elements are distinct.
@@ -897,11 +998,25 @@ class IRExpressionParser:
             constraint = self.parse(stmt.expr, self.current_source)
             return [constraint]
         
+        elif isinstance(stmt, StmtUnique):
+            return self._parse_unique_stmt(stmt)
+
         elif isinstance(stmt, StmtFor):
             return self._parse_for_loop(stmt)
+
+        elif isinstance(stmt, StmtForeach):
+            return self._parse_foreach_loop(stmt)
         
         elif isinstance(stmt, StmtIf):
             return self._parse_if_statement(stmt)
+        
+        elif isinstance(stmt, StmtReturn):
+            warnings.warn(
+                "Constraint method contains a 'return' statement, which is ignored. "
+                "Use 'assert expr' instead of 'return expr' in @constraint methods.",
+                stacklevel=4
+            )
+            return []
         
         else:
             # Unsupported statement type for constraints
@@ -965,6 +1080,52 @@ class IRExpressionParser:
         
         return constraints
     
+    def _parse_foreach_loop(self, stmt: StmtForeach) -> List[Constraint]:
+        """
+        Parse a PSS foreach constraint: foreach (e : data) { e > 0; }
+
+        Expands by substituting e = data[0], data[1], ..., data[N-1]
+        where N is determined from the array_metadata registered with the parser.
+        """
+        # Get the iterator variable name
+        if not isinstance(stmt.target, ExprRefLocal):
+            raise ParseError(f"foreach: unsupported target type {stmt.target.__class__.__name__}")
+        iter_var = stmt.target.name
+
+        # Resolve the collection — must be an ExprAttribute (self.field) or ExprRefUnresolved
+        if isinstance(stmt.iter, ExprAttribute):
+            array_name = stmt.iter.attr
+        elif isinstance(stmt.iter, (ExprRefLocal, ExprRefUnresolved)):
+            array_name = stmt.iter.name
+        else:
+            raise ParseError(f"foreach: unsupported collection type {stmt.iter.__class__.__name__}")
+
+        # Look up array size from variable map (elements are named array_name[0], ...)
+        # Find all variables matching array_name[i]
+        element_vars = []
+        i = 0
+        while True:
+            elem_name = f"{array_name}[{i}]"
+            if elem_name in self.variable_map:
+                element_vars.append(self.variable_map[elem_name])
+                i += 1
+            else:
+                break
+
+        if not element_vars:
+            raise ParseError(f"foreach: no array elements found for '{array_name}'")
+
+        # Expand constraints by substituting the iterator variable
+        constraints = []
+        for elem_var in element_vars:
+            # Temporarily map iter_var → element variable in variable_map
+            self.variable_map[iter_var] = elem_var
+            for body_stmt in stmt.body:
+                constraints.extend(self.parse_statement(body_stmt))
+            del self.variable_map[iter_var]
+
+        return constraints
+
     def _get_loop_var_name(self, target: Expr) -> str:
         """Extract loop variable name from target expression"""
         if isinstance(target, ExprRefLocal):

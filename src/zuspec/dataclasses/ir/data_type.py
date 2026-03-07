@@ -58,6 +58,7 @@ class DataTypeStruct(DataType):
     super : Optional[DataType] = dc.field()
     fields : List[Field] = dc.field(default_factory=list)
     functions : List = dc.field(default_factory=list)
+    is_abstract : bool = dc.field(default=False)
 #    constraints
 
 @dc.dataclass(kw_only=True)
@@ -90,11 +91,65 @@ if TYPE_CHECKING:
 class DataTypeExpr(DataType):
     expr : Expr
 
-@dc.dataclass
-class DataTypeEnum(DataType): ...
+@dc.dataclass(kw_only=True)
+class DataTypeEnum(DataType):
+    """Enum data type with named integer members.
+
+    ``items`` maps member name → integer value (in declaration order).
+    Values are auto-assigned (starting from 0, incrementing by 1) when no
+    explicit value is given, matching PSS §7.5 semantics.
+    """
+    items: dict = dc.field(default_factory=dict)  # OrderedDict[str, int]
 
 @dc.dataclass(kw_only=True)
 class DataTypeString(DataType): ...
+
+@dc.dataclass(kw_only=True)
+class DataTypeChandle(DataType):
+    """Opaque C handle type (PSS §7.7).
+
+    Represents a foreign-language handle (e.g., a C pointer) that PSS code
+    can hold and pass around but cannot dereference.  Maps to ``ctypes.c_void_p``
+    or plain ``int`` in a Python runtime.
+    """
+
+@dc.dataclass(kw_only=True)
+class DataTypeList(DataType):
+    """Dynamic list collection type (PSS §7.9.3).
+
+    ``list<element_type>`` in PSS.  Maps to ``List[...]`` in Python.
+    """
+    element_type: Optional[DataType] = dc.field(default=None)
+
+@dc.dataclass(kw_only=True)
+class DataTypeArray(DataType):
+    """Fixed-size array collection type (PSS §7.9.2).
+
+    ``array<element_type, size>`` or ``element_type name[size]`` in PSS.
+    Maps to a fixed-length ``List[...]`` in Python.
+    A size of -1 means the size is not statically known.
+    """
+    element_type: Optional[DataType] = dc.field(default=None)
+    size: int = dc.field(default=-1)
+
+@dc.dataclass(kw_only=True)
+class DataTypeMap(DataType):
+    """Associative map collection type (PSS §7.9.4).
+
+    ``map<key_type, value_type>`` in PSS.  Maps to ``Dict[...]`` in Python.
+    """
+    key_type: Optional[DataType] = dc.field(default=None)
+    value_type: Optional[DataType] = dc.field(default=None)
+
+@dc.dataclass(kw_only=True)
+class DataTypeSet(DataType):
+    """Unordered set collection type (PSS §7.9.5).
+
+    ``set<element_type>`` in PSS.  Maps to ``Set[...]`` in Python.
+    """
+    element_type: Optional[DataType] = dc.field(default=None)
+
+
 
 @dc.dataclass(kw_only=True)
 class DataTypeLock(DataType):

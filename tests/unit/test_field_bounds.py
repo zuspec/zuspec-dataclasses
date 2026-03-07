@@ -10,7 +10,7 @@ def test_field_with_bounds_metadata():
     
     @zdc.dataclass
     class SimpleStruct(zdc.Struct):
-        value: zdc.uint32_t = zdc.field(bounds=(0, 100))
+        value: zdc.uint32_t = zdc.field(domain=(0, 100))
     
     # Access field metadata via dataclass fields
     fields = SimpleStruct.__dataclass_fields__
@@ -18,8 +18,8 @@ def test_field_with_bounds_metadata():
     
     field_info = fields['value']
     assert field_info.metadata is not None
-    assert 'bounds' in field_info.metadata
-    assert field_info.metadata['bounds'] == (0, 100)
+    assert 'domain' in field_info.metadata
+    assert field_info.metadata['domain'] == (0, 100)
     
     print("test_field_with_bounds_metadata PASSED")
 
@@ -28,28 +28,28 @@ def test_multiple_fields_with_bounds():
     
     @zdc.dataclass
     class DmaConfig(zdc.Struct):
-        src: zdc.uint32_t = zdc.field(bounds=(0, 0xFFFF))
-        dst: zdc.uint32_t = zdc.field(bounds=(0, 0xFFFF))
-        xfer_sz: zdc.uint8_t = zdc.field(bounds=(1, 128))
-        xfer_tot: zdc.uint16_t = zdc.field(bounds=(1, 1024))
+        src: zdc.uint32_t = zdc.field(domain=(0, 0xFFFF))
+        dst: zdc.uint32_t = zdc.field(domain=(0, 0xFFFF))
+        xfer_sz: zdc.uint8_t = zdc.field(domain=(1, 128))
+        xfer_tot: zdc.uint16_t = zdc.field(domain=(1, 1024))
     
     fields = DmaConfig.__dataclass_fields__
     
     # Check src field
-    assert 'bounds' in fields['src'].metadata
-    assert fields['src'].metadata['bounds'] == (0, 0xFFFF)
+    assert 'domain' in fields['src'].metadata
+    assert fields['src'].metadata['domain'] == (0, 0xFFFF)
     
     # Check dst field
-    assert 'bounds' in fields['dst'].metadata
-    assert fields['dst'].metadata['bounds'] == (0, 0xFFFF)
+    assert 'domain' in fields['dst'].metadata
+    assert fields['dst'].metadata['domain'] == (0, 0xFFFF)
     
     # Check xfer_sz field
-    assert 'bounds' in fields['xfer_sz'].metadata
-    assert fields['xfer_sz'].metadata['bounds'] == (1, 128)
+    assert 'domain' in fields['xfer_sz'].metadata
+    assert fields['xfer_sz'].metadata['domain'] == (1, 128)
     
     # Check xfer_tot field
-    assert 'bounds' in fields['xfer_tot'].metadata
-    assert fields['xfer_tot'].metadata['bounds'] == (1, 1024)
+    assert 'domain' in fields['xfer_tot'].metadata
+    assert fields['xfer_tot'].metadata['domain'] == (1, 1024)
     
     print("test_multiple_fields_with_bounds PASSED")
 
@@ -58,13 +58,13 @@ def test_data_model_captures_bounds():
     
     @zdc.dataclass
     class TestStruct(zdc.Struct):
-        addr: zdc.uint32_t = zdc.field(bounds=(0x1000, 0x2000))
-        size: zdc.uint16_t = zdc.field(bounds=(1, 256))
+        addr: zdc.uint32_t = zdc.field(domain=(0x1000, 0x2000))
+        size: zdc.uint16_t = zdc.field(domain=(1, 256))
     
     # Verify bounds are in dataclass metadata first
     fields = TestStruct.__dataclass_fields__
-    assert 'bounds' in fields['addr'].metadata
-    assert 'bounds' in fields['size'].metadata
+    assert 'domain' in fields['addr'].metadata
+    assert 'domain' in fields['size'].metadata
     
     # Create data model - should complete without errors
     factory = DataModelFactory()
@@ -92,18 +92,18 @@ def test_field_without_bounds():
     
     @zdc.dataclass
     class MixedStruct(zdc.Struct):
-        bounded: zdc.uint32_t = zdc.field(bounds=(0, 100))
+        bounded: zdc.uint32_t = zdc.field(domain=(0, 100))
         unbounded: zdc.uint32_t = zdc.field()
     
     fields = MixedStruct.__dataclass_fields__
     
     # Bounded field should have bounds metadata
-    assert 'bounds' in fields['bounded'].metadata
+    assert 'domain' in fields['bounded'].metadata
     
     # Unbounded field should not have bounds metadata (or have None)
     unbounded_meta = fields['unbounded'].metadata
     if unbounded_meta:
-        assert 'bounds' not in unbounded_meta
+        assert 'domain' not in unbounded_meta
     
     print("test_field_without_bounds PASSED")
 
@@ -112,15 +112,15 @@ def test_bounds_with_other_metadata():
     
     @zdc.dataclass
     class ComplexStruct(zdc.Struct):
-        value: zdc.uint32_t = zdc.field(bounds=(10, 20), size=32)
+        value: zdc.uint32_t = zdc.field(domain=(10, 20), size=32)
     
     fields = ComplexStruct.__dataclass_fields__
     metadata = fields['value'].metadata
     
     # Both bounds and size should be in metadata
-    assert 'bounds' in metadata
+    assert 'domain' in metadata
     assert 'size' in metadata
-    assert metadata['bounds'] == (10, 20)
+    assert metadata['domain'] == (10, 20)
     assert metadata['size'] == 32
     
     print("test_bounds_with_other_metadata PASSED")

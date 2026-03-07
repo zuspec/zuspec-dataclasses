@@ -280,12 +280,21 @@ class AnnotationFileSet(object):
 class PackedStruct(TypeBase,SupportsInt):
 
     def __int__(self) -> int:
-        return 5
+        return -1
 
     pass
+
 
 class Struct(TypeBase):
+
+    def pre_solve(self):
+        pass
+
+    def post_solve(self):
+        pass
+
     pass
+
 
 class Bundle(TypeBase):
     """Bundle base class for interface/port collections with directionality.

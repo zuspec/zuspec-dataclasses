@@ -54,7 +54,7 @@ class PacketWithGeneric:
     @constraint.generic
     def addr_low(self):
         """Generic constraint - only applies when explicitly referenced"""
-        return self.addr < 0x80
+        assert self.addr < 0x80
 
 
 @dataclass
@@ -74,7 +74,6 @@ class PacketMixed:
         self.data > 0
 
 
-@pytest.mark.skip(reason="Constraint extraction not yet implemented")
 def test_assert_syntax():
     """Test that assert statements work as constraints"""
     pkt = PacketWithAssert()
@@ -85,7 +84,6 @@ def test_assert_syntax():
     assert 0 < pkt.data < 128, f"data out of range: {pkt.data}"
 
 
-@pytest.mark.skip(reason="Constraint extraction not yet implemented")
 def test_expr_syntax():
     """Test that plain expressions work as constraints"""
     pkt = PacketWithExpr()
@@ -96,7 +94,6 @@ def test_expr_syntax():
     assert 0 < pkt.data < 128, f"data out of range: {pkt.data}"
 
 
-@pytest.mark.skip(reason="Constraint extraction not yet implemented")
 def test_mixed_syntax():
     """Test that mixing both styles works"""
     pkt = PacketMixed()

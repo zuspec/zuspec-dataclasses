@@ -330,9 +330,9 @@ def test_extract_rand_fields():
     """Test extracting rand fields from a dataclass."""
     @zdc.dataclass
     class Transaction:
-        addr: int = zdc.rand(bounds=(0, 255), default=0)
+        addr: int = zdc.rand(domain=(0, 255), default=0)
         data: int = zdc.rand(default=0)
-        test_id: int = zdc.randc(bounds=(0, 15), default=0)
+        test_id: int = zdc.randc(domain=(0, 15), default=0)
         normal_field: int = 0
     
     rand_fields = zdc.extract_rand_fields(Transaction)
@@ -342,26 +342,26 @@ def test_extract_rand_fields():
     # Check addr field
     addr = [f for f in rand_fields if f['name'] == 'addr'][0]
     assert addr['kind'] == 'rand'
-    assert addr['bounds'] == (0, 255)
+    assert addr['domain'] == (0, 255)
     
     # Check data field
     data = [f for f in rand_fields if f['name'] == 'data'][0]
     assert data['kind'] == 'rand'
-    assert 'bounds' not in data
+    assert 'domain' not in data
     
     # Check test_id field
     test_id = [f for f in rand_fields if f['name'] == 'test_id'][0]
     assert test_id['kind'] == 'randc'
-    assert test_id['bounds'] == (0, 15)
+    assert test_id['domain'] == (0, 15)
 
 
 def test_complete_parsing_example():
     """Test complete example with complex constraints."""
     @zdc.dataclass
     class Packet:
-        length: int = zdc.rand(bounds=(64, 1500), default=64)
-        header_len: int = zdc.rand(bounds=(20, 60), default=20)
-        pkt_type: int = zdc.rand(bounds=(0, 3), default=0)
+        length: int = zdc.rand(domain=(64, 1500), default=64)
+        header_len: int = zdc.rand(domain=(20, 60), default=20)
+        pkt_type: int = zdc.rand(domain=(0, 3), default=0)
         
         @zdc.constraint
         def valid_length(self):

@@ -4,7 +4,7 @@ Implements the implication operator: condition -> consequence
 Using 3-valued logic for proper constraint propagation.
 """
 
-from typing import Dict, Set, Optional
+from typing import Dict, List, Set, Optional
 from ..core.variable import Variable
 from ..core.domain import IntDomain
 from .base import Propagator, PropagationResult, PropagationStatus
@@ -129,6 +129,117 @@ class ImplicationPropagator(Propagator):
     
     def __repr__(self) -> str:
         return f"ImplicationPropagator({self.condition_var} -> {self.consequence_var})"
+
+
+class BoolNotPropagator(Propagator):
+    """Propagator that enforces: not_var = 1 - source_var (boolean negation).
+
+    Used to create a negated condition variable for else-branch handling in
+    if-else constraints.
+    """
+
+    def __init__(self, source_var: str, not_var: str):
+        self.source_var = source_var
+        self.not_var = not_var
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        if self.source_var not in variables or self.not_var not in variables:
+            return PropagationResult.fixed_point()
+
+        src = variables[self.source_var]
+        not_v = variables[self.not_var]
+        changed = set()
+
+        src_vals = set(src.domain.values())
+        expected_not_vals = {1 - v for v in src_vals}
+        new_not_domain = not_v.domain.intersect(
+            IntDomain([(v, v) for v in sorted(expected_not_vals)],
+                      not_v.domain.width, not_v.domain.signed)
+        )
+        if new_not_domain.is_empty():
+            return PropagationResult.conflict()
+        if new_not_domain != not_v.domain:
+            not_v.domain = new_not_domain
+            changed.add(not_v)
+
+        # Reverse: if not_var is known, constrain source_var
+        not_vals = set(not_v.domain.values())
+        expected_src_vals = {1 - v for v in not_vals}
+        new_src_domain = src.domain.intersect(
+            IntDomain([(v, v) for v in sorted(expected_src_vals)],
+                      src.domain.width, src.domain.signed)
+        )
+        if new_src_domain.is_empty():
+            return PropagationResult.conflict()
+        if new_src_domain != src.domain:
+            src.domain = new_src_domain
+            changed.add(src)
+
+        if changed:
+            return PropagationResult.consistent(changed)
+        return PropagationResult.fixed_point()
+
+    def affected_variables(self) -> Set[str]:
+        return {self.source_var, self.not_var}
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        if not all(v in assignment for v in [self.source_var, self.not_var]):
+            return False
+        return assignment[self.not_var] == 1 - assignment[self.source_var]
+
+    def __repr__(self) -> str:
+        return f"BoolNotPropagator({self.not_var} = !{self.source_var})"
+
+
+class BoolOrPropagator(Propagator):
+    """Enforces: at least one variable in var_names must equal 1.
+
+    Used to implement logical OR: if all but one reified boolean are 0,
+    the remaining one is forced to 1. If all are 0, conflict.
+    """
+
+    def __init__(self, var_names: List[str]):
+        self.var_names = var_names
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        var_objs = [variables[n] for n in self.var_names if n in variables]
+        if not var_objs:
+            return PropagationResult.fixed_point()
+
+        # OR is satisfied if any var is already 1
+        if any(v.domain.is_singleton() and 1 in v.domain.values() for v in var_objs):
+            return PropagationResult.fixed_point()
+
+        # Identify which vars are forced to 0
+        zero_indices = {i for i, v in enumerate(var_objs)
+                        if v.domain.is_singleton() and 0 in v.domain.values()}
+
+        # All zero → CONFLICT
+        if len(zero_indices) == len(var_objs):
+            return PropagationResult.conflict()
+
+        # All but one zero → force the remaining free var to 1
+        if len(zero_indices) == len(var_objs) - 1:
+            changed = []
+            for i, v in enumerate(var_objs):
+                if i not in zero_indices:
+                    new_domain = IntDomain([(1, 1)], v.domain.width, v.domain.signed)
+                    if new_domain != v.domain:
+                        v.domain = new_domain
+                        changed.append(v)
+            if changed:
+                return PropagationResult.consistent(changed)
+
+        return PropagationResult.fixed_point()
+
+    def affected_variables(self) -> Set[str]:
+        return set(self.var_names)
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        return any(assignment.get(n, 0) == 1 for n in self.var_names)
+
+    def __repr__(self) -> str:
+        return f"BoolOrPropagator({' || '.join(self.var_names)})"
 
 
 class ConditionalImplicationPropagator(Propagator):

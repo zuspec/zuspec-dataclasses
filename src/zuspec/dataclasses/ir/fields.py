@@ -51,7 +51,8 @@ class Field(Base):
     @property
     def is_array(self) -> bool:
         """Returns True if this field represents an array (has a size)."""
-        return self.size is not None or self.is_variable_size
+        from .data_type import DataTypeArray
+        return self.size is not None or self.is_variable_size or isinstance(self.datatype, DataTypeArray)
 
 @dc.dataclass(kw_only=True)
 class FieldInOut(Field):

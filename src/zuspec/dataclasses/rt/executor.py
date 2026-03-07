@@ -348,3 +348,31 @@ class CombProcessExecutor(Executor):
     def __init__(self, eval_state: EvalState, component: Component):
         super().__init__(eval_state, component)
         self.is_deferred = False  # Comb processes use immediate writes
+
+
+class ObjectExecutor(Executor):
+    """Executor for direct Python object attribute access.
+
+    Used for action body execution and component init_down, where there is no
+    signal/state-backend — reads and writes go directly to ``getattr``/``setattr``
+    on the target object (an action instance or a component instance).
+    """
+
+    def __init__(self, obj: Any):
+        super().__init__(None, obj)
+        self.use_eval_state = False
+
+    def _read_signal(self, field_path: str) -> Any:
+        """Read an attribute from the target object, supporting dotted paths."""
+        obj = self.component
+        for part in field_path.split('.'):
+            obj = getattr(obj, part, 0)
+        return obj
+
+    def _write_signal(self, field_path: str, value: Any):
+        """Write an attribute on the target object, supporting dotted paths."""
+        parts = field_path.split('.')
+        obj = self.component
+        for part in parts[:-1]:
+            obj = getattr(obj, part)
+        setattr(obj, parts[-1], value)

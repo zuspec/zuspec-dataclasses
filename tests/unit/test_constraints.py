@@ -83,7 +83,7 @@ def test_rand_field():
     """Test rand() field function."""
     @zdc.dataclass
     class Packet:
-        length: int = zdc.rand(bounds=(64, 1500), default=64)
+        length: int = zdc.rand(domain=(64, 1500), default=64)
     
     # Check field metadata
     fields = {f.name: f for f in Packet.__dataclass_fields__.values()}
@@ -92,7 +92,7 @@ def test_rand_field():
     metadata = fields['length'].metadata
     assert metadata.get('rand') is True
     assert metadata.get('rand_kind') == 'rand'
-    assert metadata.get('bounds') == (64, 1500)
+    assert metadata.get('domain') == (64, 1500)
     
     # Check default value
     pkt = Packet()
@@ -103,7 +103,7 @@ def test_randc_field():
     """Test randc() field function."""
     @zdc.dataclass
     class TestSequence:
-        test_id: int = zdc.randc(bounds=(0, 15), default=0)
+        test_id: int = zdc.randc(domain=(0, 15), default=0)
     
     # Check field metadata
     fields = {f.name: f for f in TestSequence.__dataclass_fields__.values()}
@@ -112,7 +112,7 @@ def test_randc_field():
     metadata = fields['test_id'].metadata
     assert metadata.get('rand') is True
     assert metadata.get('rand_kind') == 'randc'
-    assert metadata.get('bounds') == (0, 15)
+    assert metadata.get('domain') == (0, 15)
     
     # Check default value
     seq = TestSequence()
@@ -184,8 +184,8 @@ def test_complete_example():
     """Test a complete example with constraints and rand fields."""
     @zdc.dataclass
     class Transaction:
-        addr: int = zdc.rand(bounds=(0, 255), default=0)
-        data: int = zdc.rand(bounds=(0, 255), default=0)
+        addr: int = zdc.rand(domain=(0, 255), default=0)
+        data: int = zdc.rand(domain=(0, 255), default=0)
         read_enable: int = zdc.rand(default=0)
         write_enable: int = zdc.rand(default=0)
         

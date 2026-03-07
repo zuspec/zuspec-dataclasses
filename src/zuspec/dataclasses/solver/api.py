@@ -195,10 +195,6 @@ def _extract_struct_type(obj: Any) -> DataTypeStruct:
     if hasattr(cls, '_zdc_struct'):
         return cls._zdc_struct
     
-    # Try alternate attribute names for compatibility
-    if hasattr(cls, '_ir_struct'):
-        return cls._ir_struct
-    
     # Not found - need to trigger RT initialization or build on demand
     # For Components, trigger a dummy signal access to initialize RT
     from ..types import Component

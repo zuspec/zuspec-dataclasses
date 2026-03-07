@@ -10,3 +10,4 @@ from .event_rt import EventRT
 from .tracer import Tracer, SignalTracer, Thread, with_tracer
 from .vcd_tracer import VCDTracer
 from .edge import posedge, negedge, edge
+from .executor import ObjectExecutor

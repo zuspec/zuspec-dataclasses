@@ -23,9 +23,9 @@ def test_end_to_end_packet_example():
     
     @zdc.dataclass
     class Packet:
-        length: int = zdc.rand(bounds=(64, 1500), default=64)
-        header_len: int = zdc.rand(bounds=(20, 60), default=20)
-        pkt_type: int = zdc.rand(bounds=(0, 3), default=0)
+        length: int = zdc.rand(domain=(64, 1500), default=64)
+        header_len: int = zdc.rand(domain=(20, 60), default=20)
+        pkt_type: int = zdc.rand(domain=(0, 3), default=0)
         
         @zdc.constraint
         def valid_length(self):
@@ -42,9 +42,9 @@ def test_end_to_end_packet_example():
     field_names = {f['name'] for f in rand_fields}
     assert field_names == {'length', 'header_len', 'pkt_type'}
     
-    # Check bounds
+    # Check domain
     length_field = [f for f in rand_fields if f['name'] == 'length'][0]
-    assert length_field['bounds'] == (64, 1500)
+    assert length_field['domain'] == (64, 1500)
     
     # Parse constraints
     parser = zdc.ConstraintParser()
@@ -74,8 +74,8 @@ def test_end_to_end_bus_transaction():
     
     @zdc.dataclass
     class BusTransaction:
-        addr: int = zdc.rand(bounds=(0, 255), default=0)
-        data: int = zdc.rand(bounds=(0, 255), default=0)
+        addr: int = zdc.rand(domain=(0, 255), default=0)
+        data: int = zdc.rand(domain=(0, 255), default=0)
         read_enable: int = zdc.rand(default=0)
         write_enable: int = zdc.rand(default=0)
         
@@ -128,14 +128,14 @@ def test_end_to_end_mixed_constraints():
     @zdc.dataclass
     class ComplexClass:
         # Different random field types
-        normal_rand: int = zdc.rand(bounds=(0, 100), default=0)
-        cyclic_rand: int = zdc.randc(bounds=(0, 15), default=0)
+        normal_rand: int = zdc.rand(domain=(0, 100), default=0)
+        cyclic_rand: int = zdc.randc(domain=(0, 15), default=0)
         array_rand: int = zdc.rand(size=8, default=0)
         
         # IDs for uniqueness
-        id1: int = zdc.rand(bounds=(0, 31), default=0)
-        id2: int = zdc.rand(bounds=(0, 31), default=0)
-        id3: int = zdc.rand(bounds=(0, 31), default=0)
+        id1: int = zdc.rand(domain=(0, 31), default=0)
+        id2: int = zdc.rand(domain=(0, 31), default=0)
+        id3: int = zdc.rand(domain=(0, 31), default=0)
         
         @zdc.constraint
         def bounds_check(self):
@@ -215,9 +215,9 @@ def test_extract_metadata_completeness():
     
     @zdc.dataclass
     class WithMetadata:
-        bounded: int = zdc.rand(bounds=(10, 20), default=15)
+        bounded: int = zdc.rand(domain=(10, 20), default=15)
         sized_array: int = zdc.rand(size=16, default=0)
-        cyclic: int = zdc.randc(bounds=(0, 7), default=0)
+        cyclic: int = zdc.randc(domain=(0, 7), default=0)
         
         @zdc.constraint
         def c1(self):
@@ -232,14 +232,14 @@ def test_extract_metadata_completeness():
     
     bounded = [f for f in rand_fields if f['name'] == 'bounded'][0]
     assert bounded['kind'] == 'rand'
-    assert bounded['bounds'] == (10, 20)
+    assert bounded['domain'] == (10, 20)
     
     sized = [f for f in rand_fields if f['name'] == 'sized_array'][0]
     assert sized['size'] == 16
     
     cyclic = [f for f in rand_fields if f['name'] == 'cyclic'][0]
     assert cyclic['kind'] == 'randc'
-    assert cyclic['bounds'] == (0, 7)
+    assert cyclic['domain'] == (0, 7)
     
     # Check constraint metadata preservation
     parser = zdc.ConstraintParser()

@@ -252,14 +252,17 @@ class ImplicationConstraint(Constraint):
         self.else_constraint = else_constraint
     
     def is_satisfied(self, assignment: Dict[str, int]) -> bool:
-        # All parts must be evaluatable
-        if not self.condition.is_satisfied(assignment):
+        cond_vars = self.condition.variables
+        if not all(v in assignment for v in cond_vars):
             return False
-        if not self.then_constraint.is_satisfied(assignment):
-            return False
-        if self.else_constraint and not self.else_constraint.is_satisfied(assignment):
-            return False
-        return True
+
+        cond_true = self.condition.is_satisfied(assignment)
+        if cond_true:
+            return self.then_constraint.is_satisfied(assignment)
+        else:
+            if self.else_constraint is not None:
+                return self.else_constraint.is_satisfied(assignment)
+            return True
     
     def __repr__(self) -> str:
         result = f"Implication({self.condition} -> {self.then_constraint}"
@@ -267,3 +270,26 @@ class ImplicationConstraint(Constraint):
             result += f" : {self.else_constraint}"
         result += ")"
         return result
+
+
+class UniqueConstraint(Constraint):
+    """Represents a uniqueness constraint: all variables must have distinct values."""
+
+    def __init__(self, variables: List['Variable'], **kwargs):
+        if len(variables) < 2:
+            raise ValueError("UniqueConstraint requires at least 2 variables")
+        var_set = {v.name for v in variables}
+        super().__init__(var_set, **kwargs)
+        self.unique_variables = variables
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        values = []
+        for v in self.unique_variables:
+            if v.name not in assignment:
+                return True  # can't evaluate yet
+            values.append(assignment[v.name])
+        return len(values) == len(set(values))
+
+    def __repr__(self) -> str:
+        names = ", ".join(v.name for v in self.unique_variables)
+        return f"Unique({{{names}}})"

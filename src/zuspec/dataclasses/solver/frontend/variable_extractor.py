@@ -137,13 +137,20 @@ class VariableExtractor:
             assert actual_size is not None, f"Variable-size array {field.name} must have max_size"
         else:
             actual_size = field.size
+            # If size not on field directly, try the DataTypeArray
+            if actual_size is None:
+                from zuspec.dataclasses.ir.data_type import DataTypeArray
+                if isinstance(field.datatype, DataTypeArray):
+                    actual_size = field.datatype.size
             assert actual_size is not None, f"Fixed-size array {field.name} must have size"
         
         # Build base name
         base_name = f"{prefix}{field.name}" if prefix else field.name
         
-        # Create domain from type
-        domain = self.type_mapper.to_domain(field.datatype, use_bitvector=True)
+        # Create domain from element type (unwrap DataTypeArray if needed)
+        from zuspec.dataclasses.ir.data_type import DataTypeArray
+        element_datatype = field.datatype.element_type if isinstance(field.datatype, DataTypeArray) else field.datatype
+        domain = self.type_mapper.to_domain(element_datatype, use_bitvector=True)
         
         # Apply domain constraints if present
         domain = self._apply_domain(domain, field)
