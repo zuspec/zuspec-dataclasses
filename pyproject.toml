@@ -10,6 +10,9 @@ dependencies = [
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[project.entry-points."zuspec.solver.backend"]
+python = "zuspec.dataclasses.solver.backend.python_backend:PythonSolverBackend"
+
 [project.entry-points."flake8.extension"]
 ZDC = "zuspec.dataclasses.flake8_zdc_struct:ZuspecFlake8Plugin"
 

@@ -90,7 +90,13 @@ class ConstraintParser:
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
                 if isinstance(stmt.value.value, str):
                     continue
-            
+
+            # Parse assert statements: `assert expr` → treat expr as constraint
+            if isinstance(stmt, ast.Assert):
+                expr = self.parse_expr(stmt.test)
+                exprs.append(expr)
+                continue
+
             # Parse expression statements
             if isinstance(stmt, ast.Expr):
                 expr = self.parse_expr(stmt.value)
@@ -388,7 +394,7 @@ def extract_rand_fields(cls: type) -> List[Dict[str, Any]]:
         List of field info dicts with:
             - name: field name
             - kind: 'rand' or 'randc'
-            - domain: optional (min, max) tuple
+            - domain: optional (min, max) tuple or list of allowed values
             - size: optional array size
     """
     import dataclasses
@@ -398,20 +404,25 @@ def extract_rand_fields(cls: type) -> List[Dict[str, Any]]:
     
     rand_fields = []
     for field in dataclasses.fields(cls):
+        # The rand() helper returns a dc.Field object used as the type annotation.
+        # In that case field.metadata is empty and the actual metadata lives in
+        # field.type (the Field object that rand() returned).
         metadata = field.metadata
-        if metadata.get('rand'):
+        if not metadata and isinstance(field.type, dataclasses.Field):
+            metadata = field.type.metadata
+
+        if metadata.get('rand') or metadata.get('randc'):
             field_info = {
                 'name': field.name,
-                'kind': metadata.get('rand_kind', 'rand'),
-                'type': field.type,
+                'kind': metadata.get('rand_kind', 'randc' if metadata.get('randc') else 'rand'),
             }
-            
+
             if 'domain' in metadata:
                 field_info['domain'] = metadata['domain']
-            
+
             if 'size' in metadata:
                 field_info['size'] = metadata['size']
-            
+
             rand_fields.append(field_info)
     
     return rand_fields

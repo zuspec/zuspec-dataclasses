@@ -14,37 +14,18 @@ from ..ir.data_type import DataTypeStruct, DataTypeClass
 from .core.constraint_system import ConstraintSystem
 from .core.variable import Variable
 from .frontend.constraint_system_builder import ConstraintSystemBuilder, BuildError
-from .engine.search import BacktrackingSearch
-from .engine.propagation import PropagationEngine
-from .engine.seed_manager import SeedManager
-from .engine.randomization import (
-    RandomizedVariableOrdering,
-    RandomizedValueOrdering
+
+# Shared implementation helpers and public exception/result types
+from ._core_solve import (
+    RandomizationError,
+    RandomizationResult,
+    _extract_struct_type,
+    _solve_constraint_system,
+    _apply_solution,
 )
 
-
-class RandomizationError(Exception):
-    """Exception raised when randomization fails"""
-    pass
-
-
-class RandomizationResult:
-    """Result of a randomization attempt"""
-    
-    def __init__(self, success: bool, assignment: Optional[Dict[str, int]] = None,
-                 error: Optional[str] = None):
-        self.success = success
-        self.assignment = assignment or {}
-        self.error = error
-    
-    def __bool__(self) -> bool:
-        return self.success
-    
-    def __repr__(self) -> str:
-        if self.success:
-            return f"RandomizationResult(success=True, {len(self.assignment)} vars)"
-        else:
-            return f"RandomizationResult(success=False, error={self.error!r})"
+# Back-end registry — used by randomize()
+from .backend.registry import get_backend
 
 
 def randomize(obj: Any, 
@@ -88,33 +69,7 @@ def randomize(obj: Any,
                            malformed constraints, etc.), if no solution exists
                            (UNSAT), or if timeout occurred.
     """
-    try:
-        # Get the IR struct type from the object's class
-        struct_type = _extract_struct_type(obj)
-        
-        # Build constraint system from IR
-        builder = ConstraintSystemBuilder()
-        constraint_system = builder.build_from_struct(struct_type)
-        
-        # Solve with randomization
-        result = _solve_constraint_system(constraint_system, seed, timeout_ms)
-        
-        if result.success:
-            # Apply solution to object
-            _apply_solution(obj, result.assignment, constraint_system)
-        else:
-            # Raise exception for UNSAT or timeout
-            if result.error:
-                raise RandomizationError(f"No solution found: {result.error}")
-            else:
-                raise RandomizationError("No solution found (constraints unsatisfiable)")
-            
-    except BuildError as e:
-        raise RandomizationError(f"Failed to build constraint system: {e}")
-    except RandomizationError:
-        raise
-    except Exception as e:
-        raise RandomizationError(f"Randomization failed: {e}")
+    get_backend().randomize(obj, seed=seed, timeout_ms=timeout_ms)
 
 
 def randomize_with(obj: Any,
@@ -166,225 +121,6 @@ def randomize_with(obj: Any,
         RandomizationError: If constraints are unsatisfiable or parsing fails
     """
     return RandomizeWithContext(obj, seed, timeout_ms)
-
-
-def _extract_struct_type(obj: Any) -> DataTypeStruct:
-    """
-    Extract the IR DataTypeStruct from an object.
-    
-    The IR struct is attached during RT initialization in comp_impl_rt._init_eval()
-    when the first signal write occurs. This function handles both cases:
-    - Instance attribute (obj._zdc_struct) - attached by RT
-    - Class attribute (cls._zdc_struct) - cached on class
-    
-    Args:
-        obj: Object instance
-        
-    Returns:
-        DataTypeStruct representing the object's type
-        
-    Raises:
-        RandomizationError: If struct type cannot be extracted
-    """
-    # Check instance first (most specific)
-    if hasattr(obj, '_zdc_struct'):
-        return obj._zdc_struct
-    
-    # Check class (cached from RT or previous build)
-    cls = obj.__class__
-    if hasattr(cls, '_zdc_struct'):
-        return cls._zdc_struct
-    
-    # Not found - need to trigger RT initialization or build on demand
-    # For Components, trigger a dummy signal access to initialize RT
-    from ..types import Component
-    if isinstance(obj, Component):
-        # Trigger RT initialization by accessing _impl
-        if hasattr(obj, '_impl') and obj._impl:
-            # Try to trigger _init_eval by performing a no-op that touches the impl
-            # The actual signal write will call _init_eval which attaches _zdc_struct
-            pass
-        
-        # Check again after potential RT init
-        if hasattr(obj, '_zdc_struct'):
-            return obj._zdc_struct
-        if hasattr(cls, '_zdc_struct'):
-            return cls._zdc_struct
-    
-    # Last resort: build on demand
-    try:
-        from ..data_model_factory import DataModelFactory
-        factory = DataModelFactory()
-        ctx = factory.build([cls])
-        type_name = f"{cls.__module__}.{cls.__qualname__}"
-        struct = ctx.type_m.get(type_name) or ctx.type_m.get(cls.__qualname__)
-        
-        if struct:
-            # Cache on class for future use
-            cls._zdc_struct = struct
-            return struct
-    except Exception as e:
-        # Build failed, provide helpful error
-        raise RandomizationError(
-            f"Cannot extract IR struct type from {cls.__name__}: {e}"
-        )
-    
-    # Still not found
-    raise RandomizationError(
-        f"Cannot extract IR struct type from {cls.__name__}. "
-        f"Ensure the class is decorated with @dataclass from zuspec.dataclasses"
-    )
-
-
-def _solve_constraint_system(system: ConstraintSystem,
-                             seed: Optional[int],
-                             timeout_ms: Optional[int]) -> RandomizationResult:
-    """
-    Solve a constraint system with randomization.
-    
-    Args:
-        system: ConstraintSystem to solve
-        seed: Optional random seed
-        timeout_ms: Timeout in milliseconds (None = no timeout)
-        
-    Returns:
-        RandomizationResult with success status and assignment
-    """
-    try:
-        # Import here to avoid circular dependencies
-        from .frontend.constraint_compiler import ConstraintCompiler, CompilationError
-        
-        # Create seed manager
-        seed_manager = SeedManager(global_seed=seed)
-        
-        # Create propagation engine
-        propagation_engine = PropagationEngine()
-        
-        # Compile constraints into propagators
-        compiler = ConstraintCompiler(system.variables)
-        for constraint in system.constraints:
-            try:
-                propagators = compiler.compile(constraint)
-                for prop in propagators:
-                    propagation_engine.add_propagator(prop)
-            except CompilationError as e:
-                # Log but continue - some constraints might not be supported yet
-                # In the future, this should be a hard error
-                import warnings
-                warnings.warn(f"Failed to compile constraint: {e}")
-        
-        # Set all variables (including temp/const) in the propagation engine
-        # Propagators need access to all variables, even those not assigned by search
-        propagation_engine.set_variables(compiler.variables)
-        
-        # Create randomized heuristics
-        var_heuristic = RandomizedVariableOrdering(
-            seed_manager=seed_manager,
-            context="var_order"
-        )
-        val_heuristic = RandomizedValueOrdering(
-            seed_manager=seed_manager,
-            context="val_order"
-        )
-        
-        # Create backtracking search
-        search = BacktrackingSearch(
-            propagation_engine,
-            var_heuristic=var_heuristic,
-            val_heuristic=val_heuristic
-        )
-        
-        # Solve - pass only original variables for assignment
-        # Temp/const variables are determined by propagation, not search
-        # TODO: Add timeout support
-        solution = search.solve(system.variables)
-        
-        if solution is not None:
-            return RandomizationResult(success=True, assignment=solution)
-        else:
-            return RandomizationResult(
-                success=False,
-                error="No solution found (UNSAT)"
-            )
-            
-    except Exception as e:
-        return RandomizationResult(
-            success=False,
-            error=f"Solver error: {e}"
-        )
-
-
-def _apply_solution(obj: Any, 
-                   assignment: Dict[str, int],
-                   system: ConstraintSystem) -> None:
-    """
-    Apply solution assignment to object fields.
-    
-    Args:
-        obj: Object to update
-        assignment: Variable name -> value mapping
-        system: ConstraintSystem (for variable and array metadata)
-    """
-    # First pass: apply scalar fields (no '[' in name)
-    for var_name, value in assignment.items():
-        if '[' in var_name:
-            # Skip array elements - will be handled in second pass
-            continue
-            
-        # Handle both simple fields and nested paths
-        if '.' in var_name:
-            # Nested field like "addr.value"
-            parts = var_name.split('.')
-            target = obj
-            for part in parts[:-1]:
-                target = getattr(target, part)
-            setattr(target, parts[-1], value)
-        else:
-            # Simple field
-            if hasattr(obj, var_name):
-                setattr(obj, var_name, value)
-            else:
-                # May be an internal variable - skip
-                pass
-    
-    # Second pass: reconstruct arrays from element solutions
-    for field_name, metadata in system.array_metadata.items():
-        element_names = metadata['element_names']
-        size = metadata['size']
-        is_variable_size = metadata.get('is_variable_size', False)
-        length_var_name = metadata.get('length_var_name', None)
-        
-        # For variable-size arrays, get the actual length from the solution
-        actual_length = size  # Default to full size for fixed arrays
-        if is_variable_size and length_var_name:
-            if length_var_name in assignment:
-                actual_length = assignment[length_var_name]
-            else:
-                # No length constraint - could be any value in [0, max_size]
-                # For now, default to 0 (empty array)
-                actual_length = 0
-        
-        # Collect values for array elements (only up to actual_length)
-        array_values = []
-        for i in range(actual_length):
-            elem_name = element_names[i]
-            if elem_name in assignment:
-                array_values.append(assignment[elem_name])
-            else:
-                # Element not in solution - shouldn't happen
-                raise RandomizationError(f"Missing solution for array element {elem_name}")
-        
-        # Set the array field with the reconstructed list
-        if hasattr(obj, field_name):
-            setattr(obj, field_name, array_values)
-        else:
-            # May be nested - handle dot notation
-            if '.' in field_name:
-                parts = field_name.split('.')
-                target = obj
-                for part in parts[:-1]:
-                    target = getattr(target, part)
-                setattr(target, parts[-1], array_values)
 
 
 class RandomizeWithContext:
