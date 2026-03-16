@@ -100,37 +100,62 @@ class RandomizedValueOrdering(ValueOrderingHeuristic):
     Samples values randomly from a variable's domain. Combined with
     randomized variable ordering, this provides uniform sampling over
     the solution space (when no distribution constraints exist).
-    
+
+    For large domains (> *max_values* entries) a random subset is sampled
+    instead of enumerating all values.  This bounds the per-variable search
+    width and prevents catastrophic backtracking on problems with chained
+    arithmetic constraints where domains can easily reach tens-of-thousands
+    of values.
+
+    The default *max_values=256* works well for typical randomisation
+    problems (many valid solutions per domain value).  Increase it for
+    tightly-constrained problems where only a small fraction of domain
+    values are locally consistent.
+
     Usage:
         seed_manager = SeedManager(global_seed=42)
         heuristic = RandomizedValueOrdering(seed_manager)
         search = BacktrackingSearch(variables, engine, val_order=heuristic)
     """
-    
-    def __init__(self, seed_manager: Optional[SeedManager] = None, context: str = "val_order"):
+
+    # Maximum number of values tried per variable before giving up at this level.
+    DEFAULT_MAX_VALUES = 256
+
+    def __init__(
+        self,
+        seed_manager: Optional[SeedManager] = None,
+        context: str = "val_order",
+        max_values: Optional[int] = None,
+    ):
         """
         Args:
             seed_manager: Seed manager for reproducible randomization
             context: Context name for RNG (default: "val_order")
+            max_values: Maximum candidate values per variable assignment attempt.
+                        Defaults to DEFAULT_MAX_VALUES.  Pass ``None`` to use
+                        the default; pass a large value (e.g. ``float("inf")``)
+                        to enumerate all values (old behaviour – not recommended
+                        for large domains).
         """
         self.seed_manager = seed_manager
         self.context = context
-    
+        self.max_values = max_values if max_values is not None else self.DEFAULT_MAX_VALUES
+
     def order_values(self, variable_or_name, state_or_assigned=None, state=None) -> List[int]:
         """
-        Order values randomly from the domain.
-        
+        Return a randomly ordered list of candidate values from the domain.
+
         Supports two call signatures:
         1. order_values(variable: Variable, assigned: Set[str]) - for tests
         2. order_values(var_name: str, domain: IntDomain, state: SearchState) - for search
-        
+
         Args:
             variable_or_name: Variable object or variable name string
             state_or_assigned: SearchState or assigned set
             state: SearchState (for 3-arg signature)
-            
+
         Returns:
-            Randomly shuffled list of values from domain
+            Randomly shuffled list of up to *max_values* values from domain
         """
         # Handle both signatures
         if isinstance(variable_or_name, Variable):
@@ -139,21 +164,31 @@ class RandomizedValueOrdering(ValueOrderingHeuristic):
         else:
             # Signature 2: order_values(var_name, domain, state)
             domain = state_or_assigned
-        
-        # Get all values from domain
-        values = list(domain.values())
-        
+
         if self.seed_manager:
             rng = self.seed_manager.get_rng(self.context)
         else:
             rng = random.Random()
-        
-        # Shuffle in place
-        rng.shuffle(values)
+
+        domain_size = domain.size()
+        max_v = self.max_values
+
+        # For small or unbounded-max domains enumerate everything; for large
+        # domains use efficient random sampling to cap search width.
+        if domain_size <= max_v or max_v <= 0:
+            values = list(domain.values())
+            rng.shuffle(values)
+        else:
+            from ..core.domain import IntDomain as _IntDomain
+            if isinstance(domain, _IntDomain):
+                values = domain.random_sample(rng, max_v)
+            else:
+                # Fallback for non-IntDomain types (e.g. EnumDomain)
+                values = list(domain.values())
+                rng.shuffle(values)
+                values = values[:max_v]
+
         return values
-    
-    def __repr__(self) -> str:
-        return f"RandomizedValueOrdering(context={self.context})"
 
 
 class MRVWithRandomTiebreaking(VariableOrderingHeuristic):

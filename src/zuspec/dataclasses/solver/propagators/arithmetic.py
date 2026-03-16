@@ -36,12 +36,18 @@ class AddPropagator(Propagator):
         
         # For small domains, use precise enumeration
         small_threshold = 1000
+        same_var = (self.lhs_var == self.rhs_var)
         if lhs.domain.size() * rhs.domain.size() <= small_threshold:
             # Precise forward propagation
             valid_sums = set()
-            for lhs_val in lhs.domain.values():
-                for rhs_val in rhs.domain.values():
-                    valid_sums.add((lhs_val + rhs_val) % self.modulo)
+            if same_var:
+                # lhs and rhs are the same variable: result = 2 * lhs
+                for val in lhs.domain.values():
+                    valid_sums.add((2 * val) % self.modulo)
+            else:
+                for lhs_val in lhs.domain.values():
+                    for rhs_val in rhs.domain.values():
+                        valid_sums.add((lhs_val + rhs_val) % self.modulo)
             
             # Constrain result
             result_intervals = self._values_to_intervals(valid_sums)
@@ -59,11 +65,21 @@ class AddPropagator(Propagator):
             valid_lhs = set()
             valid_rhs = set()
             
-            for lhs_val in lhs.domain.values():
-                for rhs_val in rhs.domain.values():
-                    if (lhs_val + rhs_val) % self.modulo in result_values:
-                        valid_lhs.add(lhs_val)
-                        valid_rhs.add(rhs_val)
+            if same_var:
+                # result = 2 * lhs, so lhs = result / 2 (only even sums are valid)
+                lhs_vals = set(lhs.domain.values())
+                for sum_val in result_values:
+                    if sum_val % 2 == 0:
+                        half = sum_val // 2
+                        if half in lhs_vals:
+                            valid_lhs.add(half)
+                valid_rhs = valid_lhs
+            else:
+                for lhs_val in lhs.domain.values():
+                    for rhs_val in rhs.domain.values():
+                        if (lhs_val + rhs_val) % self.modulo in result_values:
+                            valid_lhs.add(lhs_val)
+                            valid_rhs.add(rhs_val)
             
             # Constrain lhs
             if valid_lhs:
@@ -184,22 +200,34 @@ class AddPropagator(Propagator):
     def _compute_diff_intervals(
         self, result_intervals: List[Tuple[int, int]], subtrahend_intervals: List[Tuple[int, int]]
     ) -> List[Tuple[int, int]]:
-        """Compute intervals for result - subtrahend with wrapping."""
+        """Compute intervals for result - subtrahend (backward propagation for addition).
+
+        For each combination of result interval [r_lo, r_hi] and subtrahend interval
+        [s_lo, s_hi], the difference d = result - subtrahend ranges in
+        [r_lo - s_hi, r_hi - s_lo].  Three cases:
+
+        * all non-negative  (d_lo >= 0): single interval [d_lo, d_hi]
+        * mixed sign        (d_lo < 0 <= d_hi): non-wrapping part [0, d_hi]  PLUS
+                                                 wrapping part  [modulo+d_lo, modulo-1]
+        * all negative      (d_hi < 0): pure wrap-around [modulo+d_lo, modulo+d_hi]
+        """
         diff_intervals = []
-        
+
         for res_lo, res_hi in result_intervals:
             for sub_lo, sub_hi in subtrahend_intervals:
-                # Compute min and max differences
-                min_diff = (res_lo - sub_hi) % self.modulo
-                max_diff = (res_hi - sub_lo) % self.modulo
-                
-                # Check if wrapping occurred
-                if res_lo - sub_hi < 0 or res_hi - sub_lo < 0:
-                    # Wrapping - conservative
-                    diff_intervals.append((0, self.modulo - 1))
+                d_lo = res_lo - sub_hi   # minimum possible difference
+                d_hi = res_hi - sub_lo   # maximum possible difference
+
+                if d_hi < 0:
+                    # All differences are negative – only wrap-around values exist.
+                    diff_intervals.append((self.modulo + d_lo, self.modulo + d_hi))
+                elif d_lo < 0:
+                    # Partial: non-wrapping part [0, d_hi] plus wrapping part.
+                    diff_intervals.append((0, d_hi))
+                    diff_intervals.append((self.modulo + d_lo, self.modulo - 1))
                 else:
-                    diff_intervals.append((min_diff, max_diff))
-        
+                    diff_intervals.append((d_lo, d_hi))
+
         return diff_intervals
     
     def affected_variables(self) -> Set[str]:
@@ -306,13 +334,15 @@ class SubPropagator(Propagator):
             result_intervals = []
             for lhs_lo, lhs_hi in lhs.domain.intervals:
                 for rhs_lo, rhs_hi in rhs.domain.intervals:
-                    min_diff = (lhs_lo - rhs_hi) % self.modulo
-                    max_diff = (lhs_hi - rhs_lo) % self.modulo
-                    
-                    if lhs_lo - rhs_hi < 0 or lhs_hi - rhs_lo < 0:
-                        result_intervals.append((0, self.modulo - 1))
+                    d_lo = lhs_lo - rhs_hi
+                    d_hi = lhs_hi - rhs_lo
+                    if d_hi < 0:
+                        result_intervals.append((self.modulo + d_lo, self.modulo + d_hi))
+                    elif d_lo < 0:
+                        result_intervals.append((0, d_hi))
+                        result_intervals.append((self.modulo + d_lo, self.modulo - 1))
                     else:
-                        result_intervals.append((min_diff, max_diff))
+                        result_intervals.append((d_lo, d_hi))
             
             new_result = IntDomain(result_intervals, result.domain.width, result.domain.signed)
             old_result = result.domain
@@ -348,11 +378,13 @@ class SubPropagator(Propagator):
             rhs_intervals = []
             for lhs_lo, lhs_hi in lhs.domain.intervals:
                 for res_lo, res_hi in result.domain.intervals:
-                    min_diff = (lhs_lo - res_hi) % self.modulo
-                    max_diff = (lhs_hi - res_lo) % self.modulo
-                    
-                    if lhs_lo - res_hi < 0 or lhs_hi - res_lo < 0:
-                        rhs_intervals.append((0, self.modulo - 1))
+                    d_lo = lhs_lo - res_hi
+                    d_hi = lhs_hi - res_lo
+                    if d_hi < 0:
+                        rhs_intervals.append((self.modulo + d_lo, self.modulo + d_hi))
+                    elif d_lo < 0:
+                        rhs_intervals.append((0, d_hi))
+                        rhs_intervals.append((self.modulo + d_lo, self.modulo - 1))
                     else:
                         rhs_intervals.append((min_diff, max_diff))
         

@@ -1,8 +1,9 @@
 """Domain classes for constraint solver"""
 
 from abc import ABC, abstractmethod
-from typing import Iterator, List, Tuple, Set, Optional
+from typing import Iterator, List, Optional, Set, Tuple
 from enum import Enum as PyEnum
+import random as _random
 
 
 class Domain(ABC):
@@ -87,6 +88,37 @@ class IntDomain(Domain):
         for low, high in self._intervals:
             for val in range(low, high + 1):
                 yield val
+
+    def random_sample(self, rng: _random.Random, n: int) -> List[int]:
+        """Return up to *n* distinct random values drawn uniformly from the domain.
+
+        Efficient even for large domains: maps random indices to values using
+        cumulative interval sizes, avoiding materialising the whole domain.
+        """
+        total = self.size()
+        if total == 0:
+            return []
+        if n >= total:
+            result = list(self.values())
+            rng.shuffle(result)
+            return result
+
+        # Draw n unique indices in [0, total) and map them to domain values.
+        indices = sorted(rng.sample(range(total), n))
+        result: List[int] = []
+        cumulative = 0
+        idx_pos = 0
+        for lo, hi in self._intervals:
+            interval_size = hi - lo + 1
+            while idx_pos < len(indices) and indices[idx_pos] < cumulative + interval_size:
+                result.append(lo + (indices[idx_pos] - cumulative))
+                idx_pos += 1
+            cumulative += interval_size
+            if idx_pos >= len(indices):
+                break
+
+        rng.shuffle(result)
+        return result
 
     def copy(self) -> 'IntDomain':
         """Returns a copy of this domain"""
