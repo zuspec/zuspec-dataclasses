@@ -19,6 +19,7 @@ from .engine.seed_manager import SeedManager
 from .engine.randomization import (
     RandomizedVariableOrdering,
     RandomizedValueOrdering,
+    MRVWithRandomTiebreaking,
 )
 
 
@@ -115,9 +116,10 @@ def _solve_constraint_system(
 
         propagation_engine.set_variables(compiler.variables)
 
-        var_heuristic = RandomizedVariableOrdering(
-            seed_manager=seed_manager, context="var_order"
-        )
+        # MRV (smallest-domain-first) with random tiebreaking reduces
+        # backtracking significantly vs pure random variable ordering.
+        var_heuristic = MRVWithRandomTiebreaking(
+            seed_manager=seed_manager, context="var_order")
         val_heuristic = RandomizedValueOrdering(
             seed_manager=seed_manager, context="val_order"
         )

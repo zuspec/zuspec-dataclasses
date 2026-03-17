@@ -6,7 +6,14 @@ that satisfies the ``SolverBackend`` protocol.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+import weakref
+from typing import Any, Optional, Tuple
+
+
+# Per-class cache: avoids rebuilding the struct type and constraint system
+# on every randomize() call.  Keyed by class id; uses weakref so the cache
+# entry disappears when the class is collected.
+_class_cache: dict[int, Tuple[Any, Any]] = {}
 
 
 class PythonSolverBackend:
@@ -38,9 +45,20 @@ class PythonSolverBackend:
         )
 
         try:
-            struct_type = _extract_struct_type(obj)
-            builder = ConstraintSystemBuilder()
-            constraint_system = builder.build_from_struct(struct_type)
+            cls = obj.__class__
+            cache_key = id(cls)
+            cached = _class_cache.get(cache_key)
+            if cached is not None:
+                struct_type, template_system = cached
+            else:
+                struct_type = _extract_struct_type(obj)
+                builder = ConstraintSystemBuilder()
+                template_system = builder.build_from_struct(struct_type)
+                _class_cache[cache_key] = (struct_type, template_system)
+
+            # Deep-copy the constraint system so each solve gets fresh domains
+            constraint_system = template_system.copy()
+
             result = _solve_constraint_system(constraint_system, seed, timeout_ms)
             if result.success:
                 _apply_solution(obj, result.assignment, constraint_system)

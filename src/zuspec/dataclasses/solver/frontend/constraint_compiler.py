@@ -19,10 +19,11 @@ from ..propagators.relational import (
 )
 from ..propagators.arithmetic import (
     AddPropagator, SubPropagator, MultPropagator,
-    ModPropagator, DivPropagator
+    ModPropagator, DivPropagator, EqualSumPropagator
 )
 from ..propagators.implication import ImplicationPropagator, BoolNotPropagator, BoolOrPropagator
 from ..propagators.reification import ComparisonReifier
+from ..propagators.reification import DisjunctiveComparisonPropagator
 from ..propagators.uniqueness import UniquePropagator, PairwiseUniquePropagator
 
 
@@ -123,6 +124,23 @@ class ConstraintCompiler:
             If reify=True: name of boolean variable (0/1)
             If reify=False: None (creates propagator directly)
         """
+        # Fast path: X == Y + Z  ->  fused EqualSumPropagator (no temp var)
+        if not reify and constraint.op == CmpOp.Eq:
+            if isinstance(constraint.right, BinaryOpConstraint) and constraint.right.op == BinOp.Add:
+                lhs_var = self._compile_constraint(constraint.left)
+                a_var = self._compile_constraint(constraint.right.left)
+                b_var = self._compile_constraint(constraint.right.right)
+                if all(v is not None for v in (lhs_var, a_var, b_var)):
+                    self.propagators.append(EqualSumPropagator(lhs_var, a_var, b_var))
+                    return None
+            if isinstance(constraint.left, BinaryOpConstraint) and constraint.left.op == BinOp.Add:
+                rhs_var = self._compile_constraint(constraint.right)
+                a_var = self._compile_constraint(constraint.left.left)
+                b_var = self._compile_constraint(constraint.left.right)
+                if all(v is not None for v in (rhs_var, a_var, b_var)):
+                    self.propagators.append(EqualSumPropagator(rhs_var, a_var, b_var))
+                    return None
+
         # Compile operands
         left_var = self._compile_constraint(constraint.left)
         right_var = self._compile_constraint(constraint.right)
@@ -198,7 +216,8 @@ class ConstraintCompiler:
         Compile a boolean operation (AND/OR).
         
         For AND: all sub-constraints must be satisfied (just compile each)
-        For OR: reify each operand into a boolean variable, add BoolOrPropagator
+        For OR: use direct disjunctive propagator when both operands are
+        simple comparisons; otherwise fall back to reification + BoolOrPropagator.
         """
         if constraint.op == BoolOp.And:
             # AND: compile each sub-constraint independently
@@ -206,6 +225,24 @@ class ConstraintCompiler:
                 self._compile_constraint(value)
             return None
         elif constraint.op == BoolOp.Or:
+            # Fast path: N-operand Or where every operand is a simple comparison
+            if len(constraint.values) >= 2 and all(
+                isinstance(v, CompareConstraint) for v in constraint.values
+            ):
+                try:
+                    clauses = []
+                    for v in constraint.values:
+                        lv = self._compile_constraint(v.left)
+                        rv = self._compile_constraint(v.right)
+                        if lv is None or rv is None:
+                            raise CompilationError("operand produced no value")
+                        clauses.append((lv, v.op, rv))
+                    self.propagators.append(
+                        DisjunctiveComparisonPropagator(clauses))
+                    return None
+                except CompilationError:
+                    pass  # fall through to reification
+
             # OR: reify each operand, then enforce "at least one is true"
             bool_vars = []
             for value in constraint.values:

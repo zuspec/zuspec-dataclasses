@@ -125,33 +125,24 @@ class ComparisonReifier(Propagator):
     
     def _is_definitely_true(self, lhs_domain: IntDomain, rhs_domain: IntDomain) -> bool:
         """Check if comparison is definitely true for all values in domains."""
+        lhs_lo = lhs_domain.intervals[0][0] if lhs_domain.intervals else None
+        lhs_hi = lhs_domain.intervals[-1][1] if lhs_domain.intervals else None
+        rhs_lo = rhs_domain.intervals[0][0] if rhs_domain.intervals else None
+        rhs_hi = rhs_domain.intervals[-1][1] if rhs_domain.intervals else None
+        if any(v is None for v in (lhs_lo, lhs_hi, rhs_lo, rhs_hi)):
+            return False
         if self.op == CmpOp.Eq:
-            # Equal: true if both domains are singleton and equal
-            return lhs_domain.is_singleton() and rhs_domain.is_singleton() and \
-                   list(lhs_domain.values())[0] == list(rhs_domain.values())[0]
+            return lhs_domain.is_singleton() and rhs_domain.is_singleton() and lhs_lo == rhs_lo
         elif self.op == CmpOp.NotEq:
-            # Not equal: true if domains don't overlap
             return lhs_domain.intersect(rhs_domain).is_empty()
         elif self.op == CmpOp.Lt:
-            # Less than: true if max(lhs) < min(rhs)
-            lhs_max = max(lhs_domain.values())
-            rhs_min = min(rhs_domain.values())
-            return lhs_max < rhs_min
+            return lhs_hi < rhs_lo
         elif self.op == CmpOp.LtE:
-            # Less than or equal: true if max(lhs) <= min(rhs)
-            lhs_max = max(lhs_domain.values())
-            rhs_min = min(rhs_domain.values())
-            return lhs_max <= rhs_min
+            return lhs_hi <= rhs_lo
         elif self.op == CmpOp.Gt:
-            # Greater than: true if min(lhs) > max(rhs)
-            lhs_min = min(lhs_domain.values())
-            rhs_max = max(rhs_domain.values())
-            return lhs_min > rhs_max
+            return lhs_lo > rhs_hi
         elif self.op == CmpOp.GtE:
-            # Greater than or equal: true if min(lhs) >= max(rhs)
-            lhs_min = min(lhs_domain.values())
-            rhs_max = max(rhs_domain.values())
-            return lhs_min >= rhs_max
+            return lhs_lo >= rhs_hi
         return False
     
     def _is_definitely_false(self, lhs_domain: IntDomain, rhs_domain: IntDomain) -> bool:
@@ -173,24 +164,47 @@ class ComparisonReifier(Propagator):
     
     def _enforce_comparison(self, lhs_domain: IntDomain, rhs_domain: IntDomain, op: CmpOp) -> tuple:
         """Enforce the comparison by filtering domains."""
-        # For simplicity, enumerate valid combinations (works for small domains)
-        if lhs_domain.size() <= 100 and rhs_domain.size() <= 100:
-            valid_lhs = set()
-            valid_rhs = set()
-            
-            for lhs_val in lhs_domain.values():
-                for rhs_val in rhs_domain.values():
-                    if self._check_comparison(lhs_val, op, rhs_val):
-                        valid_lhs.add(lhs_val)
-                        valid_rhs.add(rhs_val)
-            
-            if valid_lhs and valid_rhs:
-                lhs_new = self._values_to_domain(valid_lhs, lhs_domain.width, lhs_domain.signed)
-                rhs_new = self._values_to_domain(valid_rhs, rhs_domain.width, rhs_domain.signed)
-                return lhs_domain.intersect(lhs_new), rhs_domain.intersect(rhs_new)
-        
-        # For large domains, return unchanged (conservative)
-        return lhs_domain, rhs_domain
+        # Use interval bounds for O(1) enforcement instead of enumeration.
+        lhs_lo = lhs_domain.intervals[0][0] if lhs_domain.intervals else 0
+        lhs_hi = lhs_domain.intervals[-1][1] if lhs_domain.intervals else 0
+        rhs_lo = rhs_domain.intervals[0][0] if rhs_domain.intervals else 0
+        rhs_hi = rhs_domain.intervals[-1][1] if rhs_domain.intervals else 0
+
+        new_lhs = lhs_domain
+        new_rhs = rhs_domain
+
+        if op == CmpOp.Lt:
+            # lhs < rhs  =>  lhs <= rhs_hi-1, rhs >= lhs_lo+1
+            new_lhs = lhs_domain.intersect(IntDomain([(lhs_lo, rhs_hi - 1)], lhs_domain.width, lhs_domain.signed))
+            new_rhs = rhs_domain.intersect(IntDomain([(lhs_lo + 1, rhs_hi)], rhs_domain.width, rhs_domain.signed))
+        elif op == CmpOp.LtE:
+            # lhs <= rhs  =>  lhs <= rhs_hi, rhs >= lhs_lo
+            new_lhs = lhs_domain.intersect(IntDomain([(lhs_lo, rhs_hi)], lhs_domain.width, lhs_domain.signed))
+            new_rhs = rhs_domain.intersect(IntDomain([(lhs_lo, rhs_hi)], rhs_domain.width, rhs_domain.signed))
+        elif op == CmpOp.Gt:
+            # lhs > rhs  =>  lhs >= rhs_lo+1, rhs <= lhs_hi-1
+            new_lhs = lhs_domain.intersect(IntDomain([(rhs_lo + 1, lhs_hi)], lhs_domain.width, lhs_domain.signed))
+            new_rhs = rhs_domain.intersect(IntDomain([(rhs_lo, lhs_hi - 1)], rhs_domain.width, rhs_domain.signed))
+        elif op == CmpOp.GtE:
+            # lhs >= rhs  =>  lhs >= rhs_lo, rhs <= lhs_hi
+            new_lhs = lhs_domain.intersect(IntDomain([(rhs_lo, lhs_hi)], lhs_domain.width, lhs_domain.signed))
+            new_rhs = rhs_domain.intersect(IntDomain([(rhs_lo, lhs_hi)], rhs_domain.width, rhs_domain.signed))
+        elif op == CmpOp.Eq:
+            inter = lhs_domain.intersect(rhs_domain)
+            new_lhs = inter
+            new_rhs = inter
+        elif op == CmpOp.NotEq:
+            # Can only prune if one side is singleton
+            if lhs_domain.is_singleton():
+                val = lhs_domain.intervals[0][0]
+                new_rhs = rhs_domain.copy()
+                new_rhs.remove_value(val)
+            if rhs_domain.is_singleton():
+                val = rhs_domain.intervals[0][0]
+                new_lhs = lhs_domain.copy()
+                new_lhs.remove_value(val)
+
+        return new_lhs, new_rhs
     
     def _enforce_negation(self, lhs_domain: IntDomain, rhs_domain: IntDomain, op: CmpOp) -> tuple:
         """Enforce the negation of the comparison."""
@@ -256,3 +270,141 @@ class ComparisonReifier(Propagator):
         )
         
         return (bool_val == 1) == comp_result
+
+
+class DisjunctiveComparisonPropagator(Propagator):
+    """Enforces (C1) OR (C2) OR ... OR (Cn) without reification.
+
+    Each Ci is a simple comparison (lhs_i op_i rhs_i).  When all disjuncts
+    except one are definitely false, the remaining disjunct is enforced
+    directly via interval bounds.  This avoids creating intermediate boolean
+    variables and the per-round reification overhead.
+
+    Handles any number of disjuncts (2, 3, ...).
+    """
+
+    _NEGATED = {
+        CmpOp.Eq: CmpOp.NotEq, CmpOp.NotEq: CmpOp.Eq,
+        CmpOp.Lt: CmpOp.GtE, CmpOp.LtE: CmpOp.Gt,
+        CmpOp.Gt: CmpOp.LtE, CmpOp.GtE: CmpOp.Lt,
+    }
+
+    def __init__(self, clauses):
+        """Args:
+            clauses: list of (lhs_var_name, CmpOp, rhs_var_name) tuples.
+        """
+        self.clauses = clauses  # [(lhs, op, rhs), ...]
+        self._vars = set()
+        for lhs, _, rhs in clauses:
+            self._vars.add(lhs)
+            self._vars.add(rhs)
+
+    def propagate(self, variables):
+        # Resolve variable objects once
+        resolved = []
+        for lhs, op, rhs in self.clauses:
+            vl = variables.get(lhs)
+            vr = variables.get(rhs)
+            if vl is None or vr is None:
+                return PropagationResult.fixed_point()
+            if vl.domain.is_empty() or vr.domain.is_empty():
+                return PropagationResult.conflict()
+            resolved.append((vl, op, vr))
+
+        # Determine which disjuncts are definitely false
+        false_flags = [self._definitely_false(vl.domain, op, vr.domain)
+                       for vl, op, vr in resolved]
+        n_false = sum(false_flags)
+        n_total = len(self.clauses)
+
+        if n_false == n_total:
+            return PropagationResult.conflict()
+
+        # Only enforce when exactly one disjunct is not definitely false
+        if n_false < n_total - 1:
+            return PropagationResult.fixed_point()
+
+        # Find the single surviving disjunct and enforce it
+        changed = set()
+        for i, (vl, op, vr) in enumerate(resolved):
+            if false_flags[i]:
+                continue
+            new_l, new_r = self._enforce(vl.domain, op, vr.domain)
+            if new_l.is_empty() or new_r.is_empty():
+                return PropagationResult.conflict()
+            if new_l != vl.domain:
+                vl.domain = new_l; changed.add(vl)
+            if new_r != vr.domain:
+                vr.domain = new_r; changed.add(vr)
+            break  # only one survivor
+
+        if changed:
+            return PropagationResult.consistent(changed)
+        return PropagationResult.fixed_point()
+
+    # -- helpers (static-ish, no per-instance state) -----------------------
+
+    def _definitely_false(self, ld, op, rd):
+        """True when ``lhs op rhs`` is false for ALL values in the domains."""
+        if ld.is_empty() or rd.is_empty():
+            return True
+        l_lo, l_hi = ld.intervals[0][0], ld.intervals[-1][1]
+        r_lo, r_hi = rd.intervals[0][0], rd.intervals[-1][1]
+        neg = self._NEGATED[op]
+        if neg == CmpOp.Lt:   return l_hi < r_lo
+        if neg == CmpOp.LtE:  return l_hi <= r_lo
+        if neg == CmpOp.Gt:   return l_lo > r_hi
+        if neg == CmpOp.GtE:  return l_lo >= r_hi
+        if neg == CmpOp.Eq:
+            return ld.is_singleton() and rd.is_singleton() and l_lo == r_lo
+        if neg == CmpOp.NotEq:
+            return ld.intersect(rd).is_empty()
+        return False
+
+    def _enforce(self, ld, op, rd):
+        """Tighten domains so ``lhs op rhs`` can hold."""
+        l_lo = ld.intervals[0][0] if ld.intervals else 0
+        l_hi = ld.intervals[-1][1] if ld.intervals else 0
+        r_lo = rd.intervals[0][0] if rd.intervals else 0
+        r_hi = rd.intervals[-1][1] if rd.intervals else 0
+        new_l, new_r = ld, rd
+        if op == CmpOp.Lt:
+            new_l = ld.intersect(IntDomain([(l_lo, r_hi - 1)], ld.width, ld.signed))
+            new_r = rd.intersect(IntDomain([(l_lo + 1, r_hi)], rd.width, rd.signed))
+        elif op == CmpOp.LtE:
+            new_l = ld.intersect(IntDomain([(l_lo, r_hi)], ld.width, ld.signed))
+            new_r = rd.intersect(IntDomain([(l_lo, r_hi)], rd.width, rd.signed))
+        elif op == CmpOp.Gt:
+            new_l = ld.intersect(IntDomain([(r_lo + 1, l_hi)], ld.width, ld.signed))
+            new_r = rd.intersect(IntDomain([(r_lo, l_hi - 1)], rd.width, rd.signed))
+        elif op == CmpOp.GtE:
+            new_l = ld.intersect(IntDomain([(r_lo, l_hi)], ld.width, ld.signed))
+            new_r = rd.intersect(IntDomain([(r_lo, l_hi)], rd.width, rd.signed))
+        elif op == CmpOp.Eq:
+            inter = ld.intersect(rd)
+            new_l = inter; new_r = inter
+        elif op == CmpOp.NotEq:
+            if ld.is_singleton():
+                new_r = rd.copy(); new_r.remove_value(ld.intervals[0][0])
+            if rd.is_singleton():
+                new_l = ld.copy(); new_l.remove_value(rd.intervals[0][0])
+        return new_l, new_r
+
+    def affected_variables(self):
+        return self._vars
+
+    def is_satisfied(self, assignment):
+        for lhs, op, rhs in self.clauses:
+            a, b = assignment.get(lhs), assignment.get(rhs)
+            if a is None or b is None:
+                continue
+            ok = False
+            if op == CmpOp.Eq:    ok = (a == b)
+            elif op == CmpOp.NotEq: ok = (a != b)
+            elif op == CmpOp.Lt:    ok = (a < b)
+            elif op == CmpOp.LtE:   ok = (a <= b)
+            elif op == CmpOp.Gt:    ok = (a > b)
+            elif op == CmpOp.GtE:   ok = (a >= b)
+            if ok:
+                return True
+        return False

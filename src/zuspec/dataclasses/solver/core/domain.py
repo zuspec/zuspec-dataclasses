@@ -55,18 +55,38 @@ class IntDomain(Domain):
         
         # Normalize and merge intervals
         if intervals:
-            sorted_intervals = sorted(intervals, key=lambda x: x[0])
-            current = sorted_intervals[0]
-            
-            for interval in sorted_intervals[1:]:
-                # Check if intervals overlap or are adjacent
-                if interval[0] <= current[1] + 1:
-                    # Merge intervals
-                    current = (current[0], max(current[1], interval[1]))
-                else:
-                    self._intervals.append(current)
-                    current = interval
-            self._intervals.append(current)
+            if len(intervals) == 1:
+                # Single interval -- no sort/merge needed (common fast path)
+                self._intervals = list(intervals)
+            else:
+                sorted_intervals = sorted(intervals, key=lambda x: x[0])
+                current = sorted_intervals[0]
+                for interval in sorted_intervals[1:]:
+                    if interval[0] <= current[1] + 1:
+                        current = (current[0], max(current[1], interval[1]))
+                    else:
+                        self._intervals.append(current)
+                        current = interval
+                self._intervals.append(current)
+
+    @classmethod
+    def _from_normalized(cls, intervals: List[Tuple[int, int]], width: int, signed: bool) -> 'IntDomain':
+        """Fast constructor: intervals must already be sorted, non-overlapping, non-adjacent."""
+        obj = object.__new__(cls)
+        obj.width = width
+        obj.signed = signed
+        obj._intervals = intervals
+        return obj
+
+    @property
+    def min_val(self) -> int:
+        """Smallest value in the domain (O(1))."""
+        return self._intervals[0][0]
+
+    @property
+    def max_val(self) -> int:
+        """Largest value in the domain (O(1))."""
+        return self._intervals[-1][1]
 
     @property
     def intervals(self) -> List[Tuple[int, int]]:
@@ -103,7 +123,19 @@ class IntDomain(Domain):
             rng.shuffle(result)
             return result
 
-        # Draw n unique indices in [0, total) and map them to domain values.
+        # Fast path for single-interval domains (common case): use randint directly
+        if len(self._intervals) == 1:
+            lo, hi = self._intervals[0]
+            seen = set()
+            result = []
+            while len(result) < n:
+                v = rng.randint(lo, hi)
+                if v not in seen:
+                    seen.add(v)
+                    result.append(v)
+            return result
+
+        # Multi-interval: draw n unique indices in [0, total) and map to values.
         indices = sorted(rng.sample(range(total), n))
         result: List[int] = []
         cumulative = 0
@@ -122,9 +154,7 @@ class IntDomain(Domain):
 
     def copy(self) -> 'IntDomain':
         """Returns a copy of this domain"""
-        result = IntDomain([], self.width, self.signed)
-        result._intervals = self._intervals.copy()
-        return result
+        return IntDomain._from_normalized(self._intervals.copy(), self.width, self.signed)
 
     def intersect(self, other: 'IntDomain') -> 'IntDomain':
         """Returns intersection of this domain with another"""
@@ -148,7 +178,8 @@ class IntDomain(Domain):
             else:
                 j += 1
         
-        return IntDomain(result_intervals, self.width, self.signed)
+        # Result of intersect is already sorted and non-overlapping
+        return IntDomain._from_normalized(result_intervals, self.width, self.signed)
 
     def union(self, other: 'IntDomain') -> 'IntDomain':
         """Returns union of this domain with another"""
@@ -252,7 +283,9 @@ class BitVectorDomain(IntDomain):
 
     def copy(self) -> 'BitVectorDomain':
         """Returns a copy of this domain"""
-        result = BitVectorDomain([], self.width, self.signed)
+        result = object.__new__(BitVectorDomain)
+        result.width = self.width
+        result.signed = self.signed
         result._intervals = self._intervals.copy()
         return result
 

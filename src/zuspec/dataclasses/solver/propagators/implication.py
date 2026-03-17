@@ -100,14 +100,12 @@ class ImplicationPropagator(Propagator):
         return PropagationResult.fixed_point()
     
     def _is_definitely_true(self, domain: IntDomain) -> bool:
-        """Check if domain is definitely true (only contains 1)"""
-        values = list(domain.values())
-        return len(values) == 1 and values[0] == 1
+        """Check if domain is definitely true (only contains 1)."""
+        return domain.is_singleton() and domain.intervals[0][0] == 1
     
     def _is_definitely_false(self, domain: IntDomain) -> bool:
-        """Check if domain is definitely false (only contains 0)"""
-        values = list(domain.values())
-        return len(values) == 1 and values[0] == 0
+        """Check if domain is definitely false (only contains 0)."""
+        return domain.is_singleton() and domain.intervals[0][0] == 0
     
     def affected_variables(self) -> Set[str]:
         return {self.condition_var, self.consequence_var}

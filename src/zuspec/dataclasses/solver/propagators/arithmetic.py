@@ -880,3 +880,103 @@ class ModPropagator(Propagator):
             return False
         expected = assignment[self.lhs_var] % assignment[self.rhs_var]
         return assignment[self.result_var] == expected
+
+
+class EqualSumPropagator(Propagator):
+    """Fused propagator: result_var == lhs_var + rhs_var.
+
+    Combines AddPropagator + EqualPropagator into a single propagator
+    that directly enforces the equality without a temporary variable.
+    Uses interval arithmetic for large domains.
+    """
+
+    def __init__(self, result_var: str, lhs_var: str, rhs_var: str, bit_width: int = 64):
+        self.result_var = result_var
+        self.lhs_var = lhs_var
+        self.rhs_var = rhs_var
+        self.bit_width = bit_width
+        self.modulo = 2 ** bit_width
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        result = variables.get(self.result_var)
+        lhs = variables.get(self.lhs_var)
+        rhs = variables.get(self.rhs_var)
+
+        if not all([result, lhs, rhs]):
+            return PropagationResult.fixed_point()
+        if any(v.domain.is_empty() for v in [result, lhs, rhs]):
+            return PropagationResult.conflict()
+
+        changed = set()
+
+        # Forward: result must be within lhs + rhs range
+        for lhs_iv in lhs.domain.intervals:
+            for rhs_iv in rhs.domain.intervals:
+                pass  # just checking non-empty
+        fwd = self._sum_intervals(lhs.domain.intervals, rhs.domain.intervals)
+        new_r = IntDomain(fwd, result.domain.width, result.domain.signed)
+        old_r = result.domain
+        result.domain = result.domain.intersect(new_r)
+        if result.domain.is_empty():
+            return PropagationResult.conflict()
+        if result.domain != old_r:
+            changed.add(result)
+
+        # Backward: lhs must be within result - rhs range
+        bwd_l = self._diff_intervals(result.domain.intervals, rhs.domain.intervals)
+        new_l = IntDomain(bwd_l, lhs.domain.width, lhs.domain.signed)
+        old_l = lhs.domain
+        lhs.domain = lhs.domain.intersect(new_l)
+        if lhs.domain.is_empty():
+            return PropagationResult.conflict()
+        if lhs.domain != old_l:
+            changed.add(lhs)
+
+        # Backward: rhs must be within result - lhs range
+        bwd_r = self._diff_intervals(result.domain.intervals, lhs.domain.intervals)
+        new_rr = IntDomain(bwd_r, rhs.domain.width, rhs.domain.signed)
+        old_rr = rhs.domain
+        rhs.domain = rhs.domain.intersect(new_rr)
+        if rhs.domain.is_empty():
+            return PropagationResult.conflict()
+        if rhs.domain != old_rr:
+            changed.add(rhs)
+
+        if changed:
+            return PropagationResult.consistent(changed)
+        return PropagationResult.fixed_point()
+
+    def _sum_intervals(self, a_ivs, b_ivs):
+        result = []
+        for a_lo, a_hi in a_ivs:
+            for b_lo, b_hi in b_ivs:
+                s_lo = a_lo + b_lo
+                s_hi = a_hi + b_hi
+                if s_lo >= self.modulo or s_hi >= self.modulo:
+                    result.append((0, self.modulo - 1))
+                else:
+                    result.append((s_lo, s_hi))
+        return result
+
+    def _diff_intervals(self, res_ivs, sub_ivs):
+        result = []
+        for r_lo, r_hi in res_ivs:
+            for s_lo, s_hi in sub_ivs:
+                d_lo = r_lo - s_hi
+                d_hi = r_hi - s_lo
+                if d_hi < 0:
+                    result.append((self.modulo + d_lo, self.modulo + d_hi))
+                elif d_lo < 0:
+                    result.append((0, d_hi))
+                    result.append((self.modulo + d_lo, self.modulo - 1))
+                else:
+                    result.append((d_lo, d_hi))
+        return result
+
+    def affected_variables(self) -> Set[str]:
+        return {self.result_var, self.lhs_var, self.rhs_var}
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        if not all(v in assignment for v in [self.result_var, self.lhs_var, self.rhs_var]):
+            return False
+        return assignment[self.result_var] == (assignment[self.lhs_var] + assignment[self.rhs_var]) % self.modulo

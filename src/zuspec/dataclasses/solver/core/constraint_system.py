@@ -171,3 +171,22 @@ class ConstraintSystem:
             f"constraints={len(self.constraints)}, "
             f"components={len(self.connected_components)})"
         )
+
+    def copy(self) -> 'ConstraintSystem':
+        """Return a lightweight copy with fresh variable domains.
+
+        Constraints and array_metadata are shared (they are immutable
+        descriptions).  Variables are copied so each solve gets
+        independent domains.
+        """
+        cs = ConstraintSystem.__new__(ConstraintSystem)
+        cs.variables = {n: Variable(v.name, v.domain.copy(), v.kind)
+                        for n, v in self.variables.items()}
+        cs.constraints = self.constraints          # shared (immutable AST)
+        cs.array_metadata = self.array_metadata    # shared
+        cs.dependency_graph = self.dependency_graph
+        cs.connected_components = self.connected_components
+        cs.randc_variables = [cs.variables[v.name] for v in self.randc_variables
+                              if v.name in cs.variables]
+        cs.solve_order = self.solve_order
+        return cs
