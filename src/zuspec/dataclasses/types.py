@@ -296,6 +296,43 @@ class Struct(TypeBase):
     pass
 
 
+class Buffer(Struct):
+    """PSS buffer flow-object base type.
+
+    A buffer is produced by one action and consumed by another.
+    Use ``zdc.output()`` / ``zdc.input()`` to declare buffer fields on actions.
+    """
+    pass
+
+
+class Stream(Struct):
+    """PSS stream flow-object base type.
+
+    A stream is a directional, ordered sequence of data items between actions.
+    Use ``zdc.output()`` / ``zdc.input()`` to declare stream fields on actions.
+    """
+    pass
+
+
+class State(Struct):
+    """PSS state flow-object base type.
+
+    A state persists across action traversals.  The ``initial`` attribute is
+    ``True`` when the state has not yet been written by any action.
+    """
+    initial: bool = False
+
+
+class Resource(Struct):
+    """PSS resource base type.
+
+    Resources are claimed by actions via ``zdc.lock()`` (exclusive) or
+    ``zdc.share()`` (shared).  The ``instance_id`` attribute is assigned by
+    the pool when the resource is allocated.
+    """
+    instance_id: int = 0
+
+
 class Bundle(TypeBase):
     """Bundle base class for interface/port collections with directionality.
     

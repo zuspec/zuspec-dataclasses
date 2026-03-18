@@ -5,7 +5,7 @@ import inspect
 from enum import Enum
 from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Any, Set
 from ..types import Component
-from ..decorators import ExecProc, ExecSync, ExecComb
+from ..decorators import ExecProc, ExecSync, ExecComb, Input, Output
 
 if TYPE_CHECKING:
     from .obj_factory import ObjFactory, SignalDescriptor
@@ -160,8 +160,10 @@ class CompImplRT(object):
             if not attr_name.startswith('_'):
                 attr = getattr(type(comp), attr_name, None)
                 if isinstance(attr, SignalDescriptor):
-                    # Only initialize if not already set, use descriptor's default value
-                    if attr.name not in self._signal_values:
+                    # Overwrite any stale Input/Output marker objects (from default_factory)
+                    # with the descriptor's proper integer default_value.
+                    current = self._signal_values.get(attr.name)
+                    if current is None or isinstance(current, (Input, Output)):
                         self._signal_values[attr.name] = attr.default_value
         
         self._eval_initialized = True

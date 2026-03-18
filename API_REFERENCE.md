@@ -507,6 +507,140 @@ profile = zdc.profiles.get_profile_by_name("retargetable")
 ### `DataModelFactory`
 Factory for creating IR data model from Python classes.
 
+## PSS Activities
+
+### Flow-Object and Resource Base Types
+
+#### `Buffer`
+Base class for PSS buffer flow-objects. Fields declared with `input()` or
+`output()` in an action create directed data-flow edges in the activity graph.
+```python
+@zdc.dataclass
+class DataBuff(zdc.Buffer):
+    seg: zdc.u32 = zdc.rand()
+```
+
+#### `Stream`
+Base class for PSS stream flow-objects (FIFO-like data flow).
+```python
+@zdc.dataclass
+class DataStream(zdc.Stream):
+    width: zdc.u8 = zdc.rand()
+```
+
+#### `State`
+Base class for PSS state flow-objects (mutable shared state).
+```python
+@zdc.dataclass
+class ConfigState(zdc.State):
+    mode: zdc.u4 = zdc.rand()
+```
+
+#### `Resource`
+Base class for PSS resources (hardware units with exclusive/shared access).
+```python
+@zdc.dataclass
+class DmaChannel(zdc.Resource):
+    priority: zdc.u4 = zdc.rand()
+```
+
+### Resource Field Helpers
+
+#### `lock(size=None)`
+Declare an exclusive (lock) resource claim on an action field. The annotated
+type must be a `Resource` subclass.
+```python
+chan: DmaChannel = zdc.lock()
+```
+Sets field metadata `{"kind": "resource_ref", "claim": "lock"}`.
+
+#### `share(size=None)`
+Declare a shared resource claim on an action field.
+```python
+cpu: CpuCore = zdc.share()
+```
+Sets field metadata `{"kind": "resource_ref", "claim": "share"}`.
+
+### `@zdc.extend`
+Mark a class as a PSS type extension of its base class.
+
+```python
+@zdc.extend
+class WriteDataExt(WriteData):
+    tag: zdc.u4 = zdc.rand()
+```
+
+Sets `cls.__is_extension__ = True` and `cls.__extends__ = <base class>`.
+Raises `TypeError` if the class has no valid zuspec base.
+
+### `ActivityParser`
+AST parser for `async def activity(self)` method bodies. Returns an
+`ActivitySequenceBlock` IR node. Results are cached by source-text hash.
+
+```python
+from zuspec.dataclasses.activity_parser import ActivityParser
+ir = ActivityParser().parse(MyAction.activity)
+```
+
+### `ActivityParseError`
+Exception raised when an unsupported AST pattern is found in an activity body.
+
+### Activity DSL Stubs
+
+These functions are used **inside** `async def activity(self)` bodies. They
+are parsed from AST and never executed at decoration time.
+
+| Function | PSS construct | Returns |
+|---|---|---|
+| `do(ActionType)` | Anonymous traversal | context manager |
+| `parallel(**join)` | Parallel block | context manager |
+| `schedule(**join)` | Schedule block | context manager |
+| `sequence()` | Explicit sequence block | context manager |
+| `atomic()` | Atomic region | context manager |
+| `select()` | Select statement | context manager |
+| `branch(guard=None, weight=None)` | Select branch | context manager |
+| `do_while(condition)` | Do-while loop | context manager |
+| `while_do(condition)` | While-do loop | context manager |
+| `replicate(count)` | Replicate block | context manager |
+| `constraint()` | Inline constraint block | context manager |
+| `bind(src, dst)` | Flow-object bind | (parsed only) |
+
+**`join` keyword arguments** for `parallel()` and `schedule()`:
+
+| Keyword | Meaning |
+|---|---|
+| `join_branch='label'` | Join on a named branch |
+| `join_none=True` | Fire-and-forget (no join) |
+| `join_first=N` | Join after N branches finish |
+| `join_select=N` | Join on selected N branches |
+
+### Activity IR Nodes (`zuspec.dataclasses.ir.activity`)
+
+All nodes follow the `Base.accept(visitor)` pattern.
+
+| IR Node | Fields | Description |
+|---|---|---|
+| `ActivitySequenceBlock` | `stmts` | Top-level or explicit sequence |
+| `ActivityTraversal` | `handle`, `inline_constraints` | Named handle traversal |
+| `ActivityAnonTraversal` | `action_type`, `label`, `inline_constraints` | `do(Type)` traversal |
+| `ActivitySuper` | — | `super().activity()` |
+| `ActivityParallel` | `stmts`, `join_spec` | Parallel block |
+| `ActivitySchedule` | `stmts`, `join_spec` | Schedule block |
+| `ActivityAtomic` | `stmts` | Atomic region |
+| `ActivityRepeat` | `count`, `index_var`, `body` | `for i in range(N)` |
+| `ActivityForeach` | `collection`, `item_var`, `index_var`, `body` | `for x in collection` |
+| `ActivityReplicate` | `count`, `label`, `body` | `for i in replicate(N)` |
+| `ActivityDoWhile` | `condition`, `body` | Do-while loop |
+| `ActivityWhileDo` | `condition`, `body` | While-do loop |
+| `ActivitySelect` | `branches` | Non-deterministic select |
+| `SelectBranch` | `guard`, `weight`, `body` | One branch of a select |
+| `ActivityIfElse` | `condition`, `then_stmts`, `else_stmts` | If/else |
+| `ActivityMatch` | `subject`, `cases` | Match statement |
+| `MatchCase` | `pattern`, `body` | One case of a match |
+| `ActivityConstraint` | `constraints` | Inline constraint block |
+| `ActivityBind` | `src`, `dst` | Flow-object bind |
+| `JoinSpec` | `kind`, `branch_label`, `count` | Join specification |
+
 ### Submodules
 
 - `ir` - Intermediate representation (AST-like data model)

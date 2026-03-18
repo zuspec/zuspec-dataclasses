@@ -27,10 +27,16 @@ from .decorators import (
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
-    inst, tuple, view, constraint, rand, randc
+    inst, tuple, view, constraint, rand, randc,
+    lock, share, extend
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
+from .activity_parser import ActivityParser, ActivityParseError
+from .activity_dsl import (
+    do, parallel, schedule, sequence, atomic, select, branch,
+    do_while, while_do, replicate, constraint as activity_constraint, bind as activity_bind
+)
 from .types import *
 from .tlm import *
 from . import ir
@@ -53,6 +59,7 @@ __all__ = [
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
+    'lock', 'share', 'extend',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
     # From coverage
@@ -61,8 +68,14 @@ __all__ = [
     'implies', 'dist', 'unique', 'sum', 'ascending', 'descending', 'solve_order',
     # From constraint_parser
     'ConstraintParser', 'extract_rand_fields',
+    # From activity_parser
+    'ActivityParser', 'ActivityParseError',
+    # From activity_dsl
+    'do', 'parallel', 'schedule', 'sequence', 'atomic', 'select', 'branch',
+    'do_while', 'while_do', 'replicate',
     # From types (re-exported via *)
     'Action',
+    'Buffer', 'Stream', 'State', 'Resource',
     'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',

@@ -89,6 +89,29 @@ from .stmt import (
     # PSS-specific statements
     StmtRepeat, StmtRepeatWhile, StmtForeach, StmtYield, StmtRandomize
 )
+from .activity import (
+    JoinSpec,
+    ActivityStmt,
+    ActivitySequenceBlock,
+    ActivityParallel,
+    ActivitySchedule,
+    ActivityAtomic,
+    ActivityTraversal,
+    ActivityAnonTraversal,
+    ActivitySuper,
+    ActivityRepeat,
+    ActivityDoWhile,
+    ActivityWhileDo,
+    ActivityForeach,
+    ActivityReplicate,
+    SelectBranch,
+    ActivitySelect,
+    ActivityIfElse,
+    MatchCase,
+    ActivityMatch,
+    ActivityConstraint,
+    ActivityBind,
+)
 
 __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
@@ -123,7 +146,15 @@ __all__ = [
 "ExprSetComp","ExprGeneratorExp","ExprIfExp","ExprLambda","ExprNamedExpr",
 "WithItem","StmtWith","StmtExceptHandler","StmtTry","TypeIgnore","Module",
 "ExprJoinedStr","ExprFormattedValue","StmtMatch","StmtMatchCase","Pattern","PatternValue","PatternAs","PatternOr","PatternSequence",
-"Context"
+"Context",
+    # Activity IR nodes
+    "JoinSpec",
+    "ActivityStmt","ActivitySequenceBlock","ActivityParallel","ActivitySchedule","ActivityAtomic",
+    "ActivityTraversal","ActivityAnonTraversal","ActivitySuper",
+    "ActivityRepeat","ActivityDoWhile","ActivityWhileDo","ActivityForeach","ActivityReplicate",
+    "SelectBranch","ActivitySelect",
+    "ActivityIfElse","MatchCase","ActivityMatch",
+    "ActivityConstraint","ActivityBind",
 ]
 
 # Important to place after all data-model classes have been imported

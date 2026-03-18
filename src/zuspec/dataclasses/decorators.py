@@ -106,6 +106,18 @@ def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
 
         cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
+        # Detect activity/body mutual exclusion and parse the activity method
+        has_activity = 'activity' in cls.__dict__
+        has_body = 'body' in cls.__dict__
+        if has_activity and has_body:
+            raise TypeError(
+                f"@zdc.dataclass class '{cls.__name__}' defines both activity() and body(). "
+                "A compound action must define activity(); an atomic action must define body()."
+            )
+        if has_activity:
+            from .activity_parser import ActivityParser
+            cls_t.__activity__ = ActivityParser().parse(cls.__dict__['activity'])
+
         return cls_t
     
     # Handle both @dataclass and @dataclass(...) syntax
@@ -170,6 +182,87 @@ def field(
 
 def pool(default_factory=None):
     pass
+
+
+def extend(cls=None):
+    """Decorator marking a class as a PSS type extension of its base class.
+
+    The decorated class must inherit from exactly one ``@zdc.dataclass``-decorated
+    class (action, component, buffer, etc.).  Multiple extensions of the same
+    base type imply a PSS ``schedule`` block when composed.
+
+    Sets two class attributes:
+    - ``__extends__``: the base class being extended
+    - ``__is_extension__``: ``True``
+
+    Raises:
+        TypeError: If the class has no valid zuspec base class to extend.
+
+    Example::
+
+        @zdc.dataclass
+        class WriteData(zdc.Action[MyComp]):
+            size: zdc.u8 = zdc.rand()
+            async def body(self): ...
+
+        @zdc.extend
+        class WriteDataExt(WriteData):
+            tag: zdc.u4 = zdc.rand()
+    """
+    def _decorate(cls):
+        bases = [
+            b for b in cls.__bases__
+            if hasattr(b, '__dataclass_fields__') or hasattr(b, '__activity__')
+        ]
+        if not bases:
+            raise TypeError(
+                f"@zdc.extend: '{cls.__name__}' must inherit from a zuspec dataclass "
+                "(action, component, struct, buffer, stream, state, or resource)."
+            )
+        cls.__extends__ = bases[0]
+        cls.__is_extension__ = True
+        return cls
+
+    if cls is None:
+        return _decorate
+    return _decorate(cls)
+
+
+def lock(size: Optional[int] = None) -> Any:
+    """Declare an exclusive resource-lock claim on an action field.
+
+    The annotated field type must be a subclass of ``zdc.Resource``.
+
+    Args:
+        size: If provided, declares a fixed-size array of lock claims.
+
+    Example::
+
+        chan: DmaChannel = zdc.lock()
+        chans: List[DmaChannel] = zdc.lock(size=4)
+    """
+    meta: Dict[str, object] = {"kind": "resource_ref", "claim": "lock"}
+    if size is not None:
+        meta["size"] = size
+    return dc.field(default=None, metadata=meta)
+
+
+def share(size: Optional[int] = None) -> Any:
+    """Declare a shared resource claim on an action field.
+
+    The annotated field type must be a subclass of ``zdc.Resource``.
+
+    Args:
+        size: If provided, declares a fixed-size array of share claims.
+
+    Example::
+
+        cpu: CpuCore = zdc.share()
+    """
+    meta: Dict[str, object] = {"kind": "resource_ref", "claim": "share"}
+    if size is not None:
+        meta["size"] = size
+    return dc.field(default=None, metadata=meta)
 
 def rand(
         domain: Optional[tuple] = None,

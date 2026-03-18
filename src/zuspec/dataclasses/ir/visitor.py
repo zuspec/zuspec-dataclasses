@@ -63,4 +63,87 @@ class Visitor:
         o.visitDefault(self)
         pass
 
+    # ------------------------------------------------------------------
+    # Activity IR visitor methods (default: visit children via accept)
+    # ------------------------------------------------------------------
+
+    def visitJoinSpec(self, o):
+        pass
+
+    def visitActivityStmt(self, o):
+        o.visitDefault(self, type(o))
+
+    def visitActivitySequenceBlock(self, o):
+        for stmt in o.stmts:
+            stmt.accept(self)
+
+    def visitActivityParallel(self, o):
+        for stmt in o.stmts:
+            stmt.accept(self)
+
+    def visitActivitySchedule(self, o):
+        for stmt in o.stmts:
+            stmt.accept(self)
+
+    def visitActivityAtomic(self, o):
+        for stmt in o.stmts:
+            stmt.accept(self)
+
+    def visitActivityTraversal(self, o):
+        pass
+
+    def visitActivityAnonTraversal(self, o):
+        pass
+
+    def visitActivitySuper(self, o):
+        pass
+
+    def visitActivityRepeat(self, o):
+        for stmt in o.body:
+            stmt.accept(self)
+
+    def visitActivityDoWhile(self, o):
+        for stmt in o.body:
+            stmt.accept(self)
+
+    def visitActivityWhileDo(self, o):
+        for stmt in o.body:
+            stmt.accept(self)
+
+    def visitActivityForeach(self, o):
+        for stmt in o.body:
+            stmt.accept(self)
+
+    def visitActivityReplicate(self, o):
+        for stmt in o.body:
+            stmt.accept(self)
+
+    def visitSelectBranch(self, o):
+        for stmt in o.body:
+            stmt.accept(self)
+
+    def visitActivitySelect(self, o):
+        for branch in o.branches:
+            branch.accept(self)
+
+    def visitActivityIfElse(self, o):
+        for stmt in o.if_body:
+            stmt.accept(self)
+        for stmt in o.else_body:
+            stmt.accept(self)
+
+    def visitMatchCase(self, o):
+        for stmt in o.body:
+            stmt.accept(self)
+
+    def visitActivityMatch(self, o):
+        for case in o.cases:
+            case.accept(self)
+
+    def visitActivityConstraint(self, o):
+        pass
+
+    def visitActivityBind(self, o):
+        pass
+
 

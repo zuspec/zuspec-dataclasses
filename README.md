@@ -199,6 +199,145 @@ class Producer(zdc.Component):
             print(f"Received: {value}")
 ```
 
+### 8. PSS Activities
+
+PSS compound actions express complex test intent using an **activity** — a
+sequential or parallel composition of sub-action traversals.
+
+#### Flow-Object and Resource Base Types
+
+```python
+import zuspec.dataclasses as zdc
+
+@zdc.dataclass
+class DataBuff(zdc.Buffer):          # PSS buffer flow-object
+    seg: zdc.u32 = zdc.rand()
+
+@zdc.dataclass
+class DmaChannel(zdc.Resource):      # PSS resource
+    priority: zdc.u4 = zdc.rand()
+```
+
+| Base type   | PSS concept         | Field helpers       |
+|-------------|---------------------|---------------------|
+| `Buffer`    | Buffer flow-object  | `input()`, `output()` |
+| `Stream`    | Stream flow-object  | `input()`, `output()` |
+| `State`     | State flow-object   | `input()`, `output()` |
+| `Resource`  | Resource            | `lock()`, `share()` |
+
+#### Compound Action with Activity
+
+```python
+@zdc.dataclass
+class WriteData(zdc.Action[DmaComponent]):
+    data: DataBuff   = zdc.output()
+    chan: DmaChannel  = zdc.lock()
+    size: zdc.u8     = zdc.rand()
+
+    async def body(self): ...            # atomic action
+
+@zdc.dataclass
+class ReadData(zdc.Action[DmaComponent]):
+    data: DataBuff   = zdc.input()
+    chan: DmaChannel  = zdc.lock()
+
+    async def body(self): ...
+
+@zdc.dataclass
+class DmaXfer(zdc.Action[DmaComponent]):
+    wr: WriteData = zdc.field(default=None)
+    rd: ReadData  = zdc.field(default=None)
+
+    async def activity(self):
+        self.wr()                        # traverse wr sequentially
+        with self.rd():                  # traverse rd with inline constraint
+            self.rd.chan.priority > 5
+```
+
+The `@zdc.dataclass` decorator detects `async def activity(self)`, parses it
+from the Python AST (never executing it), and stores the structured IR on
+`DmaXfer.__activity__`.
+
+#### Scheduling Blocks
+
+```python
+async def activity(self):
+    with zdc.parallel():               # concurrent traversals
+        self.a()
+        self.b()
+
+    with zdc.parallel(join_first=1):   # stop after first branch finishes
+        self.x()
+        self.y()
+
+    with zdc.schedule():               # PSS schedule block
+        self.p()
+        self.q()
+
+    with zdc.atomic():                 # atomic (exclusive) region
+        self.z()
+```
+
+#### Control Flow
+
+```python
+async def activity(self):
+    # Repeat (count loop)
+    for i in range(self.count):
+        self.write()
+
+    # Foreach (collection iteration)
+    for item in self.data_array:
+        self.process()
+
+    # Select (non-deterministic choice)
+    with zdc.select():
+        with zdc.branch(weight=70):
+            self.fast_write()
+        with zdc.branch(weight=30):
+            self.slow_write()
+
+    # Conditional
+    if self.size > 64:
+        self.big_xfer()
+    else:
+        self.small_xfer()
+
+    # Bind flow objects
+    bind(self.producer.data_out, self.consumer.data_in)
+```
+
+#### Anonymous Traversal (`do`)
+
+```python
+async def activity(self):
+    zdc.do(WriteData)                  # anonymous traversal
+    with zdc.do(ReadData) as rd:       # anonymous with label + constraints
+        rd.size < 256
+```
+
+#### Type Extensions (`@zdc.extend`)
+
+```python
+@zdc.extend
+class WriteDataExt(WriteData):
+    tag: zdc.u4 = zdc.rand()          # adds a field to WriteData
+```
+
+`@zdc.extend` sets `__is_extension__ = True` and `__extends__` on the class.
+Multiple extensions of the same base imply a PSS `schedule` composition.
+
+#### Accessing the Activity IR
+
+```python
+from zuspec.dataclasses.ir.activity import ActivitySequenceBlock, ActivityTraversal
+
+ir = DmaXfer.__activity__             # ActivitySequenceBlock
+for stmt in ir.stmts:
+    if isinstance(stmt, ActivityTraversal):
+        print(stmt.handle, stmt.inline_constraints)
+```
+
 ## Documentation
 
 - **[User Guide](docs/intro.rst)** - Comprehensive language introduction
@@ -221,6 +360,8 @@ class Producer(zdc.Component):
 - ✅ Resource management (Lock, Pool, Memory)
 - ✅ Pure Python runtime with async support
 - ✅ Static type checking via MyPy plugin
+- ✅ PSS Activities — compound actions, scheduling blocks, control flow, flow-objects, resources
+- ✅ `@zdc.extend` for PSS type extensions
 
 **In Progress:**
 - 🔄 RTL execution engine for sync/comb processes
@@ -258,8 +399,10 @@ pyright src/
 ```
 src/zuspec/dataclasses/
 ├── __init__.py          # Main API exports with __all__
-├── decorators.py        # @dataclass, @sync, @comb, field(), etc.
-├── types.py             # Type system (Component, Bundle, u32, etc.)
+├── decorators.py        # @dataclass, @sync, @comb, field(), lock(), share(), extend(), etc.
+├── types.py             # Type system (Component, Bundle, Buffer, Stream, State, Resource, u32, etc.)
+├── activity_parser.py   # ActivityParser — AST parser for activity() methods
+├── activity_dsl.py      # DSL stubs: do, parallel, schedule, select, branch, bind, …
 ├── tlm.py              # TLM interfaces (GetIF, PutIF, Channel)
 ├── profiles.py         # Profile system and validators
 ├── data_model_factory.py # IR construction
@@ -269,6 +412,8 @@ src/zuspec/dataclasses/
 │   ├── edge.py         # Edge detection
 │   └── ...
 ├── ir/                 # IR data model
+│   ├── activity.py     # Activity IR nodes (ActivitySequenceBlock, ActivityParallel, …)
+│   └── ...
 └── mypy/              # MyPy plugin for static checking
 ```
 

@@ -43,14 +43,20 @@ class SignalDescriptor:
         if hasattr(obj, '_impl') and obj._impl and obj._impl._eval_initialized:
             return obj._impl.signal_read(obj, self.name)
         
-        # Fallback during construction
+        # Fallback during construction — guard against Input/Output marker objects
         if hasattr(obj, '_impl') and obj._impl:
-            return obj._impl._signal_values.get(self.name, self.default_value)
+            value = obj._impl._signal_values.get(self.name, self.default_value)
+            if isinstance(value, (Input, Output)):
+                return self.default_value
+            return value
         
         # _impl not yet set — return any pending pre-init value stored in __dict__
         pending_key = f'_sig_{self.name}'
         if pending_key in obj.__dict__:
-            return obj.__dict__[pending_key]
+            pending = obj.__dict__[pending_key]
+            if isinstance(pending, (Input, Output)):
+                return self.default_value
+            return pending
         return self.default_value
     
     def __set__(self, obj, value):
