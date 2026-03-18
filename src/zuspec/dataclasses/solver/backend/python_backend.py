@@ -11,9 +11,11 @@ from typing import Any, Optional, Tuple
 
 
 # Per-class cache: avoids rebuilding the struct type and constraint system
-# on every randomize() call.  Keyed by class id; uses weakref so the cache
-# entry disappears when the class is collected.
-_class_cache: dict[int, Tuple[Any, Any]] = {}
+# on every randomize() call.  WeakKeyDictionary keyed by the class object
+# itself so entries are evicted automatically when the class is GC'd, and
+# there is no risk of id() reuse returning a stale entry for a new class
+# that happens to be allocated at the same address.
+_class_cache: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 class PythonSolverBackend:
@@ -46,15 +48,14 @@ class PythonSolverBackend:
 
         try:
             cls = obj.__class__
-            cache_key = id(cls)
-            cached = _class_cache.get(cache_key)
+            cached = _class_cache.get(cls)
             if cached is not None:
                 struct_type, template_system = cached
             else:
                 struct_type = _extract_struct_type(obj)
                 builder = ConstraintSystemBuilder()
                 template_system = builder.build_from_struct(struct_type)
-                _class_cache[cache_key] = (struct_type, template_system)
+                _class_cache[cls] = (struct_type, template_system)
 
             # Deep-copy the constraint system so each solve gets fresh domains
             constraint_system = template_system.copy()
