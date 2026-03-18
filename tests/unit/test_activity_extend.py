@@ -80,8 +80,8 @@ def test_extend_action_with_activity():
         rd: ReadData = zdc.field(default=None)
 
         async def activity(self):
-            self.wr()
-            self.rd()
+            await self.wr()
+            await self.rd()
 
     @zdc.extend
     class DmaXferExt(DmaXfer):
@@ -163,8 +163,8 @@ def test_parser_cache_hit():
     """Parsing the same source twice returns the same IR object (cache hit)."""
     src = textwrap.dedent("""
         async def activity(self):
-            self.wr()
-            self.rd()
+            await self.wr()
+            await self.rd()
     """)
 
     parser = ActivityParser()
@@ -180,11 +180,11 @@ def test_parser_cache_miss_different_source():
     """Different source strings produce different IR objects."""
     src1 = textwrap.dedent("""
         async def activity(self):
-            self.wr()
+            await self.wr()
     """)
     src2 = textwrap.dedent("""
         async def activity(self):
-            self.rd()
+            await self.rd()
     """)
 
     parser = ActivityParser()
@@ -202,9 +202,9 @@ def test_parser_cache_populated():
     """After a parse call the result appears in _parse_cache."""
     src = textwrap.dedent("""
         async def activity(self):
-            self.unique_handle_xyz()
+            await self.unique_handle_xyz()
     """)
-    key = hash(src)
+    key = (hash(src), "", 1)
     _parse_cache.pop(key, None)  # ensure clean state
 
     parser = ActivityParser()

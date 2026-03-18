@@ -72,6 +72,81 @@ def randomize(obj: Any,
     get_backend().randomize(obj, seed=seed, timeout_ms=timeout_ms)
 
 
+class _HandleAccessRewriter(ast.NodeTransformer):
+    """Rewrite ``self.handle.field`` → ``self.field`` in constraint AST.
+
+    When inline constraints are written inside ``async with self.rd():``, the
+    expression ``self.rd.addr > 0`` references the sub-action's field via the
+    handle name.  The solver only knows about the sub-action's own fields, so
+    we strip the handle level: ``self.rd.addr`` → ``self.addr``.
+
+    For expressions already written as ``rd.addr`` (label form), the
+    AstToIrConverter already handles them correctly (ignores the object name
+    when the field name is found in the struct), so no rewriting is needed.
+    """
+
+    def __init__(self, handle: str) -> None:
+        self.handle = handle
+
+    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
+        self.generic_visit(node)
+        if (
+            isinstance(node.value, ast.Attribute)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "self"
+            and node.value.attr == self.handle
+        ):
+            # self.handle.field → self.field
+            return ast.Attribute(
+                value=ast.Name(id="self", ctx=ast.Load()),
+                attr=node.attr,
+                ctx=node.ctx,
+            )
+        return node
+
+
+def randomize_with_ast_constraints(
+    obj: Any,
+    stmts: List[ast.stmt],
+    handle: Optional[str] = None,
+    seed: Optional[int] = None,
+    timeout_ms: int = 1000,
+) -> None:
+    """Randomize *obj* with pre-parsed AST constraint statements.
+
+    Used by the activity runtime to apply ``async with self.handle():`` and
+    ``with do(Type) as label:`` inline constraints collected by the activity
+    parser (which now stores raw ``ast.stmt`` nodes).
+
+    Args:
+        obj: Action instance to randomize.
+        stmts: Raw AST statements from the constraint body (assert / bare expr).
+        handle: Handle or label name to strip from ``self.handle.field``
+                references.  If *None* no rewriting is performed.
+        seed: Random seed passed to the solver.
+        timeout_ms: Solver timeout in milliseconds.
+    """
+    import copy
+
+    if handle:
+        rewriter = _HandleAccessRewriter(handle)
+        rewritten: List[ast.stmt] = []
+        for s in stmts:
+            s2 = rewriter.visit(copy.deepcopy(s))
+            ast.fix_missing_locations(s2)
+            rewritten.append(s2)
+        stmts = rewritten
+
+    ctx = RandomizeWithContext(obj, seed, timeout_ms)
+    ctx.inline_constraints = stmts
+    try:
+        ctx._randomize_with_constraints()
+    except RandomizationError:
+        raise
+    except Exception as exc:
+        raise RandomizationError(f"Randomization with constraints failed: {exc}") from exc
+
+
 def randomize_with(obj: Any,
                    seed: Optional[int] = None,
                    timeout_ms: Optional[int] = 1000):

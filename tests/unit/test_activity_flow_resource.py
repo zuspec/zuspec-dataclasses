@@ -154,8 +154,8 @@ def test_bind_in_activity():
     """bind(self.producer.data_out, self.consumer.data_in) → ActivityBind IR."""
     ir = _parse("""
         async def activity(self):
-            self.producer()
-            self.consumer()
+            await self.producer()
+            await self.consumer()
             bind(self.producer.data_out, self.consumer.data_in)
     """)
     assert len(ir.stmts) == 3
@@ -169,8 +169,8 @@ def test_bind_multiple():
     """Multiple bind() calls in one activity."""
     ir = _parse("""
         async def activity(self):
-            self.wr()
-            self.rd()
+            await self.wr()
+            await self.rd()
             bind(self.wr.out_buf, self.rd.in_buf)
             bind(self.wr.out_state, self.rd.in_state)
     """)
@@ -221,8 +221,8 @@ def test_activity_with_resource_action():
         rd: ReadData = zdc.field(default=None)
 
         async def activity(self):
-            self.wr()
-            with self.rd():
+            await self.wr()
+            async with self.rd():
                 self.rd.chan.priority > 5
 
     # Assert IR structure
@@ -240,4 +240,6 @@ def test_activity_with_resource_action():
     assert isinstance(rd_t, ActivityTraversal)
     assert rd_t.handle == 'rd'
     assert len(rd_t.inline_constraints) == 1
-    assert rd_t.inline_constraints[0]['ops'] == ['>']
+    import ast
+    assert isinstance(rd_t.inline_constraints[0], ast.Expr)
+    assert isinstance(rd_t.inline_constraints[0].value.ops[0], ast.Gt)

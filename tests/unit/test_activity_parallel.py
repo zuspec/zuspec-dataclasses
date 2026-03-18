@@ -33,8 +33,8 @@ def test_parallel_basic():
     ir = _parse("""
         async def activity(self):
             with parallel():
-                self.a1()
-                self.a2()
+                await self.a1()
+                await self.a2()
     """)
     assert len(ir.stmts) == 1
     par = ir.stmts[0]
@@ -51,7 +51,7 @@ def test_parallel_join_all_is_default():
     ir = _parse("""
         async def activity(self):
             with parallel():
-                self.a1()
+                await self.a1()
     """)
     assert ir.stmts[0].join_spec is None
 
@@ -80,8 +80,8 @@ def test_parallel_join_none():
     ir = _parse("""
         async def activity(self):
             with parallel(join_none=True):
-                self.a1()
-                self.a2()
+                await self.a1()
+                await self.a2()
     """)
     js = ir.stmts[0].join_spec
     assert js is not None
@@ -95,8 +95,8 @@ def test_parallel_join_select():
     ir = _parse("""
         async def activity(self):
             with parallel(join_select=1):
-                self.a1()
-                self.a2()
+                await self.a1()
+                await self.a2()
     """)
     js = ir.stmts[0].join_spec
     assert js.kind == 'select'
@@ -110,9 +110,9 @@ def test_parallel_join_first():
     ir = _parse("""
         async def activity(self):
             with parallel(join_first=1):
-                self.a1()
-                self.a2()
-            self.a3()
+                await self.a1()
+                await self.a2()
+            await self.a3()
     """)
     js = ir.stmts[0].join_spec
     assert js.kind == 'first'
@@ -146,9 +146,9 @@ def test_schedule_basic():
     ir = _parse("""
         async def activity(self):
             with schedule():
-                self.a1()
-                self.a2()
-                self.a3()
+                await self.a1()
+                await self.a2()
+                await self.a3()
     """)
     assert len(ir.stmts) == 1
     sched = ir.stmts[0]
@@ -207,8 +207,8 @@ def test_sequence_explicit():
     ir = _parse("""
         async def activity(self):
             with sequence():
-                self.a1()
-                self.a2()
+                await self.a1()
+                await self.a2()
     """)
     assert len(ir.stmts) == 1
     seq = ir.stmts[0]
@@ -223,9 +223,9 @@ def test_sequence_nested_in_parallel():
         async def activity(self):
             with parallel():
                 with sequence():
-                    self.a1()
-                    self.a2()
-                self.a3()
+                    await self.a1()
+                    await self.a2()
+                await self.a3()
     """)
     par = ir.stmts[0]
     assert isinstance(par, ActivityParallel)
@@ -244,8 +244,8 @@ def test_atomic_basic():
     ir = _parse("""
         async def activity(self):
             with atomic():
-                self.a1()
-                self.a2()
+                await self.a1()
+                await self.a2()
     """)
     assert len(ir.stmts) == 1
     atom = ir.stmts[0]
@@ -276,11 +276,11 @@ def test_parallel_nested_inside_sequence():
     """Parallel block inside the default (implicit) sequence."""
     ir = _parse("""
         async def activity(self):
-            self.pre()
+            await self.pre()
             with parallel():
-                self.a1()
-                self.a2()
-            self.post()
+                await self.a1()
+                await self.a2()
+            await self.post()
     """)
     assert len(ir.stmts) == 3
     assert isinstance(ir.stmts[0], ActivityTraversal)
@@ -294,9 +294,9 @@ def test_schedule_nested_inside_parallel():
         async def activity(self):
             with parallel():
                 with schedule():
-                    self.a1()
-                    self.a2()
-                self.a3()
+                    await self.a1()
+                    await self.a2()
+                await self.a3()
     """)
     par = ir.stmts[0]
     assert isinstance(par, ActivityParallel)
@@ -312,7 +312,7 @@ def test_deeply_nested_blocks():
             with parallel():
                 with sequence():
                     with atomic():
-                        self.a1()
+                        await self.a1()
     """)
     par = ir.stmts[0]
     seq = par.stmts[0]

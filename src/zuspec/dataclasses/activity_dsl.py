@@ -19,10 +19,10 @@ Typical import (via ``zuspec.dataclasses``)::
         b: ReadAction
 
         async def activity(self):
-            self.a()
+            await self.a()
             with zdc.parallel():
                 zdc.do(WriteAction)
-                self.b()
+                await self.b()
 """
 from __future__ import annotations
 

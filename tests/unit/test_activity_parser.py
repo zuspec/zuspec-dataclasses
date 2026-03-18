@@ -42,7 +42,7 @@ def test_single_handle_traversal():
     """self.a1() → ActivityTraversal(handle='a1')."""
     ir = _parse_src("""
         async def activity(self):
-            self.a1()
+            await self.a1()
     """)
     assert isinstance(ir, ActivitySequenceBlock)
     assert len(ir.stmts) == 1
@@ -57,9 +57,9 @@ def test_multiple_sequential_traversals():
     """Multiple handle traversals → ActivitySequenceBlock with N nodes."""
     ir = _parse_src("""
         async def activity(self):
-            self.a1()
-            self.a2()
-            self.a3()
+            await self.a1()
+            await self.a2()
+            await self.a3()
     """)
     assert len(ir.stmts) == 3
     handles = [s.handle for s in ir.stmts]
@@ -71,10 +71,10 @@ def test_multiple_sequential_traversals():
 # ---------------------------------------------------------------------------
 
 def test_traversal_with_inline_constraints():
-    """with self.h(): constraint → ActivityTraversal with inline_constraints."""
+    """async with self.h(): constraint → ActivityTraversal with inline_constraints as ast.stmt."""
     ir = _parse_src("""
         async def activity(self):
-            with self.rd():
+            async with self.rd():
                 self.rd.chan_priority > 5
     """)
     assert len(ir.stmts) == 1
@@ -82,16 +82,19 @@ def test_traversal_with_inline_constraints():
     assert isinstance(t, ActivityTraversal)
     assert t.handle == 'rd'
     assert len(t.inline_constraints) == 1
+    import ast
     c = t.inline_constraints[0]
-    assert c['type'] == 'compare'
-    assert c['ops'] == ['>']
+    assert isinstance(c, ast.Expr)
+    assert isinstance(c.value, ast.Compare)
+    assert len(c.value.ops) == 1
+    assert isinstance(c.value.ops[0], ast.Gt)
 
 
 def test_traversal_with_empty_with_block():
     """with self.h(): pass → ActivityTraversal, no constraints."""
     ir = _parse_src("""
         async def activity(self):
-            with self.h():
+            async with self.h():
                 pass
     """)
     t = ir.stmts[0]
@@ -141,8 +144,12 @@ def test_anon_traversal_with_context_manager_label():
     assert t.label == 'wr'
     assert t.action_type == 'WriteAction'
     assert len(t.inline_constraints) == 1
+    import ast
     c = t.inline_constraints[0]
-    assert c['ops'] == ['>']
+    assert isinstance(c, ast.Expr)
+    assert isinstance(c.value, ast.Compare)
+    assert len(c.value.ops) == 1
+    assert isinstance(c.value.ops[0], ast.Gt)
 
 
 def test_anon_traversal_no_constraints_with_block():
@@ -188,7 +195,7 @@ def test_super_with_other_stmts():
     ir = _parse_src("""
         async def activity(self):
             super().activity()
-            self.a1()
+            await self.a1()
     """)
     assert len(ir.stmts) == 2
     assert isinstance(ir.stmts[0], ActivitySuper)
@@ -215,7 +222,7 @@ def test_dataclass_detects_activity():
         sub: SubAction = zdc.field(default=None)
 
         async def activity(self):
-            self.sub()
+            await self.sub()
 
     assert hasattr(CompoundAction, '__activity__')
     ir = CompoundAction.__activity__
@@ -266,7 +273,7 @@ def test_docstring_skipped():
     ir = _parse_src("""
         async def activity(self):
             \"\"\"This docstring should be ignored.\"\"\"
-            self.a1()
+            await self.a1()
     """)
     assert len(ir.stmts) == 1
     assert isinstance(ir.stmts[0], ActivityTraversal)

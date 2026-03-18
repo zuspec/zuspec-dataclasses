@@ -154,6 +154,7 @@ class ActivityAnonTraversal(ActivityStmt):
     action_type: str = dc.field()
     label: Optional[str] = dc.field(default=None)
     inline_constraints: List['Expr'] = dc.field(default_factory=list)
+    action_type_cls: Optional[type] = dc.field(default=None)
 
     def accept(self, v: 'Visitor') -> None:
         v.visitActivityAnonTraversal(self)

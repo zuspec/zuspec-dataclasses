@@ -42,7 +42,7 @@ def test_repeat_literal_count():
     ir = _parse("""
         async def activity(self):
             for i in range(3):
-                self.a1()
+                await self.a1()
     """)
     assert len(ir.stmts) == 1
     rep = ir.stmts[0]
@@ -59,7 +59,7 @@ def test_repeat_field_count():
     ir = _parse("""
         async def activity(self):
             for i in range(self.count):
-                self.a1()
+                await self.a1()
     """)
     rep = ir.stmts[0]
     assert isinstance(rep, ActivityRepeat)
@@ -86,8 +86,8 @@ def test_repeat_multi_body():
     ir = _parse("""
         async def activity(self):
             for i in range(self.n):
-                self.wr()
-                self.rd()
+                await self.wr()
+                await self.rd()
     """)
     rep = ir.stmts[0]
     assert len(rep.body) == 2
@@ -135,7 +135,7 @@ def test_foreach_with_enumerate():
     ir = _parse("""
         async def activity(self):
             for i, item in enumerate(self.items):
-                self.a1()
+                await self.a1()
     """)
     fe = ir.stmts[0]
     assert isinstance(fe, ActivityForeach)
@@ -153,7 +153,7 @@ def test_do_while():
     ir = _parse("""
         async def activity(self):
             with do_while(self.s1.last_one != 0):
-                self.s1()
+                await self.s1()
     """)
     dw = ir.stmts[0]
     assert isinstance(dw, ActivityDoWhile)
@@ -168,8 +168,8 @@ def test_do_while_multi_body():
     ir = _parse("""
         async def activity(self):
             with do_while(self.flag > 0):
-                self.a1()
-                self.a2()
+                await self.a1()
+                await self.a2()
     """)
     dw = ir.stmts[0]
     assert len(dw.body) == 2
@@ -248,9 +248,9 @@ def test_select_two_branches():
         async def activity(self):
             with select():
                 with branch():
-                    self.action1()
+                    await self.action1()
                 with branch():
-                    self.action2()
+                    await self.action2()
     """)
     sel = ir.stmts[0]
     assert isinstance(sel, ActivitySelect)
@@ -266,7 +266,7 @@ def test_select_branch_with_guard():
         async def activity(self):
             with select():
                 with branch(guard=self.a == 0):
-                    self.action1()
+                    await self.action1()
     """)
     branch = ir.stmts[0].branches[0]
     assert branch.guard is not None
@@ -280,9 +280,9 @@ def test_select_branch_with_weight():
         async def activity(self):
             with select():
                 with branch(weight=70):
-                    self.action1()
+                    await self.action1()
                 with branch(weight=30):
-                    self.action2()
+                    await self.action2()
     """)
     b0, b1 = ir.stmts[0].branches
     assert b0.weight['value'] == 70
@@ -295,7 +295,7 @@ def test_select_branch_guard_and_weight():
         async def activity(self):
             with select():
                 with branch(guard=self.x > 0, weight=20):
-                    self.action1()
+                    await self.action1()
     """)
     b = ir.stmts[0].branches[0]
     assert b.guard is not None
@@ -341,7 +341,7 @@ def test_if_no_else():
     ir = _parse("""
         async def activity(self):
             if self.x > 5:
-                self.a1()
+                await self.a1()
     """)
     ife = ir.stmts[0]
     assert isinstance(ife, ActivityIfElse)
@@ -356,9 +356,9 @@ def test_if_else():
     ir = _parse("""
         async def activity(self):
             if self.x > 5:
-                self.a1()
+                await self.a1()
             else:
-                self.a2()
+                await self.a2()
     """)
     ife = ir.stmts[0]
     assert len(ife.if_body) == 1
@@ -372,11 +372,11 @@ def test_if_elif_else():
     ir = _parse("""
         async def activity(self):
             if self.x > 10:
-                self.a1()
+                await self.a1()
             elif self.x > 5:
-                self.a2()
+                await self.a2()
             else:
-                self.a3()
+                await self.a3()
     """)
     ife = ir.stmts[0]
     assert len(ife.if_body) == 1
@@ -394,8 +394,8 @@ def test_if_with_parallel_body():
         async def activity(self):
             if self.mode == 0:
                 with parallel():
-                    self.a1()
-                    self.a2()
+                    await self.a1()
+                    await self.a2()
     """)
     ife = ir.stmts[0]
     assert isinstance(ife.if_body[0], ActivityParallel)
@@ -411,9 +411,9 @@ def test_match_basic():
         async def activity(self):
             match self.level:
                 case 0:
-                    self.action1()
+                    await self.action1()
                 case 1:
-                    self.action2()
+                    await self.action2()
     """)
     m = ir.stmts[0]
     assert isinstance(m, ActivityMatch)
@@ -430,9 +430,9 @@ def test_match_wildcard():
         async def activity(self):
             match self.level:
                 case 0:
-                    self.a1()
+                    await self.a1()
                 case _:
-                    self.a2()
+                    await self.a2()
     """)
     m = ir.stmts[0]
     assert m.cases[1].pattern == {'type': 'wildcard'}
@@ -444,11 +444,11 @@ def test_match_three_cases():
         async def activity(self):
             match self.security_level:
                 case 0:
-                    self.action1()
+                    await self.action1()
                 case 1:
-                    self.action2()
+                    await self.action2()
                 case _:
-                    self.action3()
+                    await self.action3()
     """)
     assert len(ir.stmts[0].cases) == 3
 
@@ -458,21 +458,23 @@ def test_match_three_cases():
 # ---------------------------------------------------------------------------
 
 def test_constraint_block():
-    """with constraint(): → ActivityConstraint with parsed exprs."""
+    """with constraint(): → ActivityConstraint with ast.stmt nodes."""
     ir = _parse("""
         async def activity(self):
-            self.a1()
-            self.a2()
+            await self.a1()
+            await self.a2()
             with constraint():
                 self.a1.size < 100
                 self.a1.addr != self.a2.addr
     """)
+    import ast
     assert len(ir.stmts) == 3
     con = ir.stmts[2]
     assert isinstance(con, ActivityConstraint)
     assert len(con.constraints) == 2
-    assert con.constraints[0]['ops'] == ['<']
-    assert con.constraints[1]['ops'] == ['!=']
+    c0, c1 = con.constraints
+    assert isinstance(c0, ast.Expr) and isinstance(c0.value.ops[0], ast.Lt)
+    assert isinstance(c1, ast.Expr) and isinstance(c1.value.ops[0], ast.NotEq)
 
 
 def test_constraint_block_empty():
@@ -495,8 +497,8 @@ def test_bind():
     """bind(self.producer.data_out, self.consumer.data_in) → ActivityBind."""
     ir = _parse("""
         async def activity(self):
-            self.producer()
-            self.consumer()
+            await self.producer()
+            await self.consumer()
             bind(self.producer.data_out, self.consumer.data_in)
     """)
     b = ir.stmts[2]

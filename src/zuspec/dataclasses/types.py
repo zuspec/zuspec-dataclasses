@@ -437,36 +437,27 @@ def _find_comp_instances(comp: 'Component', comp_type: type) -> list:
 class Action[T]:
     comp: T = field()
 
-    async def __call__(self, comp: 'Component') -> Self:
-        # Determine the component type parameter T from the concrete subclass
-        comp_type = None
-        for base in type(self).__orig_bases__:
-            origin = typing.get_origin(base)
-            if origin is not None and issubclass(origin, Action):
-                args = typing.get_args(base)
-                if args:
-                    comp_type = args[0]
-                    break
+    async def __call__(self, comp: Optional['Component'] = None) -> Self:
+        from .rt.activity_runner import ActivityRunner
+        from .rt.action_context import ActionContext
+        from .rt.pool_resolver import PoolResolver
+        import dataclasses as dc
+        import random
 
-        if comp_type is None:
-            raise RuntimeError(
-                f"Cannot determine component type parameter for {type(self).__name__}"
-            )
-
-        # Collect all matching component instances from the context component
-        candidates = _find_comp_instances(comp, comp_type)
-
-        if not candidates:
-            raise RuntimeError(
-                f"No instances of {comp_type.__name__} found within {type(comp).__name__}"
-            )
-
-        # Randomly select one and bind it
-        self.comp = random.choice(candidates)
-
-        # Execute the action body
-        await self.activity()
-
+        resolver = PoolResolver.build(comp)
+        ctx = ActionContext(
+            action=None,
+            comp=comp,
+            pool_resolver=resolver,
+            seed=random.randrange(2**32),
+        )
+        traversed = await ActivityRunner()._traverse(type(self), [], ctx)
+        # Copy fields from the traversed instance back onto self
+        try:
+            for f in dc.fields(traversed):
+                object.__setattr__(self, f.name, getattr(traversed, f.name))
+        except TypeError:
+            pass
         return self
 
     async def activity(self) -> None:

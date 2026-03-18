@@ -50,7 +50,7 @@ class ActivityParseError(ValueError):
     """Raised when an unsupported AST pattern is encountered."""
 
 
-_parse_cache: Dict[int, ActivitySequenceBlock] = {}
+_parse_cache: Dict[Tuple, ActivitySequenceBlock] = {}
 
 
 class ActivityParser:
@@ -71,7 +71,8 @@ class ActivityParser:
     def parse(self, method: Callable) -> ActivitySequenceBlock:
         """Parse an activity method and return the top-level IR node.
 
-        Results are cached by source hash; identical source is parsed only once.
+        Results are cached by (source hash, file, start_lineno); identical
+        source in different files produces distinct IR trees with correct loc.
 
         Args:
             method: The ``async def activity(self)`` method to parse.
@@ -83,9 +84,20 @@ class ActivityParser:
             ActivityParseError: If an unsupported AST pattern is encountered.
         """
         source = textwrap.dedent(inspect.getsource(method))
-        key = hash(source)
+        try:
+            src_file: str = inspect.getsourcefile(method) or ""
+            _, start_lineno = inspect.getsourcelines(method)
+        except (TypeError, OSError):
+            src_file = ""
+            start_lineno = 1
+        key = (hash(source), src_file, start_lineno)
         if key in _parse_cache:
             return _parse_cache[key]
+
+        # Store per-parse state used by _loc() and _resolve_type_cls()
+        self._src_file = src_file
+        self._start_lineno = start_lineno
+        self._method_globals: Dict[str, Any] = getattr(method, "__globals__", {})
 
         tree = ast.parse(source)
 
@@ -95,7 +107,10 @@ class ActivityParser:
                 f"Expected AsyncFunctionDef or FunctionDef, got {type(func_def).__name__}"
             )
 
-        result = ActivitySequenceBlock(stmts=self._parse_body(func_def.body))
+        result = ActivitySequenceBlock(
+            stmts=self._parse_body(func_def.body),
+            loc=self._loc(func_def),
+        )
         _parse_cache[key] = result
         return result
 
@@ -126,6 +141,9 @@ class ActivityParser:
         if isinstance(node, ast.With):
             return self._parse_with(node)
 
+        if isinstance(node, ast.AsyncWith):
+            return self._parse_async_with(node)
+
         if isinstance(node, ast.For):
             return self._parse_for(node)
 
@@ -145,28 +163,43 @@ class ActivityParser:
     # ------------------------------------------------------------------
 
     def _parse_expr_stmt(self, node: ast.expr) -> ActivityStmt:
-        """Handle bare expression statements (traversals, bind, super)."""
+        """Handle bare expression statements (traversals, bind, super).
 
-        # super().activity() → ActivitySuper
-        if self._is_super_activity(node):
-            return ActivitySuper()
+        Handle traversals must use ``await``: ``await self.handle()``.
+        Non-awaited ``self.handle()`` raises ``ActivityParseError``.
+        """
+        awaited = isinstance(node, ast.Await)
+        inner = node.value if awaited else node
 
-        # bind(src, dst) → ActivityBind
-        if self._is_call_name(node, "bind"):
-            call = node  # type: ast.Call
+        # super().activity() → ActivitySuper (no await needed)
+        if self._is_super_activity(inner):
+            return ActivitySuper(loc=self._loc(inner))
+
+        # bind(src, dst) → ActivityBind (no await needed)
+        if self._is_call_name(inner, "bind"):
+            call = inner  # type: ast.Call
             src = self._parse_expr(call.args[0])
             dst = self._parse_expr(call.args[1])
-            return ActivityBind(src=src, dst=dst)
+            return ActivityBind(src=src, dst=dst, loc=self._loc(inner))
 
-        # do(Type) → ActivityAnonTraversal (unlabeled)
-        if self._is_call_name(node, "do"):
+        # do(Type) → ActivityAnonTraversal (no await needed — no coroutine returned)
+        if self._is_call_name(inner, "do"):
+            type_name = self._type_name(inner.args[0])  # type: ignore[attr-defined]
             return ActivityAnonTraversal(
-                action_type=self._type_name(node.args[0])  # type: ignore[attr-defined]
+                action_type=type_name,
+                action_type_cls=self._resolve_type_cls(type_name),
+                loc=self._loc(inner),
             )
 
-        # self.handle() → ActivityTraversal
-        if isinstance(node, ast.Call) and self._is_self_attr_call(node):
-            return self._traversal_from_call(node)
+        # await self.handle() → ActivityTraversal
+        if isinstance(inner, ast.Call) and self._is_self_attr_call(inner):
+            if not awaited:
+                raise ActivityParseError(
+                    f"Handle traversal must be awaited: "
+                    f"use 'await {ast.unparse(inner)}' "
+                    f"at line {getattr(node, 'lineno', '?')}"
+                )
+            return self._traversal_from_call(inner)
 
         raise ActivityParseError(
             f"Unsupported expression statement: {ast.dump(node)}"
@@ -177,17 +210,23 @@ class ActivityParser:
     # ------------------------------------------------------------------
 
     def _parse_assign(self, node: ast.Assign) -> ActivityStmt:
-        """Handle ``x = do(Type)`` — labeled anonymous traversal."""
+        """Handle ``x = do(Type)`` and ``x = await do(Type)`` — labeled anonymous traversal."""
+        rhs = node.value
+        if isinstance(rhs, ast.Await):
+            rhs = rhs.value
         if (
             len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
-            and self._is_call_name(node.value, "do")
+            and self._is_call_name(rhs, "do")
         ):
             label = node.targets[0].id
-            call: ast.Call = node.value  # type: ignore[assignment]
+            call: ast.Call = rhs  # type: ignore[assignment]
+            type_name = self._type_name(call.args[0])
             return ActivityAnonTraversal(
-                action_type=self._type_name(call.args[0]),
+                action_type=type_name,
                 label=label,
+                action_type_cls=self._resolve_type_cls(type_name),
+                loc=self._loc(node),
             )
 
         raise ActivityParseError(
@@ -213,23 +252,29 @@ class ActivityParser:
             call: ast.Call = ctx  # type: ignore[assignment]
             label = asname.id if isinstance(asname, ast.Name) else None
             constraints = self._parse_inline_constraints(node.body)
+            type_name = self._type_name(call.args[0])
             return ActivityAnonTraversal(
-                action_type=self._type_name(call.args[0]),
+                action_type=type_name,
                 label=label,
                 inline_constraints=constraints,
+                action_type_cls=self._resolve_type_cls(type_name),
+                loc=self._loc(node),
             )
 
-        # with self.handle(): → ActivityTraversal (with constraints)
+        # with self.handle(): → error; must be async with
         if isinstance(ctx, ast.Call) and self._is_self_attr_call(ctx):
-            traversal = self._traversal_from_call(ctx)
-            traversal.inline_constraints = self._parse_inline_constraints(node.body)
-            return traversal
+            raise ActivityParseError(
+                f"Handle traversal with constraints must use 'async with': "
+                f"use 'async with {ast.unparse(ctx)}:' "
+                f"at line {getattr(node, 'lineno', '?')}"
+            )
 
         # with parallel(...): → ActivityParallel
         if self._is_call_name(ctx, "parallel"):
             return ActivityParallel(
                 stmts=self._parse_body(node.body),
                 join_spec=self._parse_join_spec(ctx),  # type: ignore[arg-type]
+                loc=self._loc(node),
             )
 
         # with schedule(...): → ActivitySchedule
@@ -237,19 +282,20 @@ class ActivityParser:
             return ActivitySchedule(
                 stmts=self._parse_body(node.body),
                 join_spec=self._parse_join_spec(ctx),  # type: ignore[arg-type]
+                loc=self._loc(node),
             )
 
         # with sequence(): → ActivitySequenceBlock (explicit)
         if self._is_call_name(ctx, "sequence"):
-            return ActivitySequenceBlock(stmts=self._parse_body(node.body))
+            return ActivitySequenceBlock(stmts=self._parse_body(node.body), loc=self._loc(node))
 
         # with atomic(): → ActivityAtomic
         if self._is_call_name(ctx, "atomic"):
-            return ActivityAtomic(stmts=self._parse_body(node.body))
+            return ActivityAtomic(stmts=self._parse_body(node.body), loc=self._loc(node))
 
         # with select(): → ActivitySelect
         if self._is_call_name(ctx, "select"):
-            return self._parse_select(node.body)
+            return self._parse_select(node.body, node)
 
         # with branch(...): → SelectBranch (handled by _parse_select)
         if self._is_call_name(ctx, "branch"):
@@ -264,6 +310,7 @@ class ActivityParser:
             return ActivityDoWhile(
                 condition=cond,
                 body=self._parse_body(node.body),
+                loc=self._loc(node),
             )
 
         # with while_do(cond): → ActivityWhileDo
@@ -273,16 +320,38 @@ class ActivityParser:
             return ActivityWhileDo(
                 condition=cond,
                 body=self._parse_body(node.body),
+                loc=self._loc(node),
             )
 
         # with constraint(): → ActivityConstraint
         if self._is_call_name(ctx, "constraint"):
             return ActivityConstraint(
-                constraints=self._parse_inline_constraints(node.body)
+                constraints=self._parse_inline_constraints(node.body),
+                loc=self._loc(node),
             )
 
         raise ActivityParseError(
             f"Unsupported 'with' context in activity: {ast.dump(ctx)}"
+        )
+
+    def _parse_async_with(self, node: ast.AsyncWith) -> ActivityStmt:
+        """Handle ``async with self.handle(): ...`` — traversal with inline constraints."""
+        if len(node.items) != 1:
+            raise ActivityParseError(
+                "Activity 'async with' blocks must have exactly one context expression"
+            )
+        item = node.items[0]
+        ctx = item.context_expr
+
+        # async with self.handle(): → ActivityTraversal (with constraints)
+        if isinstance(ctx, ast.Call) and self._is_self_attr_call(ctx):
+            traversal = self._traversal_from_call(ctx)
+            traversal.inline_constraints = self._parse_inline_constraints(node.body)
+            return traversal
+
+        raise ActivityParseError(
+            f"'async with' in activity only valid for handle traversals (self.handle()): "
+            f"{ast.dump(ctx)}"
         )
 
     # ------------------------------------------------------------------
@@ -305,6 +374,7 @@ class ActivityParser:
                 count=count,
                 index_var=index_var,
                 body=self._parse_body(node.body),
+                loc=self._loc(node),
             )
 
         # for i in replicate(N) → ActivityReplicate
@@ -318,6 +388,7 @@ class ActivityParser:
                 index_var=index_var,
                 label=label,
                 body=self._parse_body(node.body),
+                loc=self._loc(node),
             )
 
         # for i, item in enumerate(self.collection) → ActivityForeach (indexed)
@@ -336,6 +407,7 @@ class ActivityParser:
                 collection=collection,
                 index_var=index_var,
                 body=self._parse_body(node.body),
+                loc=self._loc(node),
             )
 
         # for item in self.collection → ActivityForeach
@@ -346,6 +418,7 @@ class ActivityParser:
                 iterator=iterator,
                 collection=collection,
                 body=self._parse_body(node.body),
+                loc=self._loc(node),
             )
 
         raise ActivityParseError(
@@ -362,13 +435,12 @@ class ActivityParser:
         else_body: List[ActivityStmt] = []
 
         if node.orelse:
-            # Single elif / else — flatten into else_body
             if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
                 else_body = [self._parse_if(node.orelse[0])]
             else:
                 else_body = self._parse_body(node.orelse)
 
-        return ActivityIfElse(condition=condition, if_body=if_body, else_body=else_body)
+        return ActivityIfElse(condition=condition, if_body=if_body, else_body=else_body, loc=self._loc(node))
 
     def _parse_match(self, node: ast.Match) -> ActivityMatch:
         subject = self._parse_expr(node.subject)
@@ -377,7 +449,7 @@ class ActivityParser:
             pattern = self._parse_match_pattern(case.pattern)
             body = self._parse_body(case.body)
             cases.append(MatchCase(pattern=pattern, body=body))
-        return ActivityMatch(subject=subject, cases=cases)
+        return ActivityMatch(subject=subject, cases=cases, loc=self._loc(node))
 
     def _parse_match_pattern(self, pattern: ast.pattern) -> Dict[str, Any]:
         """Convert a match pattern to a dict representation."""
@@ -395,7 +467,7 @@ class ActivityParser:
     # Select / branch parsing
     # ------------------------------------------------------------------
 
-    def _parse_select(self, body: List[ast.stmt]) -> ActivitySelect:
+    def _parse_select(self, body: List[ast.stmt], parent_node: Optional[ast.AST] = None) -> ActivitySelect:
         branches: List[SelectBranch] = []
         for stmt in body:
             if isinstance(stmt, ast.With) and len(stmt.items) == 1:
@@ -411,7 +483,8 @@ class ActivityParser:
                 f"'with select():' body must contain only 'with branch():' blocks; "
                 f"found {ast.dump(stmt)}"
             )
-        return ActivitySelect(branches=branches)
+        loc = self._loc(parent_node) if parent_node is not None else None
+        return ActivitySelect(branches=branches, loc=loc)
 
     # ------------------------------------------------------------------
     # Join-spec parsing
@@ -440,21 +513,14 @@ class ActivityParser:
     # Inline constraint parsing
     # ------------------------------------------------------------------
 
-    def _parse_inline_constraints(self, body: List[ast.stmt]) -> List[Dict[str, Any]]:
-        """Parse constraint expressions from a ``with`` body."""
-        from .constraint_parser import ConstraintParser
-        cp = ConstraintParser()
-        constraints: List[Dict[str, Any]] = []
+    def _parse_inline_constraints(self, body: List[ast.stmt]) -> List[ast.stmt]:
+        """Return constraint AST statements verbatim for solver integration."""
+        result = []
         for stmt in body:
-            if isinstance(stmt, ast.Expr):
-                constraints.append(cp.parse_expr(stmt.value))
-            elif isinstance(stmt, ast.Pass):
-                pass
-            else:
-                raise ActivityParseError(
-                    f"Unsupported statement in inline constraint body: {ast.dump(stmt)}"
-                )
-        return constraints
+            if isinstance(stmt, ast.Pass):
+                continue
+            result.append(stmt)
+        return result
 
     # ------------------------------------------------------------------
     # Expression parsing (thin wrapper — produces dict, like ConstraintParser)
@@ -478,15 +544,36 @@ class ActivityParser:
             if handle is None:
                 raise ActivityParseError(f"Unsupported subscript traversal: {ast.dump(call)}")
             index = self._parse_expr(subscript.slice)
-            return ActivityTraversal(handle=handle, index=index)
+            return ActivityTraversal(handle=handle, index=index, loc=self._loc(call))
         # self.handle()
         if isinstance(func, ast.Attribute):
-            return ActivityTraversal(handle=func.attr)
+            return ActivityTraversal(handle=func.attr, loc=self._loc(call))
         raise ActivityParseError(f"Unsupported traversal call: {ast.dump(call)}")
 
     # ------------------------------------------------------------------
     # Predicate / utility helpers
     # ------------------------------------------------------------------
+
+    def _loc(self, ast_node: ast.AST) -> "Loc":
+        """Convert an AST node's lineno to an IR Loc instance."""
+        from .ir.base import Loc
+        line = getattr(ast_node, "lineno", 1)
+        pos = getattr(ast_node, "col_offset", 0)
+        return Loc(
+            file=getattr(self, "_src_file", ""),
+            line=getattr(self, "_start_lineno", 1) + line - 1,
+            pos=pos,
+        )
+
+    def _resolve_type_cls(self, type_name: str) -> Optional[type]:
+        """Resolve *type_name* to a class via method globals (best-effort)."""
+        globals_ = getattr(self, "_method_globals", {})
+        # Simple name
+        cls = globals_.get(type_name)
+        if cls is not None:
+            return cls
+        # Qualified name like "pkg.MyAction" — skip; runtime falls back to string
+        return None
 
     @staticmethod
     def _is_self_attr_call(node: ast.expr) -> bool:

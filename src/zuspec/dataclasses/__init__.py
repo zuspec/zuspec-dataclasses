@@ -28,7 +28,7 @@ from .decorators import (
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view, constraint, rand, randc,
-    lock, share, extend
+    lock, share, extend, pool, flow_output, flow_input
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
@@ -43,6 +43,11 @@ from . import ir
 from . import profiles
 from .data_model_factory import DataModelFactory
 from .rt.edge import posedge, negedge, edge
+from .rt.scenario_runner import ScenarioRunner, run_action, run_action_sync, DeadlockError
+from .rt.resource_rt import get_resource_fields, acquire_resources, release_resources, make_resource
+from .rt.binding_solver import BindingSolver
+from .rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
+from .rt.activity_runner import ScheduleGraph
 from .solver.api import randomize, randomize_with, RandomizationError
 from .coverage import (
     Covergroup, coverpoint, cross,
@@ -59,7 +64,7 @@ __all__ = [
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
-    'lock', 'share', 'extend',
+    'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
     # From coverage
@@ -97,6 +102,12 @@ __all__ = [
     'Channel', 'GetIF', 'PutIF', 'ReqRspChannel', 'ReqRspIF', 'Transport',
     # From rt.edge
     'posedge', 'negedge', 'edge',
+    # From rt.scenario_runner
+    'ScenarioRunner', 'run_action', 'run_action_sync', 'DeadlockError',
+    # From rt.flow_obj_rt
+    'BufferInstance', 'StreamInstance', 'StatePool',
+    # From rt.activity_runner
+    'ScheduleGraph',
     # Submodules
     'ir', 'profiles',
     # Other exports

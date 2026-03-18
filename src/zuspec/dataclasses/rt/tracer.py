@@ -99,6 +99,32 @@ class SignalTracer(Protocol):
         ...
 
 
+class ActivityTracer:
+    """Base class for tracing PSS action lifecycle events.
+
+    Override any method to receive the corresponding event.  Default
+    implementations are all no-ops so subclasses only override what they need.
+    """
+
+    def action_start(self, action_type: type, comp: Any, seed: int) -> None:
+        """Called before pre_solve() on each action traversal."""
+
+    def action_solved(self, action: Any) -> None:
+        """Called after randomize() (post-solve state)."""
+
+    def action_exec_begin(self, action: Any) -> None:
+        """Called just before body() or sub-activity."""
+
+    def action_exec_end(self, action: Any) -> None:
+        """Called after body() or sub-activity completes."""
+
+    def resource_lock(self, pool: Any, instance_id: int) -> None:
+        """Called when a resource lock is acquired."""
+
+    def resource_unlock(self, pool: Any, instance_id: int) -> None:
+        """Called when a resource lock is released."""
+
+
 @contextmanager
 def with_tracer(tracer: Tracer, *, enable_signals: bool = False):
     """Context manager to enable tracing for component construction.

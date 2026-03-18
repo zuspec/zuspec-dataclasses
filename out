@@ -1,0 +1,22 @@
+	   API_REFERENCE.md
+	   README.md
+	   src/zuspec/dataclasses/__init__.py
+	   src/zuspec/dataclasses/decorators.py
+	   src/zuspec/dataclasses/ir/__init__.py
+	   src/zuspec/dataclasses/ir/visitor.py
+	   src/zuspec/dataclasses/rt/comp_impl_rt.py
+	   src/zuspec/dataclasses/rt/obj_factory.py
+	   src/zuspec/dataclasses/types.py
+
+	examples/activity_dma.py
+	src/zuspec/dataclasses/activity_dsl.py
+	src/zuspec/dataclasses/activity_parser.py
+	src/zuspec/dataclasses/ir/activity.py
+	tests/unit/test_activity_control_flow.py
+	tests/unit/test_activity_e2e_dma.py
+	tests/unit/test_activity_extend.py
+	tests/unit/test_activity_flow_resource.py
+	tests/unit/test_activity_parallel.py
+	tests/unit/test_activity_parser.py
+	tests/unit/test_flow_resource_types.py
+

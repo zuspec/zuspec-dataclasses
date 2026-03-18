@@ -180,8 +180,55 @@ def field(
 
     return dc.field(**args)
 
-def pool(default_factory=None):
-    pass
+def pool(size: Optional[int] = None, default_factory=None) -> Any:
+    """Declare a resource/flow-object pool on a Component field.
+
+    Example::
+
+        channels: ClaimPool[DmaChannel] = zdc.pool(
+            default_factory=lambda: ClaimPool.fromList([DmaChannel(), DmaChannel()])
+        )
+    """
+    meta: Dict[str, object] = {"kind": "pool"}
+    if size is not None:
+        meta["size"] = size
+    if default_factory is not None:
+        return dc.field(default_factory=default_factory, metadata=meta)
+    return dc.field(default=None, metadata=meta)
+
+
+def flow_output(default=dc.MISSING, **kwargs) -> Any:
+    """Declare an action field as a flow-object output (producer side).
+
+    Use on action fields of type ``Buffer``, ``Stream``, or ``State``.
+    The runtime injects a ``BufferInstance``/``StreamInstance``/``StatePool``
+    whose output face the action exposes.
+
+    Example::
+
+        @zdc.dataclass
+        class Producer(zdc.Action[MyComp]):
+            buf: MyBuf = flow_output()
+    """
+    kw: dict = {"metadata": {"kind": "flow_ref", "direction": "output"}}
+    if default is not dc.MISSING:
+        kw["default"] = default
+    return dc.field(**kw)
+
+
+def flow_input(default=dc.MISSING, **kwargs) -> Any:
+    """Declare an action field as a flow-object input (consumer side).
+
+    Example::
+
+        @zdc.dataclass
+        class Consumer(zdc.Action[MyComp]):
+            buf: MyBuf = flow_input()
+    """
+    kw: dict = {"metadata": {"kind": "flow_ref", "direction": "input"}}
+    if default is not dc.MISSING:
+        kw["default"] = default
+    return dc.field(**kw)
 
 
 def extend(cls=None):
@@ -221,6 +268,10 @@ def extend(cls=None):
             )
         cls.__extends__ = bases[0]
         cls.__is_extension__ = True
+        # Parse the extension's own activity() method if it defines one
+        if 'activity' in cls.__dict__:
+            from .activity_parser import ActivityParser
+            cls.__activity__ = ActivityParser().parse(cls.__dict__['activity'])
         return cls
 
     if cls is None:

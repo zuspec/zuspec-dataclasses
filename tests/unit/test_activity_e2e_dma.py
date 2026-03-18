@@ -93,8 +93,8 @@ class DmaXfer(zdc.Action[DmaComponent]):
     rd: ReadData = zdc.field(default=None)
 
     async def activity(self):
-        self.wr()
-        with self.rd():
+        await self.wr()
+        async with self.rd():
             self.rd.chan.priority > 5
 
 
@@ -125,13 +125,15 @@ def test_dma_xfer_wr_traversal():
 
 def test_dma_xfer_rd_traversal_with_constraint():
     """Second statement is ActivityTraversal for 'rd' with one inline constraint."""
+    import ast
     rd_t = DmaXfer.__activity__.stmts[1]
     assert isinstance(rd_t, ActivityTraversal)
     assert rd_t.handle == 'rd'
     assert len(rd_t.inline_constraints) == 1
     c = rd_t.inline_constraints[0]
-    assert c['type'] == 'compare'
-    assert c['ops'] == ['>']
+    assert isinstance(c, ast.Expr)
+    assert isinstance(c.value, ast.Compare)
+    assert isinstance(c.value.ops[0], ast.Gt)
 
 
 def test_write_data_is_atomic():
