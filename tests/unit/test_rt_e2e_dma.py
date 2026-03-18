@@ -167,3 +167,65 @@ def test_dma_component_hierarchy():
     result = _run(ScenarioRunner(top, seed=7).run(DmaReadTop))
     assert result.chan is not None
     assert result.addr is not None
+
+
+# ---------------------------------------------------------------------------
+# Inline constraint: rand field stays within declared type bounds
+# ---------------------------------------------------------------------------
+
+def test_dma_rand_fields_within_type_bounds():
+    """Randomized u32/u8 fields stay within their declared type bounds."""
+    comp = DmaEngine()
+    for seed in range(10):
+        result = _run(ScenarioRunner(DmaEngine(), seed=seed).run(DmaTransfer))
+        # addr is zdc.u32 = rand()
+        assert 0 <= result.rd.addr <= 0xFFFFFFFF, f"rd.addr out of u32 range: {result.rd.addr}"
+        assert 0 <= result.wr.addr <= 0xFFFFFFFF, f"wr.addr out of u32 range: {result.wr.addr}"
+        # size is zdc.u8 = rand()
+        assert 0 <= result.rd.size <= 0xFF, f"rd.size out of u8 range: {result.rd.size}"
+        assert 0 <= result.wr.size <= 0xFF, f"wr.size out of u8 range: {result.wr.size}"
+
+
+# ---------------------------------------------------------------------------
+# Inline handle constraint: satisfied at runtime
+# ---------------------------------------------------------------------------
+
+@zdc.dataclass
+class DmaReadConstrained(zdc.Action[DmaEngine]):
+    """Read that constrains addr to low 64K."""
+    chan: DmaChannel = zdc.lock()
+    addr: zdc.u32 = zdc.rand()
+    size: zdc.u8 = zdc.rand()
+    _body_called: bool = False
+
+    async def body(self):
+        self._body_called = True
+
+
+@zdc.dataclass
+class DmaTransferConstrained(zdc.Action[DmaEngine]):
+    """DmaTransfer with inline constraint on rd.addr."""
+    rd: DmaReadConstrained = None
+    wr: DmaWrite = None
+
+    async def activity(self):
+        with zdc.parallel():
+            async with self.rd():
+                self.rd.addr < 0x10000
+            await self.wr()
+
+
+def test_dma_rd_inline_constraint_satisfied():
+    """Inline constraint on rd: addr < 0x10000 is enforced at runtime."""
+    for seed in range(10):
+        result = _run(ScenarioRunner(DmaEngine(), seed=seed).run(DmaTransferConstrained))
+        assert result.rd.addr < 0x10000, \
+            f"seed={seed}: constraint violated: rd.addr={result.rd.addr:#x}"
+
+
+def test_dma_rd_inline_constraint_seed_reproducible():
+    """Same seed + inline constraint → same solution."""
+    r1 = _run(ScenarioRunner(DmaEngine(), seed=42).run(DmaTransferConstrained))
+    r2 = _run(ScenarioRunner(DmaEngine(), seed=42).run(DmaTransferConstrained))
+    assert r1.rd.addr == r2.rd.addr
+    assert r1.rd.size == r2.rd.size

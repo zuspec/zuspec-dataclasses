@@ -347,10 +347,10 @@ class ConstrainedOuter(zdc.Action[TracerComp]):
 
 
 def test_activity_constraint_does_not_crash():
-    """Activity with constraint block executes without error."""
+    """Activity with constraint block executes without error and satisfies constraint."""
     comp = TracerComp()
-    # No crash — constraint infrastructure collects but doesn't error
-    _run(ScenarioRunner(comp, seed=0).run(ConstrainedOuter))
+    result = _run(ScenarioRunner(comp, seed=0).run(ConstrainedOuter))
+    assert result.a1.size < 100, f"constraint not satisfied: a1.size={result.a1.size}"
 
 
 @zdc.dataclass
@@ -365,6 +365,11 @@ class TwoHandleOuter(zdc.Action[TracerComp]):
 
 
 def test_activity_constraint_cross_action_no_crash():
-    """Cross-action constraint block executes without error."""
+    """Cross-action constraint block executes without error.
+
+    Note: cross-action constraints (a1.addr != a2.addr) are a known limitation —
+    the solver cannot currently enforce them across separate traversals.
+    The test verifies no exception is raised.
+    """
     comp = TracerComp()
     _run(ScenarioRunner(comp, seed=0).run(TwoHandleOuter))

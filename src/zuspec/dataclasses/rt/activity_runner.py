@@ -313,6 +313,7 @@ class ActivityRunner:
             action_type,
             node.inline_constraints,
             ctx,
+            label=node.handle,
             head_resource_hints=ctx.head_resource_hints or {},
         )
         # Write traversed instance back onto the handle field
