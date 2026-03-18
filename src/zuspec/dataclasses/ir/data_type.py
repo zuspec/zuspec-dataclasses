@@ -8,6 +8,7 @@ from .expr import Expr
 if TYPE_CHECKING:
     from .fields import Field
     from .stmt import Stmt, Arguments
+    from .activity import ActivitySequenceBlock
 
 class ProcessKind(enum.Enum):
     """Kind of hardware process"""
@@ -64,7 +65,7 @@ class DataTypeStruct(DataType):
 @dc.dataclass(kw_only=True)
 class DataTypeClass(DataTypeStruct):
     """Classes are a polymorphic extension of Structs"""
-    pass
+    activity_ir: Optional['ActivitySequenceBlock'] = dc.field(default=None)
 
 @dc.dataclass(kw_only=True)
 class DataTypeComponent(DataTypeClass):

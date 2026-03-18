@@ -340,7 +340,9 @@ class ConstraintCompiler:
         Intersects the variable's current domain with the valid value set.
         If the intersection is empty, raises CompilationError.
         """
-        var = constraint.variable
+        # Look up the variable by name in the compiler's own variables dict so that
+        # domain narrowing applies to the *copy* being solved, not the shared template.
+        var = self.variables.get(constraint.variable.name, constraint.variable)
         valid = constraint.values
 
         # Build an IntDomain from the valid values (each value as a singleton interval)

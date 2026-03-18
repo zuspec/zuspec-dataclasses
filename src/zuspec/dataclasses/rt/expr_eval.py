@@ -54,7 +54,39 @@ class ExprEval:
         self._ctx = ctx
 
     def eval(self, expr: Any) -> Any:
-        """Evaluate *expr* (a dict or plain Python value) in ctx.action's scope."""
+        """Evaluate *expr* (a dict, IR node, or plain Python value)."""
+        # Handle IR expression objects from PSS-translated activities
+        try:
+            from zuspec.dataclasses.ir.expr import (
+                ExprConstant as _EC,
+                ExprRefField as _ERF,
+                ExprBin as _EB,
+                ExprUnary as _EU,
+            )
+            if isinstance(expr, _EC):
+                return expr.value
+            if isinstance(expr, _ERF):
+                action = self._ctx.action
+                if action is not None:
+                    return getattr(action, expr.name, None)
+                return None
+            if isinstance(expr, _EB):
+                lhs = self.eval(expr.lhs)
+                rhs = self.eval(expr.rhs)
+                fn = _OP_MAP.get(expr.op)
+                if fn is not None:
+                    return fn(lhs, rhs)
+                return None
+            if isinstance(expr, _EU):
+                val = self.eval(expr.val)
+                if expr.op == 'not':
+                    return not val
+                if expr.op == '-':
+                    return -val
+                return val
+        except ImportError:
+            pass
+
         if not isinstance(expr, dict):
             return expr
 

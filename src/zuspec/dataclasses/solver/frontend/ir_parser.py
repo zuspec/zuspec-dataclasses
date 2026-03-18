@@ -309,11 +309,18 @@ class IRExpressionParser:
     
     def _parse_subscript(self, expr: ExprSubscript) -> Constraint:
         """Parse a subscript (bit-slice, bit-select, or array indexing)"""
-        # Get the base variable or field name
-        if not isinstance(expr.value, ExprRef):
+        # Get the base variable or field name.  The PSS front-end emits
+        # ExprAttribute(TypeExprRefSelf, attr='field') for field references inside
+        # constraint bodies, so accept ExprAttribute in addition to ExprRef.
+        if isinstance(expr.value, ExprAttribute):
+            var_name = self._resolve_attribute_name(expr.value)
+            # Strip leading "self." prefix that _resolve_attribute_name may add
+            if var_name.startswith("self."):
+                var_name = var_name[len("self."):]
+        elif isinstance(expr.value, ExprRef):
+            var_name = self._resolve_ref(expr.value)
+        else:
             raise ParseError("Subscript base must be a variable/field reference")
-        
-        var_name = self._resolve_ref(expr.value)
         
         # Check if this is an array field (for array indexing)
         if var_name in self.array_fields:
@@ -918,6 +925,19 @@ class IRExpressionParser:
                     f"Variable array indices not yet supported. "
                     f"'{var_name}' is not a loop variable."
                 )
+
+        # ExprAttribute(TypeExprRefSelf, attr='i') — produced when the foreach
+        # iterator variable was translated as a field reference instead of a
+        # local variable.  Treat it as a loop variable lookup.
+        if isinstance(expr, ExprAttribute) and isinstance(expr.value, TypeExprRefSelf):
+            var_name = expr.attr
+            if var_name in self.loop_variables:
+                return self.loop_variables[var_name]
+            else:
+                raise ParseError(
+                    f"Variable array indices not yet supported. "
+                    f"'{var_name}' is not a loop variable."
+                )
         
         # Binary operation (e.g., i+1, i*2)
         if isinstance(expr, ExprBin):
@@ -1082,10 +1102,18 @@ class IRExpressionParser:
     
     def _parse_foreach_loop(self, stmt: StmtForeach) -> List[Constraint]:
         """
-        Parse a PSS foreach constraint: foreach (e : data) { e > 0; }
+        Parse a PSS foreach constraint: foreach (data[i]) { data[i] > 0; }
+        or element-style: foreach (e : data) { e > 0; }
 
-        Expands by substituting e = data[0], data[1], ..., data[N-1]
-        where N is determined from the array_metadata registered with the parser.
+        In PSS the index-style foreach (foreach (data[i]) { ... }) uses i as an
+        integer *index*.  The body references data[i] where i must resolve to an
+        integer during constraint expansion.
+
+        Expands by substituting i = 0, 1, ..., N-1 (via loop_variables) so that
+        data[i] subscripts can be evaluated by _evaluate_index_expr.
+
+        For element-style (iter_var maps to element variables), we fall back to
+        the variable_map substitution for direct uses of the iterator.
         """
         # Get the iterator variable name
         if not isinstance(stmt.target, ExprRefLocal):
@@ -1101,27 +1129,30 @@ class IRExpressionParser:
             raise ParseError(f"foreach: unsupported collection type {stmt.iter.__class__.__name__}")
 
         # Look up array size from variable map (elements are named array_name[0], ...)
-        # Find all variables matching array_name[i]
         element_vars = []
-        i = 0
+        idx = 0
         while True:
-            elem_name = f"{array_name}[{i}]"
+            elem_name = f"{array_name}[{idx}]"
             if elem_name in self.variable_map:
                 element_vars.append(self.variable_map[elem_name])
-                i += 1
+                idx += 1
             else:
                 break
 
         if not element_vars:
             raise ParseError(f"foreach: no array elements found for '{array_name}'")
 
-        # Expand constraints by substituting the iterator variable
+        # Expand constraints.  For each element at index i:
+        #   - Set loop_variables[iter_var] = i  (so data[i] subscripts resolve)
+        #   - Also set variable_map[iter_var] = element_vars[i]  (so direct uses
+        #     of the iterator variable in element-style bodies resolve)
         constraints = []
-        for elem_var in element_vars:
-            # Temporarily map iter_var → element variable in variable_map
+        for i, elem_var in enumerate(element_vars):
+            self.loop_variables[iter_var] = i
             self.variable_map[iter_var] = elem_var
             for body_stmt in stmt.body:
                 constraints.extend(self.parse_statement(body_stmt))
+            del self.loop_variables[iter_var]
             del self.variable_map[iter_var]
 
         return constraints
