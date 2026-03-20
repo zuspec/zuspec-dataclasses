@@ -21,7 +21,7 @@ Typical import (via ``zuspec.dataclasses``)::
         async def activity(self):
             await self.a()
             with zdc.parallel():
-                zdc.do(WriteAction)
+                await zdc.do(WriteAction)
                 await self.b()
 """
 from __future__ import annotations
@@ -42,14 +42,14 @@ def do(action_type: Type[Any], /) -> Any:
 
     PSS equivalent: ``do ActionType;``
 
-    Use as a statement or as the context expression of a ``with`` block::
+    Always ``await`` this call — action traversal is asynchronous::
 
-        do(WriteAction)
+        await do(WriteAction)
 
         with do(WriteAction) as wr:
             wr.size > 16
 
-        xfer = do(WriteAction)   # labeled, no constraints
+        xfer = await do(WriteAction)   # labeled, no constraints
     """
     raise RuntimeError(_MSG.format(name="do"))
 

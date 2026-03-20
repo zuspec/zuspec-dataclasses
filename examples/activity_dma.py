@@ -99,12 +99,12 @@ class StressTest(zdc.Action[DmaComponent]):
             with zdc.parallel():
                 with zdc.do(WriteData) as wr:
                     wr.size > 16
-                zdc.do(ReadData)
+                await zdc.do(ReadData)
             with zdc.select():
                 with zdc.branch(weight=70):
-                    zdc.do(DmaXfer)
+                    await zdc.do(DmaXfer)
                 with zdc.branch(weight=30):
-                    zdc.do(ReadData)
+                    await zdc.do(ReadData)
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ class ActivityPrinter(Visitor):
     def visitActivityAnonTraversal(self, node) -> None:
         label = f" as {node.label}" if node.label else ""
         c = f" [+{len(node.inline_constraints)} constraint(s)]" if node.inline_constraints else ""
-        self._p(f"do({node.action_type}){label}{c}")
+        self._p(f"await do({node.action_type}){label}{c}")
 
     def visitActivityParallel(self, node) -> None:
         self._p("parallel:")

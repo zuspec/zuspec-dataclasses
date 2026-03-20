@@ -107,10 +107,10 @@ def test_traversal_with_empty_with_block():
 # ---------------------------------------------------------------------------
 
 def test_anon_traversal_bare():
-    """do(WriteAction) → ActivityAnonTraversal(action_type='WriteAction')."""
+    """await do(WriteAction) → ActivityAnonTraversal(action_type='WriteAction')."""
     ir = _parse_src("""
         async def activity(self):
-            do(WriteAction)
+            await do(WriteAction)
     """)
     assert len(ir.stmts) == 1
     t = ir.stmts[0]
@@ -120,16 +120,34 @@ def test_anon_traversal_bare():
     assert t.inline_constraints == []
 
 
+def test_anon_traversal_bare_requires_await():
+    """Bare do(WriteAction) without await raises ActivityParseError."""
+    with pytest.raises(ActivityParseError, match="must be awaited"):
+        _parse_src("""
+            async def activity(self):
+                do(WriteAction)
+        """)
+
+
 def test_anon_traversal_with_label_assign():
-    """xfer = do(WriteAction) → ActivityAnonTraversal(label='xfer')."""
+    """xfer = await do(WriteAction) → ActivityAnonTraversal(label='xfer')."""
     ir = _parse_src("""
         async def activity(self):
-            xfer = do(WriteAction)
+            xfer = await do(WriteAction)
     """)
     t = ir.stmts[0]
     assert isinstance(t, ActivityAnonTraversal)
     assert t.label == 'xfer'
     assert t.action_type == 'WriteAction'
+
+
+def test_anon_traversal_label_assign_requires_await():
+    """xfer = do(WriteAction) without await raises ActivityParseError."""
+    with pytest.raises(ActivityParseError, match="must be awaited"):
+        _parse_src("""
+            async def activity(self):
+                xfer = do(WriteAction)
+        """)
 
 
 def test_anon_traversal_with_context_manager_label():
@@ -166,10 +184,10 @@ def test_anon_traversal_no_constraints_with_block():
 
 
 def test_anon_traversal_dotted_type():
-    """do(pkg.WriteAction) → action_type='pkg.WriteAction'."""
+    """await do(pkg.WriteAction) → action_type='pkg.WriteAction'."""
     ir = _parse_src("""
         async def activity(self):
-            do(pkg.WriteAction)
+            await do(pkg.WriteAction)
     """)
     t = ir.stmts[0]
     assert isinstance(t, ActivityAnonTraversal)

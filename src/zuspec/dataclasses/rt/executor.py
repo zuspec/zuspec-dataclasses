@@ -18,10 +18,36 @@
 from __future__ import annotations
 import dataclasses as dc
 from typing import Any, Optional, TYPE_CHECKING
-from ..ir.stmt import Stmt, StmtAssign, StmtIf, StmtPass, StmtExpr
+
+# ---------------------------------------------------------------------------
+# PSS standard-library builtins
+# ---------------------------------------------------------------------------
+
+def _pss_message(severity: int, fmt: str, *args) -> None:
+    """PSS message() builtin — prints fmt (with optional printf-style args)."""
+    print(fmt % args if args else fmt)
+
+# Map PSS builtin function names to Python callables.
+_PSS_BUILTINS: dict[str, Any] = {
+    'message': _pss_message,
+}
+
+# PSS std_pkg severity constants (message_verbosity_e).
+_PSS_CONSTANTS: dict[str, Any] = {
+    'NONE':   0,
+    'DEBUG':  1,
+    'LOW':    2,
+    'MEDIUM': 3,
+    'HIGH':   4,
+    'FULL':   5,
+    'FATAL':  6,
+}
+from ..ir.stmt import (Stmt, StmtAssign, StmtAugAssign, StmtAnnAssign, StmtIf, StmtPass,
+                       StmtExpr, StmtFor, StmtWhile, StmtBreak, StmtContinue, StmtReturn,
+                       StmtForeach, StmtRepeatWhile, StmtMatch, PatternValue, PatternAs)
 from ..ir.expr import (
     Expr, ExprConstant, ExprRefField, ExprBin, ExprAttribute,
-    BinOp, TypeExprRefSelf, ExprRefLocal, ExprRefUnresolved, ExprCall,
+    BinOp, AugOp, TypeExprRefSelf, ExprRefLocal, ExprRefUnresolved, ExprCall,
     ExprCompare, CmpOp, ExprSubscript, ExprBool, BoolOp
 )
 from ..ir.expr_phase2 import ExprIfExp
@@ -29,6 +55,18 @@ from .eval_state import EvalState
 
 if TYPE_CHECKING:
     from ..types import Component
+
+
+class _BreakSignal(Exception):
+    """Internal signal for break statement inside execute_for/execute_while."""
+
+class _ContinueSignal(Exception):
+    """Internal signal for continue statement inside execute_for/execute_while."""
+
+class _ReturnSignal(Exception):
+    """Internal signal for return statement — carries the return value."""
+    def __init__(self, value=None):
+        self.value = value
 
 
 class Executor:
@@ -49,6 +87,14 @@ class Executor:
         # Check if using EvalState or CompImplRT
         self.use_eval_state = hasattr(state_backend, 'read')  # EvalState has read()
     
+    def _get_builtin(self, name: str) -> Any:
+        """Look up a PSS builtin function or constant by name.
+
+        Returns the callable/value if found, or ``None`` if not a builtin.
+        Subclasses override this to expose their own builtins table.
+        """
+        return None
+
     def _read_signal(self, field_path: str) -> Any:
         """Read signal value from backend."""
         if self.use_eval_state:
@@ -70,20 +116,39 @@ class Executor:
         """Execute a list of statements."""
         for stmt in stmts:
             self.execute_stmt(stmt)
-    
+
     def execute_stmt(self, stmt: Stmt):
         """Execute a single statement."""
         if isinstance(stmt, StmtAssign):
             self.execute_assign(stmt)
+        elif isinstance(stmt, StmtAugAssign):
+            self.execute_aug_assign(stmt)
+        elif isinstance(stmt, StmtAnnAssign):
+            self.execute_ann_assign(stmt)
+        elif isinstance(stmt, StmtReturn):
+            raise _ReturnSignal(self.evaluate_expr(stmt.value) if stmt.value is not None else None)
         elif isinstance(stmt, StmtIf):
             self.execute_if(stmt)
+        elif isinstance(stmt, StmtFor):
+            self.execute_for(stmt)
+        elif isinstance(stmt, StmtWhile):
+            self.execute_while(stmt)
+        elif isinstance(stmt, StmtRepeatWhile):
+            self.execute_repeat_while(stmt)
+        elif isinstance(stmt, StmtForeach):
+            self.execute_foreach(stmt)
+        elif isinstance(stmt, StmtMatch):
+            self.execute_match(stmt)
+        elif isinstance(stmt, StmtBreak):
+            raise _BreakSignal()
+        elif isinstance(stmt, StmtContinue):
+            raise _ContinueSignal()
         elif isinstance(stmt, StmtPass):
-            pass  # Do nothing
+            pass
         elif isinstance(stmt, StmtExpr):
-            # Evaluate expression for side effects
             self.evaluate_expr(stmt.expr)
         else:
-            raise NotImplementedError(f"Statement type {type(stmt)} not implemented")
+            raise NotImplementedError(f"Statement type {type(stmt).__name__} not implemented")
     
     def execute_assign(self, stmt: StmtAssign):
         """Execute an assignment statement."""
@@ -106,14 +171,119 @@ class Executor:
     
     def execute_if(self, stmt: StmtIf):
         """Execute an if statement."""
-        # Evaluate condition
         test_value = self.evaluate_expr(stmt.test)
-        
         if test_value:
             self.execute_stmts(stmt.body)
         else:
             self.execute_stmts(stmt.orelse)
-    
+
+    def execute_ann_assign(self, stmt: StmtAnnAssign):
+        """Execute a variable declaration (with optional initialiser)."""
+        if isinstance(stmt.target, ExprRefLocal):
+            value = self.evaluate_expr(stmt.value) if stmt.value is not None else 0
+            self.locals[stmt.target.name] = value
+
+    def execute_aug_assign(self, stmt: StmtAugAssign):
+        """Execute a compound assignment (+=, -=, |=, &=, <<=, >>=)."""
+        current = self.evaluate_expr(stmt.target)
+        rhs = self.evaluate_expr(stmt.value)
+        _op_map = {
+            AugOp.Add:     lambda a, b: a + b,
+            AugOp.Sub:     lambda a, b: a - b,
+            AugOp.Mult:    lambda a, b: a * b,
+            AugOp.Div:     lambda a, b: a // b,
+            AugOp.Mod:     lambda a, b: a % b,
+            AugOp.LShift:  lambda a, b: a << b,
+            AugOp.RShift:  lambda a, b: a >> b,
+            AugOp.BitAnd:  lambda a, b: a & b,
+            AugOp.BitOr:   lambda a, b: a | b,
+            AugOp.BitXor:  lambda a, b: a ^ b,
+        }
+        result = _op_map.get(stmt.op, lambda a, b: b)(current, rhs)
+        # Write back using the same target
+        if isinstance(stmt.target, ExprRefLocal):
+            self.locals[stmt.target.name] = result
+        elif isinstance(stmt.target, ExprSubscript):
+            base = self.evaluate_expr(stmt.target.value)
+            index = self.evaluate_expr(stmt.target.slice)
+            base[int(index)] = result
+        else:
+            field_path = self.get_field_path(stmt.target)
+            self._write_signal(field_path, result)
+
+    def execute_for(self, stmt: StmtFor):
+        """Execute a StmtFor — PSS repeat(N) or repeat(i : N) loop."""
+        count = int(self.evaluate_expr(stmt.iter))
+        iter_name = stmt.target.name if isinstance(stmt.target, ExprRefLocal) else None
+        for i in range(count):
+            if iter_name is not None:
+                self.locals[iter_name] = i
+            try:
+                self.execute_stmts(stmt.body)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
+        if iter_name is not None:
+            self.locals.pop(iter_name, None)
+
+    def execute_while(self, stmt: StmtWhile):
+        """Execute a StmtWhile loop."""
+        while self.evaluate_expr(stmt.test):
+            try:
+                self.execute_stmts(stmt.body)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
+
+    def execute_repeat_while(self, stmt: StmtRepeatWhile):
+        """Execute a PSS repeat-while (do-while): body runs at least once."""
+        while True:
+            try:
+                self.execute_stmts(stmt.body)
+            except _ContinueSignal:
+                pass
+            except _BreakSignal:
+                break
+            if not self.evaluate_expr(stmt.condition):
+                break
+
+    def execute_foreach(self, stmt: StmtForeach):
+        """Execute a foreach loop over a list or array."""
+        collection = self.evaluate_expr(stmt.iter)
+        iter_name = stmt.target.name if isinstance(stmt.target, ExprRefLocal) else None
+        idx_name = stmt.index_var.name if isinstance(stmt.index_var, ExprRefLocal) else None
+        for idx, element in enumerate(collection):
+            if iter_name is not None:
+                self.locals[iter_name] = element
+            if idx_name is not None:
+                self.locals[idx_name] = idx
+            try:
+                self.execute_stmts(stmt.body)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
+        if iter_name is not None:
+            self.locals.pop(iter_name, None)
+        if idx_name is not None:
+            self.locals.pop(idx_name, None)
+
+    def execute_match(self, stmt: StmtMatch):
+        """Execute a match statement — first matching case wins; PatternAs is default."""
+        subject = self.evaluate_expr(stmt.subject)
+        for case in stmt.cases:
+            if isinstance(case.pattern, PatternAs):
+                # Default arm
+                self.execute_stmts(case.body)
+                return
+            elif isinstance(case.pattern, PatternValue):
+                value = self.evaluate_expr(case.pattern.value)
+                if subject == value:
+                    self.execute_stmts(case.body)
+                    return
+
     def evaluate_expr(self, expr: Expr) -> Any:
         """Evaluate an expression and return its value."""
         if expr is None:
@@ -144,6 +314,10 @@ class Executor:
             if not self.use_eval_state:
                 try:
                     field_path = self.get_field_path(expr)
+                    # Check PSS builtins before falling back to object attribute
+                    builtin = self._get_builtin(field_path)
+                    if builtin is not None:
+                        return builtin
                     return self._read_signal(field_path)
                 except Exception:
                     pass
@@ -160,6 +334,10 @@ class Executor:
                     # If it's a non-callable attribute (e.g., list, dict), return it directly
                     if not isinstance(attr_value, (int, float, str, bool, type(None))):
                         return attr_value
+                # Check PSS builtins
+                builtin = self._get_builtin(expr.attr)
+                if builtin is not None:
+                    return builtin
                 # Otherwise try to read as signal
                 return self._read_signal(expr.attr)
             return getattr(base, expr.attr, 0)
@@ -361,6 +539,12 @@ class ObjectExecutor(Executor):
     def __init__(self, obj: Any):
         super().__init__(None, obj)
         self.use_eval_state = False
+
+    def _get_builtin(self, name: str) -> Any:
+        """Return PSS builtin functions and std_pkg constants."""
+        if name in _PSS_BUILTINS:
+            return _PSS_BUILTINS[name]
+        return _PSS_CONSTANTS.get(name)
 
     def _read_signal(self, field_path: str) -> Any:
         """Read an attribute from the target object, supporting dotted paths."""

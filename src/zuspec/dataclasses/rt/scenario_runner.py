@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING, Any, Optional, Type
 from .action_context import ActionContext
 from .activity_runner import ActivityRunner
 from .pool_resolver import PoolResolver
+from .action_registry import ActionRegistry
+from .icl_table import ICLTable
+from .structural_solver import StructuralSolver
 
 if TYPE_CHECKING:
     from ..types import Component
@@ -42,6 +45,10 @@ class ScenarioRunner:
         self._resolver = PoolResolver.build(comp)
         self._seed = seed if seed is not None else random.randrange(2**32)
         self._tracer = tracer
+        # Build ICL table once for structural inference
+        self._registry = ActionRegistry.build(comp)
+        self._icl_table = ICLTable.build(self._registry)
+        self._structural_solver = StructuralSolver(self._icl_table, seed=self._seed)
 
     async def run(
         self, action_type: Type, timeout_s: float = 30.0, **kwargs
@@ -52,6 +59,7 @@ class ScenarioRunner:
             comp=self._comp,
             pool_resolver=self._resolver,
             seed=self._seed,
+            structural_solver=self._structural_solver,
             tracer=self._tracer,
         )
         runner = ActivityRunner()

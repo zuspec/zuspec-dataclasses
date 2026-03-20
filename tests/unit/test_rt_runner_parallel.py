@@ -86,8 +86,8 @@ class SchedTaskB(zdc.Action[DmaComp]):
 class ParAction(zdc.Action[DmaComp]):
     async def activity(self):
         with zdc.parallel():
-            do(ParBranchA)
-            do(ParBranchB)
+            await do(ParBranchA)
+            await do(ParBranchB)
 
 
 def test_parallel_both_branches_execute():
@@ -103,8 +103,8 @@ def test_parallel_both_branches_execute():
 class ParLockAction(zdc.Action[DmaComp]):
     async def activity(self):
         with zdc.parallel():
-            do(LockAction)
-            do(LockAction)
+            await do(LockAction)
+            await do(LockAction)
 
 
 def test_parallel_resource_contention_resolved():
@@ -118,9 +118,9 @@ def test_parallel_resource_contention_resolved():
 class Par3Action(zdc.Action[DmaComp]):
     async def activity(self):
         with zdc.parallel():
-            do(CountLeaf)
-            do(CountLeaf)
-            do(CountLeaf)
+            await do(CountLeaf)
+            await do(CountLeaf)
+            await do(CountLeaf)
 
 
 def test_parallel_three_branches():
@@ -139,8 +139,8 @@ def test_parallel_three_branches():
 class SchedAction(zdc.Action[DmaComp]):
     async def activity(self):
         with zdc.schedule():
-            do(SchedTaskA)
-            do(SchedTaskB)
+            await do(SchedTaskA)
+            await do(SchedTaskB)
 
 
 def test_schedule_all_branches_execute():
@@ -169,8 +169,8 @@ class AtomicLeaf(zdc.Action[DmaComp]):
 class AtomAction(zdc.Action[DmaComp]):
     async def activity(self):
         with zdc.atomic():
-            do(AtomicLeaf)
-            do(AtomicLeaf)
+            await do(AtomicLeaf)
+            await do(AtomicLeaf)
 
 
 def test_atomic_block_executes():
@@ -198,8 +198,8 @@ class SeqUseChannel(zdc.Action[DmaComp]):
 @zdc.dataclass
 class SeqAction(zdc.Action[DmaComp]):
     async def activity(self):
-        do(SeqUseChannel)
-        do(SeqUseChannel)
+        await do(SeqUseChannel)
+        await do(SeqUseChannel)
 
 
 def test_sequential_resource_reuse():

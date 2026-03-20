@@ -44,28 +44,28 @@ class HandleAction(zdc.Action[MyCpu]):
 @zdc.dataclass
 class AnonAction(zdc.Action[MyCpu]):
     async def activity(self):
-        do(WriteAction)
+        await do(WriteAction)
 
 
 @zdc.dataclass
 class LabeledAnonAction(zdc.Action[MyCpu]):
     w: WriteAction = zdc.field(default=None)
     async def activity(self):
-        w = do(WriteAction)
+        w = await do(WriteAction)
 
 
 @zdc.dataclass
 class ParentAction(zdc.Action[MyCpu]):
     log: list = dc.field(default_factory=list, compare=False)
     async def activity(self):
-        do(WriteAction)
+        await do(WriteAction)
 
 
 @zdc.dataclass
 class ChildAction(ParentAction):
     async def activity(self):
         super().activity()
-        do(ReadAction)
+        await do(ReadAction)
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ def test_handle_traversal_missing_handle_raises():
 def test_anon_traversal_by_class_ref():
     cpu = MyCpu()
     runner = ScenarioRunner(cpu, seed=0)
-    # AnonAction.activity() does do(WriteAction)
+    # AnonAction.activity() does await do(WriteAction)
     action = _run(runner.run(AnonAction))
     assert action is not None
 
@@ -128,7 +128,7 @@ def test_anon_traversal_label_writeback():
 def test_super_traversal_runs_parent_body():
     cpu = MyCpu()
     runner = ScenarioRunner(cpu, seed=0)
-    # ChildAction calls super().activity() then do(ReadAction)
+    # ChildAction calls super().activity() then await do(ReadAction)
     action = _run(runner.run(ChildAction))
     assert action is not None  # both parent and child blocks ran without error
 

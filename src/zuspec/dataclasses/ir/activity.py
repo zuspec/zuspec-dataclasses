@@ -12,7 +12,7 @@ Node hierarchy::
     ├── ActivitySchedule        -- schedule [join_spec] { ... }
     ├── ActivityAtomic          -- atomic { ... }
     ├── ActivityTraversal       -- self.handle() [with constraints]
-    ├── ActivityAnonTraversal   -- do(Type) [as label] [with constraints]
+    ├── ActivityAnonTraversal   -- await do(Type) [as label] [with constraints]
     ├── ActivitySuper           -- super().activity()
     ├── ActivityRepeat          -- for i in range(N)
     ├── ActivityDoWhile         -- with do_while(cond):
@@ -141,13 +141,13 @@ class ActivityTraversal(ActivityStmt):
 
 @dc.dataclass(kw_only=True)
 class ActivityAnonTraversal(ActivityStmt):
-    """Anonymous traversal by action type — ``do(Type)``.
+    """Anonymous traversal by action type — ``await do(Type)``.
 
     Corresponds to PSS ``do Type;`` or ``label: do Type with { ... };``.
 
     Attributes:
         action_type:        Qualified type name string (e.g. ``"WriteAction"``).
-        label:              Optional label when assigned (``x = do(T)`` or
+        label:              Optional label when assigned (``x = await do(T)`` or
                             ``with do(T) as x:``).
         inline_constraints: Constraint expressions from the ``with`` body.
     """

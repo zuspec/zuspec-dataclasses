@@ -208,12 +208,12 @@ class StressTest(zdc.Action[TopComponent]):
             with zdc.parallel():
                 with zdc.do(WriteData) as wr:
                     wr.size > 16
-                zdc.do(ReadData)
+                await zdc.do(ReadData)
             with zdc.select():
                 with zdc.branch(weight=70):
-                    zdc.do(DmaXfer)
+                    await zdc.do(DmaXfer)
                 with zdc.branch(weight=30):
-                    zdc.do(ReadData)
+                    await zdc.do(ReadData)
 
 
 from zuspec.dataclasses.ir.activity import (
@@ -259,7 +259,7 @@ def test_stress_test_parallel_contents():
     assert wr_t.action_type == 'WriteData'
     assert wr_t.label == 'wr'
     assert len(wr_t.inline_constraints) == 1
-    # Second: do(ReadData)
+    # Second: await do(ReadData)
     rd_t = par.stmts[1]
     assert isinstance(rd_t, ActivityAnonTraversal)
     assert rd_t.action_type == 'ReadData'

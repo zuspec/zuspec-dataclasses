@@ -134,6 +134,25 @@ class ActivityRunner:
                     for name in _extract_handle_names(expr):
                         constraint_map.setdefault(name, []).append(expr)
 
+        # Forward constraint propagation: create a fresh propagator for this
+        # sequence block.  It records completed actions' field values so that
+        # subsequent inline constraints can reference them as label.field.
+        from .forward_constraint_propagator import ForwardConstraintPropagator
+        propagator = ForwardConstraintPropagator()
+        seq_ctx = ActionContext(
+            action=ctx.action,
+            comp=ctx.comp,
+            pool_resolver=ctx.pool_resolver,
+            parent=ctx,
+            seed=ctx.seed,
+            inline_constraints=ctx.inline_constraints,
+            flow_bindings=ctx.flow_bindings,
+            head_resource_hints=ctx.head_resource_hints,
+            structural_solver=ctx.structural_solver,
+            forward_propagator=propagator,
+            tracer=ctx.tracer,
+        )
+
         for stmt in node.stmts:
             if type(stmt) is ActivityConstraint:
                 continue  # already processed above
@@ -143,7 +162,7 @@ class ActivityRunner:
                 stmt = _stmt_with_constraints(stmt, constraint_map[stmt.handle])
             elif t is ActivityAnonTraversal and stmt.label and stmt.label in constraint_map:
                 stmt = _stmt_with_constraints(stmt, constraint_map[stmt.label])
-            await self._exec(stmt, ctx)
+            await self._exec(stmt, seq_ctx)
 
     # ------------------------------------------------------------------
     # Action traversal — core lifecycle
@@ -160,6 +179,7 @@ class ActivityRunner:
         """Full PSS action traversal lifecycle:
           1. Instantiate
           2. Assign comp
+          2b. Inject flow-object bindings (before pre_solve so hooks see the flow obj)
           3. pre_solve()
           4. randomize()
           5. post_solve()
@@ -182,6 +202,31 @@ class ActivityRunner:
         # 2. Assign comp
         action.comp = ctx.pool_resolver.select_comp(action_type, ctx.comp)
 
+        # 2b. Inject flow-object bindings BEFORE pre_solve so that pre_solve(),
+        #     randomize(), and post_solve() all see the concrete flow object.
+        #     For output (producer): the flow object was already randomized in
+        #     create_flow_instances(); set it directly.
+        #     For input (consumer): await the buffer being ready — safe here
+        #     because ScheduleGraph guarantees the producer stage has completed
+        #     before the consumer stage starts.
+        output_flow_insts = []
+        from .flow_obj_rt import BufferInstance, StreamInstance, StatePool
+        for field_name, binding in ctx.flow_bindings.items():
+            flow_inst, direction = binding
+            if isinstance(flow_inst, BufferInstance):
+                if direction == "output":
+                    setattr(action, field_name, flow_inst.obj)
+                    output_flow_insts.append(flow_inst)
+                else:
+                    setattr(action, field_name, await flow_inst.wait_ready())
+            elif isinstance(flow_inst, StreamInstance):
+                setattr(action, field_name, flow_inst)
+            elif isinstance(flow_inst, StatePool):
+                setattr(action, field_name, flow_inst)
+
+        # For any unbound flow-output fields (no explicit consumer provided),
+        # create an orphan buffer so that body() can write to the field.
+        _create_orphan_output_buffers(action_type, action, ctx.flow_bindings)
         # Notify tracer
         if ctx.tracer is not None:
             ctx.tracer.action_start(action_type, action.comp, ctx.seed)
@@ -189,14 +234,19 @@ class ActivityRunner:
         # 3. pre_solve
         action.pre_solve()
 
-        # 4. Randomize — apply inline constraints when present
+        # 4. Randomize — apply inline constraints when present.
+        # If a forward propagator is active, substitute cross-action label.field
+        # references in the constraint AST before solving.
         child_seed = ctx.seed ^ id(action_type)
+        effective_constraints = inline_constraints
+        if ctx.forward_propagator is not None and inline_constraints:
+            effective_constraints = ctx.forward_propagator.substitute(inline_constraints)
         try:
             from ..solver.api import RandomizationError, randomize_with_ast_constraints
-            if inline_constraints:
+            if effective_constraints:
                 randomize_with_ast_constraints(
                     action,
-                    inline_constraints,
+                    effective_constraints,
                     handle=label,
                     seed=child_seed,
                 )
@@ -223,24 +273,10 @@ class ActivityRunner:
             inline_constraints=[],
             flow_bindings=ctx.flow_bindings,
             head_resource_hints=head_resource_hints or {},
+            structural_solver=ctx.structural_solver,
+            forward_propagator=ctx.forward_propagator,
             tracer=ctx.tracer,
         )
-
-        # Inject flow-object bindings onto the action
-        output_flow_insts = []
-        for field_name, binding in child_ctx.flow_bindings.items():
-            flow_inst, direction = binding
-            from .flow_obj_rt import BufferInstance, StreamInstance, StatePool
-            if isinstance(flow_inst, BufferInstance):
-                if direction == "output":
-                    setattr(action, field_name, flow_inst.obj)
-                    output_flow_insts.append(flow_inst)
-                else:
-                    setattr(action, field_name, await flow_inst.wait_ready())
-            elif isinstance(flow_inst, StreamInstance):
-                setattr(action, field_name, flow_inst)
-            elif isinstance(flow_inst, StatePool):
-                setattr(action, field_name, flow_inst)
 
         # 6. Execute body
         if ctx.tracer is not None:
@@ -255,6 +291,11 @@ class ActivityRunner:
             release_resources(claims)
         if ctx.tracer is not None:
             ctx.tracer.action_exec_end(action)
+
+        # Record this action's concrete field values for forward propagation
+        # in subsequent sequential actions (P3).
+        if ctx.forward_propagator is not None:
+            ctx.forward_propagator.record_completed(action, label=label)
 
         return action
 
@@ -328,15 +369,94 @@ class ActivityRunner:
         self, node: ActivityAnonTraversal, ctx: ActionContext
     ) -> None:
         action_type = _resolve_action_type(node, ctx)
+
+        # Structural inference: if the consumer has unbound flow-input slots,
+        # use the structural solver to select and traverse producer actions first.
+        effective_ctx = ctx
+        if ctx.structural_solver is not None:
+            unbound = _collect_unbound_flow_inputs(action_type, ctx.flow_bindings)
+            if unbound:
+                effective_ctx = await self._apply_inferred_actions(
+                    ctx.structural_solver.solve(action_type, unbound, ctx),
+                    ctx,
+                )
+
         action = await self._traverse(
             action_type,
             node.inline_constraints,
-            ctx,
+            effective_ctx,
             label=node.label,
             head_resource_hints=ctx.head_resource_hints or {},
         )
         if node.label and ctx.action is not None and hasattr(ctx.action, node.label):
             setattr(ctx.action, node.label, action)
+
+    async def _apply_inferred_actions(
+        self,
+        inferred: list,
+        ctx: ActionContext,
+    ) -> ActionContext:
+        """Traverse all inferred actions and return a new context with their
+        outputs added to flow_bindings so the consumer can pick them up.
+
+        Sequential (Buffer/State) inferred actions are traversed first.
+        Concurrent (Stream) inferred actions are not yet supported and raise
+        NotImplementedError.
+        """
+        from .flow_obj_rt import BufferInstance
+        from .structural_solver import InferredAction
+
+        augmented_bindings: dict = dict(ctx.flow_bindings)
+
+        for ia in inferred:
+            if ia.ordering == "concurrent":
+                raise NotImplementedError(
+                    "Structural inference of concurrent Stream actions is not yet "
+                    "supported; use an explicit activity with parallel scheduling."
+                )
+
+            # Create the buffer object for this inferred producer→consumer pair
+            from .resource_rt import make_resource
+            buf_obj = make_resource(ia.flow_obj_type)
+            try:
+                from ..solver.api import randomize as _rand
+                _rand(buf_obj)
+            except Exception:
+                pass
+            buf_inst = BufferInstance(obj=buf_obj)
+
+            # Build a context for the inferred producer
+            prod_bindings = dict(augmented_bindings)
+            prod_bindings[ia.output_field] = (buf_inst, "output")
+            inferred_ctx = ActionContext(
+                action=ctx.action,
+                comp=ctx.comp,
+                pool_resolver=ctx.pool_resolver,
+                parent=ctx,
+                seed=ctx.seed ^ id(ia.action_type),
+                inline_constraints=[],
+                flow_bindings=prod_bindings,
+                structural_solver=ctx.structural_solver,
+                forward_propagator=ctx.forward_propagator,
+                tracer=ctx.tracer,
+            )
+            await self._traverse(ia.action_type, [], inferred_ctx)
+
+            # Wire the produced buffer as input for the consumer
+            augmented_bindings[ia.input_field] = (buf_inst, "input")
+
+        return ActionContext(
+            action=ctx.action,
+            comp=ctx.comp,
+            pool_resolver=ctx.pool_resolver,
+            parent=ctx,
+            seed=ctx.seed,
+            inline_constraints=ctx.inline_constraints,
+            flow_bindings=augmented_bindings,
+            structural_solver=ctx.structural_solver,
+            forward_propagator=ctx.forward_propagator,
+            tracer=ctx.tracer,
+        )
 
     # ------------------------------------------------------------------
     # Super traversal:  super().activity()
@@ -375,6 +495,7 @@ class ActivityRunner:
                 parent=ctx,
                 seed=ctx.seed ^ i,
                 head_resource_hints=hints,
+                structural_solver=ctx.structural_solver,
                 tracer=ctx.tracer,
             )
             coros.append(self._exec(stmt, branch_ctx))
@@ -396,6 +517,7 @@ class ActivityRunner:
                     parent=ctx,
                     seed=ctx.seed ^ orig_idx,
                     flow_bindings={k: v for k, v in raw_bindings.items()},
+                    structural_solver=ctx.structural_solver,
                     tracer=ctx.tracer,
                 )
                 coros.append(self._exec(stmt, stage_ctx))
@@ -490,6 +612,80 @@ class ActivityRunner:
 # ------------------------------------------------------------------
 # Module-level helpers
 # ------------------------------------------------------------------
+
+def _collect_unbound_flow_inputs(
+    action_type: type,
+    flow_bindings: dict,
+) -> list:
+    """Return ``(field_name, flow_obj_type)`` tuples for flow-input fields on
+    *action_type* that are not already present in *flow_bindings*.
+
+    These represent slots that the structural solver needs to fill.
+    """
+    try:
+        fields = dc.fields(action_type)
+    except TypeError:
+        return []
+
+    ann: dict = {}
+    for klass in action_type.__mro__:
+        ann.update(klass.__dict__.get("__annotations__", {}))
+
+    result = []
+    for f in fields:
+        meta = f.metadata or {}
+        if meta.get("kind") != "flow_ref":
+            continue
+        if meta.get("direction") != "input":
+            continue
+        if f.name in flow_bindings:
+            continue
+        flow_obj_type = ann.get(f.name)
+        if isinstance(flow_obj_type, type):
+            result.append((f.name, flow_obj_type))
+    return result
+
+
+def _create_orphan_output_buffers(
+    action_type: type,
+    action: Any,
+    flow_bindings: dict,
+) -> None:
+    """For each flow-output field on *action* that is still ``None`` (not yet
+    bound via *flow_bindings*), create a minimal buffer instance so that
+    ``body()`` can write to the field without crashing.
+
+    This covers actions traversed in isolation (no explicit consumer registered
+    for their output) — orphaned outputs are valid in PSS when the producer is
+    inferred or the user doesn't need the value.
+    """
+    try:
+        fields = dc.fields(action_type)
+    except TypeError:
+        return
+
+    ann: dict = {}
+    for klass in action_type.__mro__:
+        ann.update(klass.__dict__.get("__annotations__", {}))
+
+    from .resource_rt import make_resource
+    for f in fields:
+        meta = f.metadata or {}
+        if meta.get("kind") != "flow_ref":
+            continue
+        if meta.get("direction") != "output":
+            continue
+        if f.name in flow_bindings:
+            continue
+        # Field is unbound — create an orphan buffer
+        flow_obj_type = ann.get(f.name)
+        if isinstance(flow_obj_type, type):
+            try:
+                buf_obj = make_resource(flow_obj_type)
+                object.__setattr__(action, f.name, buf_obj)
+            except Exception:
+                pass
+
 
 def _resolve_action_type(node: ActivityAnonTraversal, ctx: ActionContext) -> type:
     """Return the Python class for an ActivityAnonTraversal node."""
@@ -755,6 +951,12 @@ class ScheduleGraph:
 
             if is_buffer:
                 obj = make_resource(flow_type)
+                # Randomize the flow object's own rand fields before binding
+                try:
+                    from ..solver.api import randomize, RandomizationError
+                    randomize(obj)
+                except Exception:
+                    pass  # No rand fields or unsolvable — use defaults
                 flow_inst = BufferInstance(obj=obj)
             elif is_stream:
                 flow_inst = StreamInstance()

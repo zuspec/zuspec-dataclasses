@@ -138,7 +138,7 @@ class NestedLeaf(zdc.Action[TracerComp]):
 @zdc.dataclass
 class NestedOuter(zdc.Action[TracerComp]):
     async def activity(self):
-        do(NestedLeaf)
+        await do(NestedLeaf)
 
 
 def test_nested_traversal_events():
@@ -173,19 +173,19 @@ class ExtLeafA(zdc.Action[TracerComp]):
 @zdc.dataclass
 class BaseAction(zdc.Action[TracerComp]):
     async def activity(self):
-        do(BaseLeafA)
+        await do(BaseLeafA)
 
 
 @zdc.extend
 class ExtAction(BaseAction):
     async def activity(self):
-        do(ExtLeafA)
+        await do(ExtLeafA)
 
 
 @zdc.dataclass
 class ExtComp(zdc.Action[TracerComp]):
     async def activity(self):
-        do(BaseAction)
+        await do(BaseAction)
 
 
 def test_extend_single_extension_runs():
@@ -221,25 +221,25 @@ class Ext2bLeaf(zdc.Action[TracerComp]):
 @zdc.dataclass
 class Base2Action(zdc.Action[TracerComp]):
     async def activity(self):
-        do(Base2LeafA)
+        await do(Base2LeafA)
 
 
 @zdc.extend
 class Ext2aAction(Base2Action):
     async def activity(self):
-        do(Ext2aLeaf)
+        await do(Ext2aLeaf)
 
 
 @zdc.extend
 class Ext2bAction(Base2Action):
     async def activity(self):
-        do(Ext2bLeaf)
+        await do(Ext2bLeaf)
 
 
 @zdc.dataclass
 class Ext2Comp(zdc.Action[TracerComp]):
     async def activity(self):
-        do(Base2Action)
+        await do(Base2Action)
 
 
 def test_extend_two_extensions_run():
@@ -261,7 +261,7 @@ class PlainLeaf(zdc.Action[TracerComp]):
 @zdc.dataclass
 class PlainOuter(zdc.Action[TracerComp]):
     async def activity(self):
-        do(PlainLeaf)
+        await do(PlainLeaf)
 
 
 def test_no_extend_runs_normally():
@@ -298,7 +298,7 @@ class HangingAction(zdc.Action[TracerComp]):
 @zdc.dataclass
 class HangOuter(zdc.Action[TracerComp]):
     async def activity(self):
-        do(HangingAction)
+        await do(HangingAction)
 
 
 def test_watchdog_fires_on_deadlock():
@@ -317,7 +317,7 @@ class FastAction(zdc.Action[TracerComp]):
 @zdc.dataclass
 class FastOuter(zdc.Action[TracerComp]):
     async def activity(self):
-        do(FastAction)
+        await do(FastAction)
 
 
 def test_watchdog_does_not_fire_on_fast_completion():

@@ -46,7 +46,7 @@ class Tock(zdc.Action[SysComp]):
 class RepeatThree(zdc.Action[SysComp]):
     async def activity(self):
         for i in range(3):
-            do(Tick)
+            await do(Tick)
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ class ForeachFive(zdc.Action[SysComp]):
 
     async def activity(self):
         for idx, item in enumerate(self.items):
-            do(Tick)
+            await do(Tick)
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +72,9 @@ class IfElse(zdc.Action[SysComp]):
 
     async def activity(self):
         if self.flag:
-            do(Tick)
+            await do(Tick)
         else:
-            do(Tock)
+            await do(Tock)
 
 
 # ---------------------------------------------------------------------------
@@ -86,9 +86,9 @@ class SelectEither(zdc.Action[SysComp]):
     async def activity(self):
         with select():
             with branch(weight=1):
-                do(Tick)
+                await do(Tick)
             with branch(weight=1):
-                do(Tock)
+                await do(Tock)
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +116,9 @@ class NestedControl(zdc.Action[SysComp]):
     async def activity(self):
         if self.flag:
             for i in range(2):
-                do(Tick)
+                await do(Tick)
         else:
-            do(Tock)
+            await do(Tock)
 
 
 # ---------------------------------------------------------------------------
@@ -160,9 +160,9 @@ def test_if_else_false_branch():
 
         async def activity(self):
             if self.flag:
-                do(Tick)
+                await do(Tick)
             else:
-                do(Tock)
+                await do(Tock)
 
     comp = SysComp()
     _run(ScenarioRunner(comp, seed=3).run(IfElseFalse))

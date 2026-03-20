@@ -182,8 +182,16 @@ class ActivityParser:
             dst = self._parse_expr(call.args[1])
             return ActivityBind(src=src, dst=dst, loc=self._loc(inner))
 
-        # do(Type) → ActivityAnonTraversal (no await needed — no coroutine returned)
+        # await do(Type) → ActivityAnonTraversal
+        # Bare do(Type) without await is now an error.
         if self._is_call_name(inner, "do"):
+            if not awaited:
+                type_name = self._type_name(inner.args[0])  # type: ignore[attr-defined]
+                raise ActivityParseError(
+                    f"Anonymous traversal must be awaited: "
+                    f"use 'await do({type_name})' "
+                    f"at line {getattr(node, 'lineno', '?')}"
+                )
             type_name = self._type_name(inner.args[0])  # type: ignore[attr-defined]
             return ActivityAnonTraversal(
                 action_type=type_name,
@@ -210,9 +218,13 @@ class ActivityParser:
     # ------------------------------------------------------------------
 
     def _parse_assign(self, node: ast.Assign) -> ActivityStmt:
-        """Handle ``x = do(Type)`` and ``x = await do(Type)`` — labeled anonymous traversal."""
+        """Handle ``x = await do(Type)`` — labeled anonymous traversal.
+
+        Bare ``x = do(Type)`` without ``await`` is rejected.
+        """
         rhs = node.value
-        if isinstance(rhs, ast.Await):
+        awaited = isinstance(rhs, ast.Await)
+        if awaited:
             rhs = rhs.value
         if (
             len(node.targets) == 1
@@ -222,6 +234,12 @@ class ActivityParser:
             label = node.targets[0].id
             call: ast.Call = rhs  # type: ignore[assignment]
             type_name = self._type_name(call.args[0])
+            if not awaited:
+                raise ActivityParseError(
+                    f"Labeled anonymous traversal must be awaited: "
+                    f"use '{label} = await do({type_name})' "
+                    f"at line {getattr(node, 'lineno', '?')}"
+                )
             return ActivityAnonTraversal(
                 action_type=type_name,
                 label=label,

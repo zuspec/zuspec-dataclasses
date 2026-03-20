@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from ..types import Component
     from .pool_resolver import PoolResolver
     from .tracer import Tracer
+    from .structural_solver import StructuralSolver
+    from .forward_constraint_propagator import ForwardConstraintPropagator
 
 
 @dc.dataclass(kw_only=True)
@@ -43,6 +45,12 @@ class ActionContext:
 
     head_resource_hints: dict = dc.field(default_factory=dict)
     """field_name → instance_id pre-assigned by BindingSolver for parallel heads."""
+
+    structural_solver: Optional["StructuralSolver"] = None
+    """Resolves unbound flow-object inputs via ICL table search (Phase S)."""
+
+    forward_propagator: Optional["ForwardConstraintPropagator"] = None
+    """Propagates concrete field values from predecessor sequential actions (P3)."""
 
     tracer: Optional["Tracer"] = None
     """Optional tracer receiving action lifecycle events."""
