@@ -4,11 +4,12 @@ import dataclasses as dc
 import inspect
 import ast
 from .ir.context import Context
+import enum as _enum_mod
 from .ir.data_type import (
     DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass,
     DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
     DataTypeLock, DataTypeEvent, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
-    DataTypeTuple,
+    DataTypeTuple, DataTypeEnum,
     Function, Process
 )
 from .ir.fields import Field, FieldKind, Bind, FieldInOut
@@ -650,11 +651,20 @@ class DataModelFactory(object):
             # Determine field kind from metadata
             kind = FieldKind.Field
             if f.metadata:
+                import collections.abc
                 field_kind = f.metadata.get('kind')
-                if field_kind == 'port':
-                    kind = FieldKind.Port
-                elif field_kind == 'export':
-                    kind = FieldKind.Export
+                if field_kind in ('port', 'export'):
+                    is_export = field_kind == 'export'
+                    ann_origin = get_origin(field_type)
+                    if ann_origin is collections.abc.Callable:
+                        kind = FieldKind.CallableExport if is_export else FieldKind.CallablePort
+                    elif getattr(field_type, '_is_protocol', False):
+                        kind = FieldKind.ProtocolExport if is_export else FieldKind.ProtocolPort
+                    elif isinstance(field_type, type):
+                        # Bundle subclass (existing behaviour)
+                        kind = FieldKind.Export if is_export else FieldKind.Port
+                    else:
+                        kind = FieldKind.Export if is_export else FieldKind.Port
             
             # Get field type
             origin = get_origin(field_type)
@@ -931,6 +941,11 @@ class DataModelFactory(object):
             if origin is PutIF:
                 return DataTypePutIF(element_type=element_type)
         
+        # Handle Python IntEnum subclasses → DataTypeEnum
+        if inspect.isclass(field_type) and issubclass(field_type, _enum_mod.IntEnum):
+            items = {member.name: member.value for member in field_type}
+            return DataTypeEnum(items=items, py_type=field_type)
+
         if hasattr(field_type, '__name__'):
             return DataTypeRef(ref_name=self._get_type_name(field_type))
         return DataType()

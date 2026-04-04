@@ -28,7 +28,9 @@ from .decorators import (
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view, constraint, rand, randc,
-    lock, share, extend, pool, flow_output, flow_input
+    lock, share, extend, pool, flow_output, flow_input,
+    indexed_regfile,
+    indexed_pool,
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
@@ -41,6 +43,7 @@ from .types import *
 from .tlm import *
 from . import ir
 from . import profiles
+from . import transform
 from .data_model_factory import DataModelFactory
 from .rt.edge import posedge, negedge, edge
 from .rt.scenario_runner import ScenarioRunner, run_action, run_action_sync, DeadlockError
@@ -48,6 +51,8 @@ from .rt.resource_rt import get_resource_fields, acquire_resources, release_reso
 from .rt.binding_solver import BindingSolver
 from .rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
 from .rt.activity_runner import ScheduleGraph
+from .rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
+from .rt.indexed_pool_rt import IndexedPoolRT
 from .solver.api import randomize, randomize_with, RandomizationError
 from .coverage import (
     Covergroup, coverpoint, cross,
@@ -81,7 +86,7 @@ __all__ = [
     # From types (re-exported via *)
     'Action',
     'Buffer', 'Stream', 'State', 'Resource',
-    'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimPool', 'CompImpl', 'Component',
+    'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',

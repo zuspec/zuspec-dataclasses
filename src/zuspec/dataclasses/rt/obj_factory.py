@@ -296,6 +296,10 @@ class ObjFactory(ObjFactoryP):
                     else:
                         fields.append((f.name, object, dc.field(default=None, metadata=metadata)))
 
+                # Handle port/export fields: Callable or Protocol annotation — bound later
+                elif field_kind in ('port', 'export'):
+                    fields.append((f.name, object, dc.field(default=None, metadata=f.metadata)))
+
                 # Handle fixed-size tuple fields
                 elif field_kind == 'tuple':
                     size = 0

@@ -46,6 +46,11 @@ def json_converter(pmod, *args, **kwargs):
     return closure
 
 
+# M0 additions: provenance, pass infrastructure, connections, RTL IR
+from .provenance import Provenance
+from .domain_node import DomainNode
+from .connection import Connection, Signal, Bundle, MethodInterface
+
 # Re-export data model types
 from .fields import Bind, BindSet, Field, FieldInOut, FieldKind, SignalDirection
 from .data_type import (
@@ -155,6 +160,8 @@ __all__ = [
     "SelectBranch","ActivitySelect",
     "ActivityIfElse","MatchCase","ActivityMatch",
     "ActivityConstraint","ActivityBind",
+    # M0 foundations
+    "Provenance","DomainNode","Connection","Signal","Bundle","MethodInterface",
 ]
 
 # Important to place after all data-model classes have been imported

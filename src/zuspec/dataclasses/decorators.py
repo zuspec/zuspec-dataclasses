@@ -197,6 +197,82 @@ def pool(size: Optional[int] = None, default_factory=None) -> Any:
     return dc.field(default=None, metadata=meta)
 
 
+def indexed_regfile(
+        read_ports:  int  = 2,
+        write_ports: int  = 1,
+        shared_port: bool = False,
+) -> Any:
+    """Declare an :class:`IndexedRegFile` field on a Component.
+
+    Parameters
+    ----------
+    read_ports:
+        Number of independent read port slots.  Controls how many concurrent
+        reads are structurally allowed and how many ``rp{N}_addr / rp{N}_data``
+        wire groups appear on the synthesised register file module.
+    write_ports:
+        Number of independent write port slots.  Controls how many concurrent
+        writes are structurally allowed and how many ``wp{N}_addr / wp{N}_data
+        / wp{N}_we`` wire groups appear on the synthesised module.
+    shared_port:
+        If ``True``, read and write slot pools are merged into a single pool of
+        size 1.  A read and a write cannot occur in the same cycle — this maps
+        to a true single-port Block RAM (Xilinx BRAM SP mode, Intel M20K SP).
+        Hazard resolution moves to the pipeline controller (stall logic).
+
+        If ``False`` (default), reads and writes use independent slot pools and
+        can proceed concurrently on separate physical buses.  RAW hazard
+        comparators and forwarding muxes are generated inside the register file
+        module by MLS.
+
+    Example::
+
+        # Standard RISC-V: 2 read ports, 1 write port, separate buses
+        regfile: IndexedRegFile[zdc.u5, zdc.u32] = zdc.indexed_regfile()
+
+        # FPGA single-port BRAM
+        regfile: IndexedRegFile[zdc.u5, zdc.u32] = zdc.indexed_regfile(
+            read_ports=1, write_ports=1, shared_port=True
+        )
+    """
+    return dc.field(default=None, metadata={
+        'kind':        'indexed_regfile',
+        'read_ports':  read_ports,
+        'write_ports': write_ports,
+        'shared_port': shared_port,
+    })
+
+
+def indexed_pool(
+        depth:    int           = 32,
+        noop_idx: int | None    = None,
+) -> Any:
+    """Declare an :class:`IndexedPool` field on a Component.
+
+    Parameters
+    ----------
+    depth:
+        Number of addressable slots — should match the number of registers
+        (e.g. 32 for RV32/RV64) or whatever indexed resource the pool tracks.
+    noop_idx:
+        Optional slot index whose lock / share operations are no-ops.
+        Use ``noop_idx=0`` for RISC-V so that writes to ``x0`` and reads of
+        ``x0`` never consume a scoreboard slot and never generate hazard
+        comparators in the synthesised hardware.
+
+    Example::
+
+        # RISC-V integer scoreboard — x0 is always a no-op
+        rd_sched: IndexedPool[zdc.u5] = zdc.indexed_pool(depth=32, noop_idx=0)
+    """
+    meta: dict = {
+        'kind':     'indexed_pool',
+        'depth':    depth,
+        'noop_idx': noop_idx,
+    }
+    return dc.field(default=None, metadata=meta)
+
+
 def flow_output(default=dc.MISSING, **kwargs) -> Any:
     """Declare an action field as a flow-object output (producer side).
 
@@ -320,7 +396,8 @@ def rand(
         default: Any = 0,
         size: Optional[int] = None,
         max_size: Optional[int] = None,
-        width=None):
+        width=None,
+        soft=None):
     """Mark a field as a random variable.
     
     Random variables are solved by the constraint solver during randomization.
@@ -378,6 +455,9 @@ def rand(
     
     if width is not None:
         metadata["width"] = width
+    
+    if soft is not None:
+        metadata["soft_default"] = soft
     
     return dc.field(default=default, metadata=metadata)
 
@@ -539,15 +619,75 @@ def monitor(
     return dc.field(init=False, default_factory=default_factory, metadata=metadata)
 
 def port():
-    """A 'port' field is an API consumer. It must be bound
-    to a matching 'export' field that provides an implementation
-    of the API"""
+    """Declare a *required* API port on a Component — the consumer side.
+
+    A ``port`` field must be bound before the component is used.  Binding
+    supplies the concrete implementation of the declared API.
+
+    Two annotation forms are supported:
+
+    **Callable port** — a single async function::
+
+        icache: Callable[[zdc.u32], Awaitable[zdc.u32]] = zdc.port()
+
+        # Bind at construction:
+        core = RVCore(icache=my_fetch_fn)
+
+        # Use inside a body:
+        insn = await self.comp.icache(self.pc_in)
+
+    **Protocol port** — a duck-typed object with named async methods::
+
+        dcache: DCacheIface = zdc.port()   # DCacheIface is a typing.Protocol
+
+        # Bind at construction (whole object):
+        core = RVCore(dcache=MockCache())
+
+        # Use inside a body:
+        data = await self.comp.dcache.load(addr, funct3)
+
+    Ports can also be wired inside a containing component via ``__bind__``::
+
+        def __bind__(self):
+            return {
+                self.core.icache: self.mem.fetch,       # Callable form
+                self.core.dcache: self.mem,             # Protocol form (whole object)
+                self.core.dcache.load: self._do_load,  # Protocol form (per-method)
+            }
+
+    During synthesis the synthesizer maps each port to ready-valid SV channels:
+    a Callable port becomes a single req/resp pair; a Protocol port becomes one
+    req/resp pair per method.
+
+    See ``zdc.export()`` for the provider side.
+    """
     return dc.field(init=False, metadata={"kind": "port"})
 
 def export():
-    """An 'export' field is an API provider. It must be bound
-    to implementations of the API class -- either per method 
-    or on a whole-class basis."""
+    """Declare an *offered* API export on a Component — the provider side.
+
+    An ``export`` field advertises that this component implements the declared
+    API and can be bound to a matching ``port`` on another component.
+
+    The annotation follows the same two forms as ``zdc.port()``:
+
+    **Callable export**::
+
+        fetch: Callable[[zdc.u32], Awaitable[zdc.u32]] = zdc.export()
+
+    **Protocol export**::
+
+        mem_iface: MemIface = zdc.export()   # MemIface is a typing.Protocol
+
+    Binding is set up by the containing component's ``__bind__`` method, or
+    at construction time by the consumer that holds both the port and the
+    export::
+
+        def __bind__(self):
+            return {self.requester.api: self.provider}
+
+    See ``zdc.port()`` for the consumer side.
+    """
     return dc.field(init=False, metadata={"kind": "export"})
 
 def inst(

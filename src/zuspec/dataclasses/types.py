@@ -532,36 +532,124 @@ class Claim[T](Protocol):
         ...
 
 
+class ClaimContext[T]:
+    """Dual-mode claim handle returned by :meth:`ClaimPool.lock` and
+    :meth:`ClaimPool.share`.
+
+    Supports two equivalent usage patterns:
+
+    **Explicit await** (manual release required)::
+
+        claim = await comp.alu_pool.lock()
+        result = await claim.t.execute(op, rs1, rs2)
+        comp.alu_pool.drop(claim)
+
+    **Async context manager** (auto-release on exit, preferred)::
+
+        async with comp.alu_pool.lock() as claim:
+            result = await claim.t.execute(op, rs1, rs2)
+        # claim released automatically, even if an exception is raised
+
+    Both forms call the same underlying ``_acquire_coro`` coroutine, so
+    the two styles are fully interchangeable at the call site.
+    """
+
+    def __init__(self, pool: 'ClaimPool[T]', acquire_coro) -> None:
+        self._pool = pool
+        self._acquire_coro = acquire_coro   # a 0-arg async callable
+        self._claim: Optional['Claim[T]'] = None
+
+    # ------------------------------------------------------------------
+    # Awaitable protocol — for:  claim = await pool.lock()
+    # ------------------------------------------------------------------
+    def __await__(self):
+        return self._acquire_coro().__await__()
+
+    # ------------------------------------------------------------------
+    # Async context-manager protocol — for:  async with pool.lock() as c:
+    # ------------------------------------------------------------------
+    async def __aenter__(self) -> 'Claim[T]':
+        self._claim = await self._acquire_coro()
+        return self._claim
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._claim is not None:
+            self._pool.drop(self._claim)
+            self._claim = None
+        return False   # do not suppress exceptions
+
+
 class ClaimPool[T](Pool[T]):
-    """Manages a pool of claimable resources"""
+    """Manages a pool of claimable resources.
+
+    Both ``lock()`` and ``share()`` return a :class:`ClaimContext` that
+    supports either ``await`` or ``async with``::
+
+        # explicit await + manual drop
+        claim = await pool.lock()
+        ...
+        pool.drop(claim)
+
+        # async context manager — preferred; auto-drops on exit
+        async with pool.lock() as claim:
+            ...
+    """
 
     @abc.abstractmethod
-    async def lock(
+    async def _lock_coro(
             self,
             claim_id: Optional[Any] = None,
-            filter: Optional[Callable[[T, int], bool]] = None) -> Claim[T]:
-        """Acquires a resource exclusively. In the case of mutable resources,
-        the claimant may mutate the resource.
+            filter: Optional[Callable[[T, int], bool]] = None) -> 'Claim[T]':
+        """Internal coroutine that performs the exclusive acquire.
+
+        Subclasses implement this; callers use :meth:`lock` instead.
         """
         ...
 
     @abc.abstractmethod
-    async def share(
+    async def _share_coro(
             self,
             claim_id: Optional[Any] = None,
-            filter: Optional[Callable[[T, int], bool]] = None) -> Claim[T]:
-        """Acquires a resource non-exclusively. In the case of mutable resources,
-        the claimant may not mutate the resource.
+            filter: Optional[Callable[[T, int], bool]] = None) -> 'Claim[T]':
+        """Internal coroutine that performs the shared acquire.
+
+        Subclasses implement this; callers use :meth:`share` instead.
         """
         ...
 
-    def drop(self, claim : Claim[T]):
-        """Claim auto-drops with garbage collection, but it can be dropped early"""
+    def lock(
+            self,
+            claim_id: Optional[Any] = None,
+            filter: Optional[Callable[[T, int], bool]] = None) -> 'ClaimContext[T]':
+        """Acquire a resource exclusively.
+
+        Returns a :class:`ClaimContext` usable as either an awaitable or
+        an async context manager (see class docstring).
+        """
+        return ClaimContext(self, lambda: self._lock_coro(claim_id, filter))
+
+    def share(
+            self,
+            claim_id: Optional[Any] = None,
+            filter: Optional[Callable[[T, int], bool]] = None) -> 'ClaimContext[T]':
+        """Acquire a resource non-exclusively (shared read).
+
+        Returns a :class:`ClaimContext` usable as either an awaitable or
+        an async context manager.
+        """
+        return ClaimContext(self, lambda: self._share_coro(claim_id, filter))
+
+    def drop(self, claim: 'Claim[T]'):
+        """Release a claim obtained via the explicit-await form.
+
+        Not needed when using ``async with`` — the context manager calls
+        this automatically.
+        """
         ...
 
     @staticmethod
-    def fromList(resources: List[T]) -> ClaimPool[T]:
-        """Returns a ClaimPool populated by 'resources'"""
+    def fromList(resources: List[T]) -> 'ClaimPool[T]':
+        """Returns a ClaimPool populated by *resources*."""
         from .rt.list_claim_pool import ListClaimPool
         return ListClaimPool(resources)
 
@@ -587,6 +675,166 @@ class Lock(Protocol):
     async def __aexit__(self, e, v, tb):
         """Context manager exit"""
         ...
+
+
+class IndexedClaim(Protocol):
+    """Handle to an in-flight register file access.
+
+    ``idx``  — register identity; a constrained-random integer whose value is
+               determined by the instruction decoder at elaboration time.
+               MLS uses this for hazard comparator generation.
+    ``data`` — read result (for reads) or write payload (for writes).
+    ``kind`` — ``'read'`` or ``'write'``; determines which hazard category
+               applies when this claim overlaps with another.
+    """
+    idx:  int
+    data: int
+    kind: str   # 'read' | 'write'
+
+
+class IndexedRegFile[TIdx, TData](Protocol):
+    """Register file resource with explicit port count and topology.
+
+    ``read_ports``  — number of independent read port slots.  Each slot is
+                      exclusive per cycle (``lock`` semantics).  Multiple
+                      concurrent reads are expressed through slot count, not
+                      slot-sharing; ``share`` semantics do not apply to
+                      physical register file ports.
+    ``write_ports`` — number of independent write port slots.
+    ``shared_port`` — if ``True``, read and write claims draw from the *same*
+                      slot pool; a read and a write cannot occur in the same
+                      cycle (true single-port BRAM mode).
+                      if ``False`` (default), reads and writes use independent
+                      slot pools and can proceed concurrently on separate
+                      physical buses.
+
+    MLS uses ``read_ports`` / ``write_ports`` to generate addr/data wire
+    groups on the synthesised register file module, and ``shared_port`` to
+    decide whether forwarding muxes (separate ports) or stall logic (shared
+    port) are needed for RAW hazard resolution.
+    """
+    read_ports:  int
+    write_ports: int
+    shared_port: bool
+
+    def read(self, idx: int) -> Any:
+        """Claim one read port slot for register ``idx``.
+
+        Returns an async context manager that yields the register value::
+
+            async with regfile.read(d.rs1) as rs1_val:
+                ...  # rs1_val holds the current value of regs[d.rs1]
+
+        Reading register 0 (x0) always yields 0 without consuming a slot.
+        """
+        ...
+
+    async def read_all(self, *indices: int) -> tuple:
+        """Read multiple registers, obeying port-count constraints.
+
+        All reads are launched concurrently via ``asyncio.gather``.  When the
+        number of indices exceeds ``read_ports``, the semaphore naturally
+        serializes them in batches — so the call always succeeds regardless of
+        how many registers are requested::
+
+            rs1v, rs2v = await regfile.read_all(d.rs1, d.rs2)
+
+        Reading register 0 (x0) always yields 0 without consuming a slot.
+
+        Returns a tuple of values in the same order as *indices*.
+        """
+        ...
+
+    def write(self, idx: int, val: int) -> Any:
+        """Claim one write port slot to write ``val`` into register ``idx``.
+
+        Returns an async context manager::
+
+            async with regfile.write(d.rd, result):
+                pass  # write is committed when the context exits
+
+        Writing register 0 (x0) is a no-op; no slot is consumed.
+        """
+        ...
+
+
+class IndexedPool[TIdx](Protocol):
+    """Indexed resource pool with per-slot lock / share semantics.
+
+    Models a *scoreboard* or any resource where in-flight operations are
+    tracked per index value.  The MLS synthesis engine uses lock / share
+    pairs to detect data hazards between concurrent action instances and
+    to generate stall or forwarding logic.
+
+    Two access modes:
+
+    ``lock(idx)``
+        Exclusive claim on slot *idx*.  Blocks until all current locks and
+        shares on *idx* have been released.  Typically used by the producer
+        action to reserve a write destination.
+
+    ``share(idx)``
+        Shared claim on slot *idx*.  Multiple concurrent shares are allowed;
+        a share is blocked only while a lock on the same *idx* is held.
+        Typically used by consumer actions to declare a read dependency.
+
+    MLS analysis rules
+    ------------------
+    Given two concurrent action instances A and B:
+
+    * ``A.lock(a)`` and ``B.share(b)`` where *a* and *b* are constrained-
+      random — **RAW hazard**: generate comparator ``a == b``; if true,
+      schedule B after A or insert forwarding.
+    * ``A.lock(a)`` and ``B.lock(b)`` — **WAW hazard**: generate comparator;
+      if true, serialize writes.
+    * ``A.share(a)`` and ``B.share(b)`` — no hazard.
+
+    The *noop_idx* parameter designates one index value as a structural no-op
+    (e.g. RISC-V ``x0``).  Lock and share on *noop_idx* complete immediately
+    without acquiring any slot — no hazard comparators are generated for it.
+
+    Example — RISC-V integer scoreboard::
+
+        # Component declaration
+        rd_sched: IndexedPool[zdc.u5] = zdc.indexed_pool(depth=32, noop_idx=0)
+
+        # In ExecuteInstruction.body() — producer reserves rd,
+        # consumer reads are gated by prior lock on same register
+        async with self.comp.rd_sched.share(d.rs1), \\
+                   self.comp.rd_sched.share(d.rs2):
+            rs1v, rs2v = await self.comp.regfile.read_all(d.rs1, d.rs2)
+
+        async with self.comp.rd_sched.lock(d.rd):
+            result = compute(rs1v, rs2v)
+            async with self.comp.regfile.write(d.rd, result):
+                pass
+    """
+
+    def lock(self, idx: int) -> Any:
+        """Exclusive claim on slot *idx*.
+
+        Returns an async context manager::
+
+            async with pool.lock(d.rd):
+                ...  # rd is reserved; no other action can lock or share it
+
+        If *idx* equals *noop_idx*, returns immediately without blocking.
+        """
+        ...
+
+    def share(self, idx: int) -> Any:
+        """Shared claim on slot *idx*.
+
+        Returns an async context manager::
+
+            async with pool.share(d.rs1):
+                ...  # blocked while another action holds lock(rs1)
+
+        Multiple concurrent shares on the same *idx* are allowed.
+        If *idx* equals *noop_idx*, returns immediately without blocking.
+        """
+        ...
+
 
 uint1_t = Annotated[int, U(1)]
 uint2_t = Annotated[int, U(2)]

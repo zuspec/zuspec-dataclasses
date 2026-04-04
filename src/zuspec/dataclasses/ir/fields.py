@@ -9,9 +9,13 @@ from .expr import Expr
 
 class FieldKind(enum.Enum):
     """Kind of field in a component/class"""
-    Field = enum.auto()    # Regular field
-    Port = enum.auto()     # Port (API consumer)
-    Export = enum.auto()   # Export (API provider)
+    Field = enum.auto()          # Regular field
+    Port = enum.auto()           # Port: Bundle subclass (API consumer)
+    Export = enum.auto()         # Export: Bundle subclass (API provider)
+    CallablePort = enum.auto()   # Port: Callable[[...], Awaitable[...]]
+    ProtocolPort = enum.auto()   # Port: Protocol subclass (bundle of callables)
+    CallableExport = enum.auto() # Export: Callable[[...], Awaitable[...]]
+    ProtocolExport = enum.auto() # Export: Protocol subclass (bundle of callables)
 
 class SignalDirection(enum.Enum):
     """Direction of hardware signals"""
