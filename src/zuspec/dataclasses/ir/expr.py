@@ -28,7 +28,7 @@ class Expr(Base):
     pass
 
 class BinOp(enum.Enum):
-    Add = enum.auto(); Sub = enum.auto(); Mult = enum.auto(); Div = enum.auto(); Mod = enum.auto(); Exp = enum.auto()
+    Add = enum.auto(); Sub = enum.auto(); Mult = enum.auto(); Div = enum.auto(); Mod = enum.auto(); FloorDiv = enum.auto(); Exp = enum.auto()
     BitAnd = enum.auto(); BitOr = enum.auto(); BitXor = enum.auto(); LShift = enum.auto(); RShift = enum.auto()
     Eq = enum.auto(); NotEq = enum.auto(); Lt = enum.auto(); LtE = enum.auto(); Gt = enum.auto(); GtE = enum.auto()
     And = enum.auto(); Or = enum.auto()

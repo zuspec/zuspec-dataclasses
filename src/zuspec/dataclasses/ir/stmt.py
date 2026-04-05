@@ -1,6 +1,6 @@
 from __future__ import annotations
 import dataclasses as dc
-from typing import Optional, List
+from typing import Any, Optional, List
 from .base import Base
 from .expr import Expr, AugOp
 
@@ -42,6 +42,7 @@ class StmtAnnAssign(Stmt):
     target: Expr = dc.field()
     annotation: Expr = dc.field()
     value: Optional[Expr] = dc.field(default=None)
+    ir_type: Optional[Any] = dc.field(default=None)  # DataType for typed locals (e.g. DataTypeAction)
 
 @dc.dataclass(kw_only=True)
 class StmtAugAssign(Stmt):

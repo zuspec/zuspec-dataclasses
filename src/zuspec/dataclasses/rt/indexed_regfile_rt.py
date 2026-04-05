@@ -201,13 +201,20 @@ class IndexedRegFileRT:
         for i in range(self.depth):
             self._regs[i] = 0
 
-    def set_reg(self, idx: int, val: int):
-        """Force-write a register value (bypasses port constraints, for setup)."""
+    def set(self, idx: int, val: int) -> None:
+        """Force-write a register value (bypasses port constraints, for setup).
+
+        Writing register 0 (x0) is a no-op (hardwired-zero convention).
+        """
         if 0 < idx < self.depth:
             self._regs[idx] = val
 
-    def get_reg(self, idx: int) -> int:
+    def get(self, idx: int) -> int:
         """Read a register value directly (bypasses port constraints, for checking)."""
         if idx == 0:
             return 0
         return self._regs[idx]
+
+    def get_all(self) -> list:
+        """Return all register values as a plain list (index 0 first)."""
+        return [0] + [self._regs[i] for i in range(1, self.depth)]

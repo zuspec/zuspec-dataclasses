@@ -7,15 +7,15 @@ from .ir.context import Context
 import enum as _enum_mod
 from .ir.data_type import (
     DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass,
-    DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
+    DataTypeAction, DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
     DataTypeLock, DataTypeEvent, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
-    DataTypeTuple, DataTypeEnum,
+    DataTypeTuple, DataTypeTupleReturn, DataTypeEnum, DataTypeClaimPool,
     Function, Process
 )
 from .ir.fields import Field, FieldKind, Bind, FieldInOut
 from .ir.stmt import (
     Stmt, Arguments, Arg,
-    StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
+    StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAnnAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
     StmtAssert, StmtAssume, StmtCover, StmtMatch, StmtMatchCase,
 )
 from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
@@ -29,6 +29,21 @@ from .tlm import Channel, GetIF, PutIF
 from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
 
 
+# ---------------------------------------------------------------------------
+# Private sentinels used only during action-body conversion.
+# These are returned by _convert_ast_expr in action-body mode and are ALWAYS
+# consumed by the surrounding Attribute handler — they never appear in the
+# final IR.
+# ---------------------------------------------------------------------------
+class _ExprActionSelf:
+    """Sentinel: represents ``self`` inside an action body being inlined."""
+    __slots__ = ()
+
+class _ExprActionComp:
+    """Sentinel: represents ``self.comp`` inside an action body being inlined."""
+    __slots__ = ()
+
+
 @dc.dataclass
 class ConversionScope:
     """Scope context for AST to datamodel conversion"""
@@ -36,6 +51,22 @@ class ConversionScope:
     field_indices: dict = dc.field(default_factory=dict)    # field_name -> index
     method_params: set = dc.field(default_factory=set)      # Parameter names in current method
     local_vars: set = dc.field(default_factory=set)         # Local variables in current scope
+    # var_name -> (field_idx, idx_expr, mode) for `async with self.field.read/write(idx) as var:`
+    regfile_bindings: dict = dc.field(default_factory=dict)
+
+    # --- Action body inlining context ---
+    # Set when converting an action body that is being inlined into a parent process.
+    is_action_body: bool = False
+    # Name of the result variable in the parent scope (e.g. "fn").
+    action_result_var: str = ""
+    # Non-comp field names of the action (e.g. {"pc_in", "pc_out", "insn32"}).
+    action_field_names: set = dc.field(default_factory=set)
+    # Prefix for action-body local variables to avoid naming conflicts (e.g. "fn_").
+    action_local_prefix: str = ""
+    # Component's field indices (for resolving self.comp.X in the action body).
+    comp_field_indices: dict = dc.field(default_factory=dict)
+    # var_name -> comp_field_idx mapping for ``async with self.comp.pool.lock() as var:``
+    pool_claims: dict = dc.field(default_factory=dict)
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -333,6 +364,8 @@ class DataModelFactory(object):
             dm = self._process_extern(t)
         elif self._is_protocol(t):
             dm = self._process_protocol(t)
+        elif self._is_action(t):
+            dm = self._process_action(t)
         elif self._is_component(t):
             dm = self._process_component(t)
         elif dc.is_dataclass(t):
@@ -365,6 +398,139 @@ class DataModelFactory(object):
         return (hasattr(t, '__mro__') and 
                 Struct in t.__mro__ and 
                 t is not Struct)
+
+    def _get_scope_globals(self, scope: Optional['ConversionScope']) -> dict:
+        """Return the module-level globals for the component class in *scope*.
+
+        These are used to resolve action class names encountered in method bodies.
+        """
+        if scope is not None and scope.component is not None:
+            # scope.component may be a DataTypeComponent (with .py_type)
+            # or the raw Python class itself (during early processing)
+            comp_ref = scope.component
+            if isinstance(comp_ref, type):
+                comp_py_type = comp_ref
+            else:
+                comp_py_type = getattr(comp_ref, 'py_type', None)
+            if comp_py_type is not None:
+                mod = inspect.getmodule(comp_py_type)
+                if mod is not None:
+                    return vars(mod)
+        return {}
+
+    def _is_action(self, t: Type) -> bool:
+        """Return True if *t* is a zdc.Action[T] subclass."""
+        from .types import Action
+        for base in getattr(t, '__orig_bases__', ()):
+            if getattr(base, '__origin__', None) is Action:
+                return True
+        return False
+
+    def _get_action_comp_type(self, t: Type):
+        """Return the component type T from ``Action[T]``, or None."""
+        from .types import Action
+        import typing
+        for base in getattr(t, '__orig_bases__', ()):
+            if getattr(base, '__origin__', None) is Action:
+                args = getattr(base, '__args__', ())
+                if not args:
+                    return None
+                arg = args[0]
+                # Resolve ForwardRef (from ``Action['ClassName']`` string annotation)
+                if isinstance(arg, typing.ForwardRef):
+                    # Try to resolve against the module where the action class is defined
+                    mod = inspect.getmodule(t)
+                    if mod is not None:
+                        resolved = getattr(mod, arg.__forward_arg__, None)
+                        if resolved is not None:
+                            return resolved
+                    return None  # Can't resolve
+                return arg
+        return None
+
+    def _process_action(self, t: Type) -> DataTypeAction:
+        """Process a zdc.Action subclass into DataTypeAction.
+
+        Collects the action's data fields and stores the body() stmts for
+        later inlining by :meth:`_inline_action_call`.
+        """
+        comp_type = self._get_action_comp_type(t)
+        comp_type_name = self._get_type_name(comp_type) if comp_type else None
+
+        # Ensure the component type is also processed.
+        if comp_type is not None:
+            self._add_pending(comp_type)
+
+        # Collect action fields via dataclass introspection.
+        # Action[T] defines `comp: T` as field 0; we include it so field indices
+        # match the Python class layout, but mark its C-struct presence separately.
+        fields = self._extract_fields(t)
+
+        # Collect @staticmethod members and convert them to Function IR.
+        static_methods = self._collect_static_methods(t)
+
+        # The body() stmts will be filled in lazily when the action is first
+        # inlined (comp's field_indices are needed at that point).
+        return DataTypeAction(
+            super=None,
+            fields=fields,
+            comp_type_name=comp_type_name,
+            body_stmts=[],   # populated on first inline
+            static_methods=static_methods,
+        )
+
+    def _collect_static_methods(self, t: Type) -> list:
+        """Return a list of ``Function`` IR objects for each ``@staticmethod`` on *t*.
+
+        Only converts methods whose source can be retrieved and parsed.  Skips
+        dunder names and any method that fails to parse.
+        """
+        funcs = []
+        for name, member in t.__dict__.items():
+            if name.startswith('__'):  # skip dunder only; single-underscore helpers like _sext are valid
+                continue
+            if not isinstance(member, staticmethod):
+                continue
+            fn = member.__func__
+            func_ir = self._convert_static_method(name, fn)
+            if func_ir is not None:
+                funcs.append(func_ir)
+        return funcs
+
+    def _convert_static_method(self, name: str, fn) -> Optional[Function]:
+        """Convert a single static method function to a ``Function`` IR node."""
+        import textwrap
+        try:
+            src = inspect.getsource(fn)
+            src = textwrap.dedent(src)
+            tree = ast.parse(src)
+        except Exception:
+            return None
+
+        func_nodes = [n for n in ast.walk(tree)
+                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        if not func_nodes:
+            return None
+        func_def = func_nodes[0]
+
+        # Build a "plain function" scope: parameters are method_params, no component.
+        param_names = {arg.arg for arg in func_def.args.args
+                       if arg.arg not in ('self', 'cls')}
+        scope = ConversionScope(
+            component=None,
+            field_indices={},
+            method_params=param_names,
+            local_vars=set(),
+        )
+
+        body_stmts = self._convert_ast_body(func_def.body, scope)
+
+        args = Arguments(
+            args=[Arg(arg=p.arg) for p in func_def.args.args
+                  if p.arg not in ('self', 'cls')]
+        )
+        return Function(name=name, args=args, body=body_stmts)
+
 
     def _process_protocol(self, t : Type) -> DataTypeProtocol:
         """Process a Protocol type into DataTypeProtocol."""
@@ -434,8 +600,10 @@ class DataModelFactory(object):
             if hasattr(member, '_constraint_kind'):
                 func_metadata['_constraint_kind'] = member._constraint_kind
         
-        # Create conversion scope
+        # Create conversion scope; component=cls so action class names can be
+        # resolved from the module globals via _get_scope_globals.
         scope = ConversionScope(
+            component=cls,
             field_indices=field_indices if field_indices else {},
             method_params=param_names
         )
@@ -940,6 +1108,14 @@ class DataModelFactory(object):
                 return DataTypeGetIF(element_type=element_type)
             if origin is PutIF:
                 return DataTypePutIF(element_type=element_type)
+            # ClaimPool[ElemType] → DataTypeClaimPool carrying the element type name
+            origin_name = getattr(origin, '__name__', '') or getattr(origin, '_name', '')
+            if origin_name in ('ClaimPool',):
+                elem_py = args[0] if args else None
+                elem_name = self._get_type_name(elem_py) if (elem_py and hasattr(elem_py, '__name__')) else ''
+                if elem_py and hasattr(elem_py, '__mro__') and self._is_component(elem_py):
+                    self._add_pending(elem_py)
+                return DataTypeClaimPool(elem_type_name=elem_name)
         
         # Handle Python IntEnum subclasses → DataTypeEnum
         if inspect.isclass(field_type) and issubclass(field_type, _enum_mod.IntEnum):
@@ -1113,16 +1289,51 @@ class DataModelFactory(object):
         return None
 
     def _extract_process(self, cls : Type, name : str, exec_proc : ExecProc, field_indices: dict = None) -> Optional[Process]:
-        """Extract a Process from an @process decorated method."""
+        """Extract a Process from an @process decorated method.
+
+        If the method has parameters beyond ``self``, it is promoted to a
+        ``Function`` with ``is_async=True`` so that the SW backend can emit a
+        callable entry point with the correct C signature.  Pure processes
+        with no parameters are still emitted as ``Process`` nodes.
+        """
         method = exec_proc.method
-        
-        # Create conversion scope for process
+
+        # Collect parameters (skip 'self')
+        try:
+            hints = get_type_hints(method)
+        except Exception:
+            hints = {}
+        sig = inspect.signature(method)
+        param_names: set = set()
+        args_list = []
+        for pname, _p in sig.parameters.items():
+            if pname == 'self':
+                continue
+            annotation = hints.get(pname)
+            args_list.append(Arg(arg=pname, annotation=self._type_to_expr(annotation)))
+            param_names.add(pname)
+
+        return_type = hints.get('return')
+        returns = self._annotation_to_datatype(return_type) if return_type else None
+
         scope = ConversionScope(
-            field_indices=field_indices if field_indices else {}
+            component=cls,
+            field_indices=field_indices if field_indices else {},
+            method_params=param_names,
         )
-        
+
         body = self._extract_method_body(cls, method.__name__, scope)
-        
+
+        if args_list:
+            # Promote to Function so the SW backend can emit a callable C entry.
+            return Function(
+                name=method.__name__,
+                args=Arguments(args=args_list),
+                body=body,
+                returns=returns,
+                is_async=True,
+                metadata={"is_process": True},
+            )
         return Process(
             name=method.__name__,
             body=body
@@ -1361,9 +1572,358 @@ class DataModelFactory(object):
         stmts = []
         for node in body:
             stmt = self._convert_ast_stmt(node, scope)
-            if stmt is not None:
+            if stmt is None:
+                continue
+            if isinstance(stmt, list):
+                stmts.extend(stmt)
+            else:
                 stmts.append(stmt)
         return stmts
+
+    def _convert_async_with(self, node, scope: ConversionScope = None):
+        """Lower `async with self.field.read/write(idx) as var:` to flat IR assignments.
+
+        Recognises the IndexedRegFile accessor pattern and inlines the body
+        by substituting `var.set(value)` → StmtAssign and `var.get()` → ExprSubscript.
+        Also recognises ``async with self.comp.pool.lock() as claim:`` and tracks
+        `claim` as a pool-claim variable so that ``claim.t.method(args)`` is lowered
+        to ``self->pool.method(self->pool.method_ud, args)`` via ExprRefField.
+        Returns a single Stmt, a list of Stmts, or None.
+        """
+        # Build a child scope carrying the new bindings; preserve action-body context
+        child_scope = ConversionScope(
+            component=scope.component if scope else None,
+            field_indices=scope.field_indices.copy() if scope else {},
+            method_params=scope.method_params.copy() if scope else set(),
+            local_vars=scope.local_vars.copy() if scope else set(),
+            regfile_bindings=scope.regfile_bindings.copy() if scope else {},
+            is_action_body=scope.is_action_body if scope else False,
+            action_result_var=scope.action_result_var if scope else "",
+            action_field_names=scope.action_field_names if scope else set(),
+            action_local_prefix=scope.action_local_prefix if scope else "",
+            comp_field_indices=scope.comp_field_indices if scope else {},
+            pool_claims=scope.pool_claims.copy() if scope else {},
+        )
+
+        for item in node.items:
+            binding = self._parse_regfile_with_item(item, scope)
+            if binding is not None:
+                var_name, field_idx, idx_expr, _mode = binding
+                child_scope.regfile_bindings[var_name] = (field_idx, idx_expr, _mode)
+                continue
+
+            # ClaimPool.lock() as claim → pool_claims[claim_var] = comp_field_idx
+            pool_binding = self._parse_claim_pool_item(item, scope)
+            if pool_binding is not None:
+                claim_var, pool_field_idx = pool_binding
+                child_scope.pool_claims[claim_var] = pool_field_idx
+                child_scope.local_vars.add(claim_var)
+
+        body_stmts = self._convert_ast_body(node.body, child_scope)
+
+        if len(body_stmts) == 1:
+            return body_stmts[0]
+        elif len(body_stmts) > 1:
+            return body_stmts
+        return None
+
+    def _parse_claim_pool_item(self, item, scope: ConversionScope):
+        """Detect ``self.comp.pool_field.lock() as var`` items.
+
+        Returns ``(var_name, pool_field_idx)`` or ``None``.
+        The pool_field_idx is an index into ``scope.comp_field_indices``.
+        """
+        ctx = item.context_expr
+        var = item.optional_vars
+
+        if not (isinstance(ctx, ast.Call) and isinstance(var, ast.Name)):
+            return None
+        func = ctx.func
+        if not (isinstance(func, ast.Attribute) and func.attr == 'lock'):
+            return None
+
+        # Callee must be self.comp.pool_field
+        callee = func.value
+        if not (isinstance(callee, ast.Attribute)
+                and isinstance(callee.value, ast.Attribute)
+                and isinstance(callee.value.value, ast.Name)
+                and callee.value.value.id == 'self'
+                and callee.value.attr == 'comp'):
+            return None
+
+        pool_field_name = callee.attr
+        if scope is None or pool_field_name not in scope.comp_field_indices:
+            return None
+
+        pool_field_idx = scope.comp_field_indices[pool_field_name]
+        return (var.id, pool_field_idx)
+
+    def _parse_regfile_with_item(self, item, scope: ConversionScope = None):
+        """Parse one `async with` item for the IndexedRegFile pattern.
+
+        Matches: ``self.field.read(idx) as var`` or ``self.field.write(idx) as var``
+        Returns ``(var_name, field_idx, idx_expr, mode)`` or ``None``.
+        """
+        ctx = item.context_expr
+        var = item.optional_vars
+
+        if not (isinstance(ctx, ast.Call) and isinstance(var, ast.Name)):
+            return None
+
+        func = ctx.func
+        if not isinstance(func, ast.Attribute):
+            return None
+
+        mode = func.attr
+        if mode not in ('read', 'write'):
+            return None
+
+        field_expr = func.value
+        if not (isinstance(field_expr, ast.Attribute) and
+                isinstance(field_expr.value, ast.Name) and
+                field_expr.value.id == 'self'):
+            return None
+
+        field_name = field_expr.attr
+        if scope is None or field_name not in scope.field_indices:
+            return None
+
+        field_idx = scope.field_indices[field_name]
+
+        if len(ctx.args) != 1:
+            return None
+
+        idx_expr = self._convert_ast_expr(ctx.args[0], scope)
+        return (var.id, field_idx, idx_expr, mode)
+
+    # ------------------------------------------------------------------
+    # Action call inlining
+    # ------------------------------------------------------------------
+
+    def _try_lower_regfile_read_all(self, tuple_target: ast.Tuple, rhs_node, scope: ConversionScope):
+        """Try to lower ``a, b = await self.comp.regfile.read_all(i1, i2)``
+        to individual get-calls ``a = {Comp}_{field}_get(comp, i1)`` etc.
+
+        Returns a list of IR stmts on success, or None if the pattern doesn't match.
+        """
+        # Strip await if present
+        call_node = rhs_node
+        if isinstance(rhs_node, ast.Await):
+            call_node = rhs_node.value
+
+        if not isinstance(call_node, ast.Call):
+            return None
+        func_node = call_node.func
+        if not (isinstance(func_node, ast.Attribute) and func_node.attr == 'read_all'):
+            return None
+
+        # The callee must be self.comp.<field>
+        callee_obj = func_node.value
+        if not (isinstance(callee_obj, ast.Attribute)
+                and isinstance(callee_obj.value, ast.Attribute)
+                and isinstance(callee_obj.value.value, ast.Name)
+                and callee_obj.value.value.id == 'self'
+                and callee_obj.value.attr == 'comp'):
+            return None
+
+        field_name = callee_obj.attr
+        comp_name = self._get_type_name(scope.component) if (scope and scope.component) else None
+        if comp_name is None:
+            return None
+
+        # Arity must match number of targets
+        arity = len(tuple_target.elts)
+        if len(call_node.args) != arity:
+            return None
+
+        stmts = []
+        getter_name = f"{comp_name}_{field_name}_get"
+        for i, (elt, arg_node) in enumerate(zip(tuple_target.elts, call_node.args)):
+            if not isinstance(elt, ast.Name):
+                return None
+            var_name = elt.id
+            if scope and scope.is_action_body and scope.action_local_prefix:
+                var_name = scope.action_local_prefix + var_name
+            if scope is not None:
+                scope.local_vars.add(var_name)
+            idx_expr = self._convert_ast_expr(arg_node, scope)
+            stmts.append(StmtAssign(
+                targets=[ExprRefLocal(name=var_name)],
+                value=ExprCall(
+                    func=ExprRefUnresolved(name=getter_name),
+                    args=[ExprRefLocal(name='comp'), idx_expr],
+                ),
+            ))
+        return stmts
+
+    def _parse_action_call(self, node: ast.AST):
+        """Detect ``await ActionCls(kwargs)(comp=self)`` and return ``(action_ast_name, inner_call, outer_call)`` or None.
+
+        The pattern in the AST is:
+          ast.Await(
+            ast.Call(                          # outer: invocation  (comp=self)
+              func=ast.Call(                   # inner: constructor (pc_in=self.pc, ...)
+                func=ast.Name("ActionCls"),
+                keywords=[...]
+              ),
+              keywords=[ast.keyword(arg="comp", ...)]
+            )
+          )
+        """
+        # Unwrap a bare Await at the top level
+        if isinstance(node, ast.Await):
+            inner = node.value
+        else:
+            inner = node
+
+        if not isinstance(inner, ast.Call):
+            return None
+
+        outer_call = inner
+        inner_call = outer_call.func
+
+        if not isinstance(inner_call, ast.Call):
+            return None
+
+        func_node = inner_call.func
+        if isinstance(func_node, ast.Name):
+            action_name = func_node.id
+        else:
+            return None  # must be a bare name
+
+        return (action_name, inner_call, outer_call)
+
+    def _inline_action_call(
+        self,
+        result_var: Optional[str],
+        action_name: str,
+        inner_call: ast.Call,
+        outer_call: ast.Call,
+        scope: ConversionScope,
+        py_globals: dict,
+    ) -> Optional[list]:
+        """Inline an action call, returning a list of IR stmts.
+
+        Returns a list of IR stmts that replace the original ``await`` stmt:
+          1. A typed declaration for *result_var* (if given) so liveness
+             analysis places it in the coroutine frame.
+          2. Keyword-argument initialisation stmts (``result_var.kwarg = expr``).
+          3. The action body stmts (converted with an action-body scope).
+
+        Returns ``None`` if the action class cannot be resolved.
+        """
+        # Resolve the action Python class
+        action_cls = py_globals.get(action_name)
+        if action_cls is None:
+            return None
+        if not self._is_action(action_cls):
+            return None
+
+        action_type_name = self._get_type_name(action_cls)
+
+        # Ensure the action type is processed and in type_m
+        if action_type_name not in self._context.type_m:
+            self._process_type(action_cls)
+
+        action_dt = self._context.type_m.get(action_type_name)
+        if not isinstance(action_dt, DataTypeAction):
+            return None
+
+        # Field indices of the action (includes 'comp' at index 0)
+        action_field_indices = {f.name: idx for idx, f in enumerate(action_dt.fields)}
+        # Data field names (everything except 'comp')
+        action_data_field_names = {f.name for f in action_dt.fields if f.name != 'comp'}
+
+        # The variable name used in the parent scope (may be None for void calls)
+        rv = result_var or "_action_result"
+        prefix = rv + "_"  # prefix for action-body locals to avoid naming conflicts
+
+        result_stmts = []
+
+        # 1. Always declare the action var so liveness analysis puts it in locals_struct.
+        scope.local_vars.add(rv)
+        result_stmts.append(StmtAnnAssign(
+            target=ExprRefLocal(name=rv),
+            annotation=ExprRefUnresolved(name=action_type_name),
+            value=None,
+            ir_type=action_dt,
+        ))
+
+        # 2. Init stmts from inner_call keywords (e.g. pc_in=self.pc).
+        for kw in inner_call.keywords:
+            if kw.arg is None or kw.arg == 'comp':
+                continue
+            if kw.arg not in action_data_field_names:
+                continue
+            val_expr = self._convert_ast_expr(kw.value, scope)
+            target = ExprAttribute(value=ExprRefLocal(name=rv), attr=kw.arg)
+            result_stmts.append(StmtAssign(
+                targets=[target],
+                value=val_expr,
+            ))
+
+        # 3. Convert action body() with action-body scope.
+        body_stmts = self._convert_action_body(
+            action_cls=action_cls,
+            result_var=rv,
+            action_field_names=action_data_field_names,
+            local_prefix=prefix,
+            comp_field_indices=scope.field_indices,
+            outer_scope=scope,
+        )
+        result_stmts.extend(body_stmts)
+
+        return result_stmts
+
+    def _convert_action_body(
+        self,
+        action_cls: Type,
+        result_var: str,
+        action_field_names: set,
+        local_prefix: str,
+        comp_field_indices: dict,
+        outer_scope: ConversionScope,
+    ) -> list:
+        """Convert action_cls.body() to IR stmts for inlining into the parent coroutine.
+
+        ``self`` in the action body is translated:
+        - ``self.X`` where X is an action field  → ``ExprAttribute(ExprRefLocal(result_var), X)``
+        - ``self.comp``                           → component self (TypeExprRefSelf / sentinel)
+        - ``self.comp.X``                         → ``ExprRefField(TypeExprRefSelf(), idx_of_X)``
+        """
+        body_method = getattr(action_cls, 'body', None)
+        if body_method is None:
+            return []
+
+        try:
+            import textwrap
+            src = inspect.getsource(body_method)
+            src = textwrap.dedent(src)
+            tree = ast.parse(src)
+        except Exception:
+            return []
+
+        # Build action-body scope
+        action_scope = ConversionScope(
+            component=outer_scope.component,
+            field_indices={},            # action fields accessed via sentinels, not field_indices
+            method_params=set(),
+            local_vars=set(),
+            regfile_bindings={},
+            is_action_body=True,
+            action_result_var=result_var,
+            action_field_names=action_field_names,
+            action_local_prefix=local_prefix,
+            comp_field_indices=comp_field_indices,
+        )
+
+        # Walk the function def body
+        func_nodes = [n for n in ast.walk(tree) if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef))]
+        if not func_nodes:
+            return []
+
+        func_def = func_nodes[0]
+        return self._convert_ast_body(func_def.body, action_scope)
 
     def _convert_ast_stmt(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Stmt]:
         """Convert an AST statement to a data model statement."""
@@ -1383,6 +1943,23 @@ class DataModelFactory(object):
                 msg=self._convert_ast_expr(node.msg, scope) if node.msg else None,
             )
 
+        # Handle var.set(value) where var is an IndexedRegFile write binding
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and
+                isinstance(node.value.func, ast.Attribute) and node.value.func.attr == 'set' and
+                isinstance(node.value.func.value, ast.Name) and scope is not None and
+                node.value.func.value.id in scope.regfile_bindings):
+            var_name = node.value.func.value.id
+            field_idx, idx_expr, _mode = scope.regfile_bindings[var_name]
+            if len(node.value.args) >= 1:
+                rhs = self._convert_ast_expr(node.value.args[0], scope)
+                return StmtAssign(
+                    targets=[ExprSubscript(
+                        value=ExprRefField(base=TypeExprRefSelf(), index=field_idx),
+                        slice=idx_expr,
+                    )],
+                    value=rhs,
+                )
+
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
             call = node.value
             if is_call_named(call, "assume") and len(call.args) >= 1:
@@ -1397,6 +1974,22 @@ class DataModelFactory(object):
                 )
 
         if isinstance(node, ast.Expr):
+            # Check for void action call: ``await ActionCls(kwargs)(comp=self)``
+            if isinstance(node.value, ast.Await):
+                parsed = self._parse_action_call(node.value)
+                if parsed is not None:
+                    action_name, inner_call, outer_call = parsed
+                    py_globals = self._get_scope_globals(scope)
+                    inlined = self._inline_action_call(
+                        result_var=None,
+                        action_name=action_name,
+                        inner_call=inner_call,
+                        outer_call=outer_call,
+                        scope=scope,
+                        py_globals=py_globals,
+                    )
+                    if inlined is not None:
+                        return inlined
             expr = self._convert_ast_expr(node.value, scope)
             if expr is not None:
                 return StmtExpr(expr=expr)
@@ -1423,11 +2016,76 @@ class DataModelFactory(object):
                 orelse=self._convert_ast_body(node.orelse, scope)
             )
         elif isinstance(node, ast.Assign):
-            # Track assigned variables as locals
+            # Check for unannotated action call: ``var = await ActionCls(kwargs)(comp=self)``
+            # This is the same as ast.AnnAssign but without a type annotation.
+            if (node.value is not None and isinstance(node.value, ast.Await)
+                    and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
+                parsed = self._parse_action_call(node.value)
+                if parsed is not None:
+                    action_name, inner_call, outer_call = parsed
+                    result_var = node.targets[0].id
+                    # Apply action-body prefix when inlining nested actions
+                    if scope and scope.is_action_body and scope.action_local_prefix:
+                        result_var = scope.action_local_prefix + result_var
+                    py_globals = self._get_scope_globals(scope)
+                    inlined = self._inline_action_call(
+                        result_var=result_var,
+                        action_name=action_name,
+                        inner_call=inner_call,
+                        outer_call=outer_call,
+                        scope=scope,
+                        py_globals=py_globals,
+                    )
+                    if inlined is not None:
+                        return inlined
+            # Lower tuple-unpack: ``a, b, ... = f(...)`` → temp struct + field extracts.
+            # Special case: ``a, b = await self.comp.regfile.read_all(i1, i2)``
+            # → ``a = CompName_regfile_get(comp, i1); b = CompName_regfile_get(comp, i2)``
+            if (len(node.targets) == 1 and isinstance(node.targets[0], ast.Tuple)):
+                regfile_lowered = self._try_lower_regfile_read_all(
+                    node.targets[0], node.value, scope)
+                if regfile_lowered is not None:
+                    return regfile_lowered
+                tuple_target = node.targets[0]
+                arity = len(tuple_target.elts)
+                # Generate a unique temp name using a counter stored on self.
+                tmp_idx = getattr(self, '_tuple_unpack_ctr', 0)
+                self._tuple_unpack_ctr = tmp_idx + 1
+                tmp_name = f"_tu_{tmp_idx}"
+                if scope is not None:
+                    scope.local_vars.add(tmp_name)
+                rhs_expr = self._convert_ast_expr(node.value, scope)
+                stmts = [
+                    StmtAnnAssign(
+                        target=ExprRefLocal(name=tmp_name),
+                        annotation=ExprRefUnresolved(name="_zsp_tuple"),
+                        value=rhs_expr,
+                        ir_type=DataTypeTupleReturn(arity=arity),
+                    )
+                ]
+                for i, elt in enumerate(tuple_target.elts):
+                    if isinstance(elt, ast.Name):
+                        var_name = elt.id
+                        if scope and scope.is_action_body and scope.action_local_prefix:
+                            var_name = scope.action_local_prefix + var_name
+                        if scope is not None:
+                            scope.local_vars.add(var_name)
+                        stmts.append(StmtAssign(
+                            targets=[ExprRefLocal(name=var_name)],
+                            value=ExprAttribute(
+                                value=ExprRefLocal(name=tmp_name),
+                                attr=f"v{i}",
+                            ),
+                        ))
+                return stmts
+            # Track assigned variables as locals; apply action-body prefix if needed
             if scope is not None:
                 for target in node.targets:
                     if isinstance(target, ast.Name):
-                        scope.local_vars.add(target.id)
+                        var_name = target.id
+                        if scope.is_action_body and scope.action_local_prefix:
+                            var_name = scope.action_local_prefix + var_name
+                        scope.local_vars.add(var_name)
             return StmtAssign(
                 targets=[self._convert_ast_expr(t, scope) for t in node.targets],
                 value=self._convert_ast_expr(node.value, scope)
@@ -1454,6 +2112,39 @@ class DataModelFactory(object):
                 op=op,
                 value=self._convert_ast_expr(node.value, scope)
             )
+        elif isinstance(node, ast.AnnAssign):
+            # Annotated assignment: ``name: Type = value``
+            # Check for action call pattern: ``var: T = await ActionCls(kwargs)(comp=self)``
+            if node.value is not None and isinstance(node.value, ast.Await):
+                parsed = self._parse_action_call(node.value)
+                if parsed is not None:
+                    action_name, inner_call, outer_call = parsed
+                    result_var = node.target.id if isinstance(node.target, ast.Name) else None
+                    # Apply action-body prefix when inlining nested actions
+                    if result_var and scope and scope.is_action_body and scope.action_local_prefix:
+                        result_var = scope.action_local_prefix + result_var
+                    py_globals = self._get_scope_globals(scope)
+                    inlined = self._inline_action_call(
+                        result_var=result_var,
+                        action_name=action_name,
+                        inner_call=inner_call,
+                        outer_call=outer_call,
+                        scope=scope,
+                        py_globals=py_globals,
+                    )
+                    if inlined is not None:
+                        return inlined
+            # Track the target as a local variable.
+            if scope is not None and isinstance(node.target, ast.Name):
+                scope.local_vars.add(node.target.id)
+            target = self._convert_ast_expr(node.target, scope)
+            annotation = self._convert_ast_expr(node.annotation, scope)
+            value = self._convert_ast_expr(node.value, scope) if node.value else None
+            return StmtAnnAssign(
+                target=target,
+                annotation=annotation,
+                value=value,
+            )
         elif isinstance(node, ast.Pass):
             return StmtPass()
         elif isinstance(node, ast.Return):
@@ -1476,6 +2167,8 @@ class DataModelFactory(object):
                 subject=self._convert_ast_expr(node.subject, scope),
                 cases=cases
             )
+        elif isinstance(node, (ast.AsyncWith, ast.With)):
+            return self._convert_async_with(node, scope)
         return None
 
     def _convert_ast_expr(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Any]:
@@ -1484,14 +2177,59 @@ class DataModelFactory(object):
             return None
         
         if isinstance(node, ast.Call):
+            # Handle var.get() where var is an IndexedRegFile read binding
+            if (isinstance(node.func, ast.Attribute) and node.func.attr == 'get' and
+                    isinstance(node.func.value, ast.Name) and scope is not None and
+                    node.func.value.id in scope.regfile_bindings):
+                var_name = node.func.value.id
+                field_idx, idx_expr, _mode = scope.regfile_bindings[var_name]
+                return ExprSubscript(
+                    value=ExprRefField(base=TypeExprRefSelf(), index=field_idx),
+                    slice=idx_expr,
+                )
             return ExprCall(
                 func=self._convert_ast_expr(node.func, scope),
                 args=[self._convert_ast_expr(a, scope) for a in node.args]
             )
         elif isinstance(node, ast.Attribute):
-            value_expr = self._convert_ast_expr(node.value, scope)
             attr_name = node.attr
-            
+
+            # --- Pool claim: claim.t → ExprRefField for the pool field ---
+            # Detect BEFORE full value conversion to avoid recursion issues.
+            if (attr_name == 't'
+                    and isinstance(node.value, ast.Name)
+                    and scope is not None
+                    and node.value.id in scope.pool_claims):
+                pool_field_idx = scope.pool_claims[node.value.id]
+                return ExprRefField(base=TypeExprRefSelf(), index=pool_field_idx)
+
+            value_expr = self._convert_ast_expr(node.value, scope)
+
+            # --- Action-body scope translation ---
+            if scope and scope.is_action_body:
+                # self.comp.X  (value_expr is a _ExprActionComp sentinel)
+                if isinstance(value_expr, _ExprActionComp):
+                    if attr_name in scope.comp_field_indices:
+                        return ExprRefField(
+                            base=TypeExprRefSelf(),
+                            index=scope.comp_field_indices[attr_name],
+                        )
+                    # Fall through to ExprAttribute so unknown accesses aren't lost
+                    return ExprAttribute(value=TypeExprRefSelf(), attr=attr_name)
+
+                # self.X  (value_expr is _ExprActionSelf sentinel)
+                if isinstance(value_expr, _ExprActionSelf):
+                    if attr_name == 'comp':
+                        return _ExprActionComp()
+                    # Action data field access → locals->result_var.field
+                    if attr_name in scope.action_field_names:
+                        return ExprAttribute(
+                            value=ExprRefLocal(name=scope.action_result_var),
+                            attr=attr_name,
+                        )
+                    # Unknown action attribute — emit unresolved
+                    return ExprRefUnresolved(name=attr_name)
+
             # Handle self.field -> ExprRefField
             if isinstance(value_expr, TypeExprRefSelf) and scope and attr_name in scope.field_indices:
                 return ExprRefField(
@@ -1507,8 +2245,10 @@ class DataModelFactory(object):
         elif isinstance(node, ast.Name):
             name = node.id
             
-            # Handle 'self'
+            # Handle 'self' — return sentinel when inside an action body
             if name == "self":
+                if scope and scope.is_action_body:
+                    return _ExprActionSelf()
                 return TypeExprRefSelf()
             
             # Handle field reference
@@ -1525,6 +2265,12 @@ class DataModelFactory(object):
             # Handle local variable reference
             if scope and name in scope.local_vars:
                 return ExprRefLocal(name=name)
+
+            # Inside action body, unresolved names get the local prefix
+            if scope and scope.is_action_body and name not in ('True', 'False', 'None'):
+                prefixed = scope.action_local_prefix + name
+                if prefixed in scope.local_vars:
+                    return ExprRefLocal(name=prefixed)
             
             # Unresolved - could be a builtin or external reference
             return ExprRefUnresolved(name=name)
@@ -1638,6 +2384,7 @@ class DataModelFactory(object):
             ast.Sub: BinOp.Sub,
             ast.Mult: BinOp.Mult,
             ast.Div: BinOp.Div,
+            ast.FloorDiv: BinOp.FloorDiv,
             ast.Mod: BinOp.Mod,
             ast.BitAnd: BinOp.BitAnd,
             ast.BitOr: BinOp.BitOr,

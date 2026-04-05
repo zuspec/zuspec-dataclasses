@@ -758,6 +758,59 @@ class IndexedRegFile[TIdx, TData](Protocol):
         ...
 
 
+class BackdoorRegFile(Protocol):
+    """Backdoor (non-port-constrained) read/write access to a register file.
+
+    Both the Python runtime (``IndexedRegFileRT``) and the C-backed proxy
+    (``_RegFileProxy``) implement this protocol.  Tests and testbench code
+    should type-annotate against ``BackdoorRegFile`` so they are backend-agnostic.
+
+    Example::
+
+        regfile: BackdoorRegFile = core.regfile
+        regfile.set(5, 0xDEAD)
+        assert regfile.get(5) == 0xDEAD
+        vals = regfile.get_all()   # list of all register values
+    """
+
+    def get(self, idx: int) -> int:
+        """Read register *idx* directly, bypassing port constraints."""
+        ...
+
+    def set(self, idx: int, val: int) -> None:
+        """Write *val* into register *idx*, bypassing port constraints.
+
+        Writing register 0 (x0) is a no-op (hardwired-zero convention).
+        """
+        ...
+
+    def get_all(self) -> "list[int]":
+        """Return all register values as a plain list (index 0 first)."""
+        ...
+
+
+class BackdoorMemory(Protocol):
+    """Backdoor byte-level read/write access to a memory primitive.
+
+    Both a Python ``MemoryRT`` and the C-backed ``MemoryProxy`` implement this
+    protocol so tests can be written once and run against either backend.
+
+    Example::
+
+        mem: BackdoorMemory = testbench.mem
+        mem.write_bytes(0x1000, bytes([0x93, 0x00, 0x00, 0x00]))
+        data = mem.read_bytes(0x1000, 4)
+    """
+
+    def read_bytes(self, addr: int, length: int) -> bytes:
+        """Read *length* bytes starting at *addr*."""
+        ...
+
+    def write_bytes(self, addr: int, data: "bytes | bytearray") -> None:
+        """Write *data* bytes starting at *addr*."""
+        ...
+
+
 class IndexedPool[TIdx](Protocol):
     """Indexed resource pool with per-slot lock / share semantics.
 

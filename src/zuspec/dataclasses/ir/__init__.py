@@ -54,12 +54,13 @@ from .connection import Connection, Signal, Bundle, MethodInterface
 # Re-export data model types
 from .fields import Bind, BindSet, Field, FieldInOut, FieldKind, SignalDirection
 from .data_type import (
-    DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass, DataTypeComponent, DataTypeExtern,
+    DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass, DataTypeAction, DataTypeComponent, DataTypeExtern,
     DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeChandle,
     DataTypeList, DataTypeArray, DataTypeMap, DataTypeSet,
     DataTypeLock, DataTypeEvent, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
-    DataTypeGetIF, DataTypePutIF, DataTypeChannel, DataTypeTuple,
+    DataTypeGetIF, DataTypePutIF, DataTypeChannel, DataTypeTuple, DataTypeTupleReturn,
+    DataTypeClaimPool,
     Function, Process, ProcessKind,
     # Template support
     TemplateParamKind, TemplateParam, TemplateParamType, TemplateParamValue, TemplateParamEnum,
@@ -121,12 +122,13 @@ from .activity import (
 __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
     "Bind","BindSet","Field","FieldInOut","FieldKind","SignalDirection",
-    "DataType","DataTypeInt","DataTypeUptr","DataTypeStruct","DataTypeClass","DataTypeComponent","DataTypeExtern",
+    "DataType","DataTypeInt","DataTypeUptr","DataTypeStruct","DataTypeClass","DataTypeAction","DataTypeComponent","DataTypeExtern",
     "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeChandle",
     "DataTypeList","DataTypeArray","DataTypeMap","DataTypeSet",
     "DataTypeLock","DataTypeEvent","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
-    "DataTypeGetIF","DataTypePutIF","DataTypeChannel","DataTypeTuple",
+    "DataTypeGetIF","DataTypePutIF","DataTypeChannel","DataTypeTuple","DataTypeTupleReturn",
+    "DataTypeClaimPool",
     "Function","Process","ProcessKind",
     # Template support
     "TemplateParamKind","TemplateParam","TemplateParamType","TemplateParamValue","TemplateParamEnum",

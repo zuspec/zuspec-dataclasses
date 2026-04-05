@@ -53,6 +53,7 @@ from .rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
 from .rt.activity_runner import ScheduleGraph
 from .rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
 from .rt.indexed_pool_rt import IndexedPoolRT
+from .rt.memory_rt import MemoryRT
 from .solver.api import randomize, randomize_with, RandomizationError
 from .coverage import (
     Covergroup, coverpoint, cross,
@@ -86,7 +87,8 @@ __all__ = [
     # From types (re-exported via *)
     'Action',
     'Buffer', 'Stream', 'State', 'Resource',
-    'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
+    'AddrHandle', 'AddressSpace', 'BackdoorMemory', 'BackdoorRegFile',
+    'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
@@ -113,6 +115,10 @@ __all__ = [
     'BufferInstance', 'StreamInstance', 'StatePool',
     # From rt.activity_runner
     'ScheduleGraph',
+    # From rt.indexed_regfile_rt
+    'IndexedRegFileRT', 'IndexedRegFileClaim',
+    # From rt.memory_rt
+    'MemoryRT',
     # Submodules
     'ir', 'profiles',
     # Other exports

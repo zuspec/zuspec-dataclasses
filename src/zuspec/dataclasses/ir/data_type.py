@@ -68,6 +68,24 @@ class DataTypeClass(DataTypeStruct):
     activity_ir: Optional['ActivitySequenceBlock'] = dc.field(default=None)
 
 @dc.dataclass(kw_only=True)
+class DataTypeAction(DataTypeClass):
+    """An action type (subclass of zdc.Action[T]).
+
+    Attributes
+    ----------
+    comp_type_name:
+        Name of the owning component type T from ``Action[T]``.
+    body_stmts:
+        IR statements from the ``body()`` method (populated by DataModelFactory).
+        When the action call is inlined into a parent coroutine these stmts are
+        inserted verbatim (after translation of ``self`` / ``self.comp`` refs).
+    """
+    comp_type_name: Optional[str] = dc.field(default=None)
+    body_stmts: List = dc.field(default_factory=list)  # List[Stmt]
+    static_methods: List = dc.field(default_factory=list)  # List[Function]
+
+
+@dc.dataclass(kw_only=True)
 class DataTypeComponent(DataTypeClass):
     """Components are structural building blocks that can have ports, exports, 
     and bindings. The bind_map captures connections between ports/exports."""
@@ -236,6 +254,27 @@ class DataTypeTuple(DataType):
 class DataTypeChannel(DataType):
     """Represents a TLM Channel - bidirectional communication channel"""
     element_type : Optional[DataType] = dc.field(default=None)
+
+
+@dc.dataclass(kw_only=True)
+class DataTypeTupleReturn(DataType):
+    """Return type of a multi-value function call (e.g. regfile.read_all()).
+
+    Used to lower tuple-unpack assignments ``a, b = f(...)`` to a temporary
+    struct variable and individual field extractions ``a = _tmp.v0; b = _tmp.v1``.
+    The C struct type is ``_zsp_tupleN_t`` where N is the arity.
+    """
+    arity: int = dc.field(default=2)
+
+
+@dc.dataclass(kw_only=True)
+class DataTypeClaimPool(DataType):
+    """Represents a ``ClaimPool[ElemType]`` field.
+
+    Carries the element component type name so that the SW backend can emit
+    the element struct inline and resolve calls through claim handles.
+    """
+    elem_type_name: str = dc.field(default="")
 
 
 # =============================================================================
