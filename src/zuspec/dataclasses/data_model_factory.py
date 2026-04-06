@@ -8,9 +8,9 @@ import enum as _enum_mod
 from .ir.data_type import (
     DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass,
     DataTypeAction, DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
-    DataTypeLock, DataTypeEvent, DataTypeMemory, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
+    DataTypeLock, DataTypeEvent, DataTypeMemory, DataTypeArray, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     DataTypeTuple, DataTypeTupleReturn, DataTypeEnum, DataTypeClaimPool,
-    Function, Process
+    Function, Process, ProcessKind
 )
 from .ir.fields import Field, FieldKind, Bind, FieldInOut
 from .ir.stmt import (
@@ -67,6 +67,11 @@ class ConversionScope:
     comp_field_indices: dict = dc.field(default_factory=dict)
     # var_name -> comp_field_idx mapping for ``async with self.comp.pool.lock() as var:``
     pool_claims: dict = dc.field(default_factory=dict)
+
+    # Action class being inlined (for instance method lookup during constraint compilation)
+    action_cls: type = None
+    # True when converting @zdc.constraint methods as imperative stmts (treats == as =)
+    is_constraint_mode: bool = False
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -723,7 +728,15 @@ class DataModelFactory(object):
                 func = self._extract_function(t, name, member, field_indices)
                 if func is not None:
                     functions.append(func)
-        
+
+        # Scan for @property getters — each becomes a wire (continuous assignment).
+        wire_processes = []
+        for name, member in t.__dict__.items():
+            if isinstance(member, property) and member.fget is not None:
+                func = self._extract_wire(t, name, member.fget, field_indices)
+                if func is not None:
+                    wire_processes.append(func)
+
         # Extract bind map from __bind__ method
         bind_map = self._extract_bind_map(t)
         
@@ -733,7 +746,8 @@ class DataModelFactory(object):
             functions=functions + processes,
             bind_map=bind_map,
             sync_processes=sync_processes,
-            comb_processes=comb_processes
+            comb_processes=comb_processes,
+            wire_processes=wire_processes,
         )
         return dm
 
@@ -909,6 +923,10 @@ class DataModelFactory(object):
                 if isinstance(datatype, DataTypeMemory) and f.metadata and 'size' in f.metadata:
                     datatype.size = f.metadata['size']
 
+                # For Array fields, extract depth from metadata
+                if isinstance(datatype, DataTypeArray) and f.metadata and 'depth' in f.metadata:
+                    datatype.size = f.metadata['depth']
+
                 # Add referenced types to pending
                 if field_type is not None and hasattr(field_type, '__mro__'):
                     if self._is_protocol(field_type) or self._is_extern(field_type) or self._is_component(field_type) or self._is_struct(field_type):
@@ -1078,8 +1096,8 @@ class DataModelFactory(object):
             base_type = args[0] if args else None
             metadata = args[1:] if len(args) > 1 else ()
             
-            # Check if this is an annotated int with width information
-            if base_type is int and metadata:
+            # Check if this is an annotated int (or bv subclass) with width information
+            if (base_type is int or (inspect.isclass(base_type) and issubclass(base_type, int))) and metadata:
                 from .types import U, S, Uptr
                 for m in metadata:
                     if isinstance(m, Uptr):
@@ -1090,6 +1108,13 @@ class DataModelFactory(object):
             
             # Fall back to resolving the base type
             return self._resolve_field_type(base_type)
+
+        # bv[N] subclasses: proper subclasses of bv with class-level _width
+        from .types import bv as _bv
+        if inspect.isclass(field_type) and issubclass(field_type, _bv):
+            width = getattr(field_type, '_width', 0)
+            if width > 0:
+                return DataTypeInt(bits=width, signed=False)
         
         # Check for generic types (Memory[T], Channel[T], GetIF[T], PutIF[T], Tuple[T])
         if origin is not None:
@@ -1102,6 +1127,10 @@ class DataModelFactory(object):
                 # Extract size from field metadata if available
                 # Size will be handled during field extraction where we have access to metadata
                 return DataTypeMemory(element_type=element_type, size=1024)
+            from .types import Array as _Array
+            if origin is _Array:
+                # Size comes from field metadata (array(depth=N)); default -1 if unknown here
+                return DataTypeArray(element_type=element_type, size=-1)
             if origin is Channel:
                 return DataTypeChannel(element_type=element_type)
             if origin is GetIF:
@@ -1435,6 +1464,59 @@ class DataModelFactory(object):
         
         return func
 
+    def _extract_wire(self, cls: Type, name: str, fget, field_indices: dict) -> Optional[Function]:
+        """Convert a @property getter to a wire (continuous-assignment) Function.
+
+        The getter body is parsed exactly like a @comb method.  A missing or
+        unresolvable return-type annotation generates a warning but does not
+        prevent extraction — the emitter can infer width from the expression.
+        """
+        scope = ConversionScope(
+            component=None,
+            field_indices=field_indices,
+            method_params=set(),
+            local_vars=set()
+        )
+
+        try:
+            body = self._extract_method_body(cls, name, scope)
+        except Exception as e:
+            import warnings
+            warnings.warn(
+                f"@property '{cls.__name__}.{name}' body could not be extracted "
+                f"and will not appear as a wire in the IR: {e}"
+            )
+            return None
+
+        # Return type determines wire width — warn if absent.
+        return_type = None
+        try:
+            hints = get_type_hints(fget, include_extras=True)
+            return_type = self._resolve_field_type(hints.get('return')) if 'return' in hints else None
+        except Exception:
+            pass
+
+        if return_type is None:
+            import warnings
+            warnings.warn(
+                f"@property '{cls.__name__}.{name}' has no return type annotation; "
+                "wire width will be inferred by the emitter."
+            )
+
+        sensitivity_list = self._extract_sensitivity_list(body)
+
+        return Function(
+            name=name,
+            body=body,
+            returns=return_type,
+            process_kind=ProcessKind.WIRE,
+            sensitivity_list=sensitivity_list,
+            metadata={
+                "kind": "wire",
+                "sensitivity": sensitivity_list,
+            }
+        )
+
     def _extract_sensitivity_list(self, body: list) -> list:
         """Walk AST and collect all field references that are read."""
         
@@ -1603,6 +1685,8 @@ class DataModelFactory(object):
             action_local_prefix=scope.action_local_prefix if scope else "",
             comp_field_indices=scope.comp_field_indices if scope else {},
             pool_claims=scope.pool_claims.copy() if scope else {},
+            action_cls=scope.action_cls if scope else None,
+            is_constraint_mode=scope.is_constraint_mode if scope else False,
         )
 
         for item in node.items:
@@ -1612,6 +1696,13 @@ class DataModelFactory(object):
                 child_scope.regfile_bindings[var_name] = (field_idx, idx_expr, _mode)
                 continue
 
+            # Direct write: ``async with self.comp.field.write(idx, val): pass``
+            # (no `as var` binding — val is passed inline as second arg)
+            direct_write = self._parse_direct_regfile_write_item(item, scope)
+            if direct_write is not None:
+                # Emit the write immediately before the body statements
+                return direct_write
+
             # ClaimPool.lock() as claim → pool_claims[claim_var] = comp_field_idx
             pool_binding = self._parse_claim_pool_item(item, scope)
             if pool_binding is not None:
@@ -1620,6 +1711,11 @@ class DataModelFactory(object):
                 child_scope.local_vars.add(claim_var)
 
         body_stmts = self._convert_ast_body(node.body, child_scope)
+
+        # Python has function scope, not block scope: variables assigned inside
+        # an `async with` body are visible in the enclosing scope after the block.
+        if scope is not None:
+            scope.local_vars.update(child_scope.local_vars)
 
         if len(body_stmts) == 1:
             return body_stmts[0]
@@ -1696,6 +1792,67 @@ class DataModelFactory(object):
         idx_expr = self._convert_ast_expr(ctx.args[0], scope)
         return (var.id, field_idx, idx_expr, mode)
 
+    def _parse_direct_regfile_write_item(self, item, scope: ConversionScope):
+        """Detect ``async with self.comp.field.write(idx, val): pass`` (no as-binding).
+
+        This is the action-body writeback pattern where both the index and value are
+        passed directly to write().  Returns a StmtAssign or None.
+        Handles both ``self.field.write(idx, val)`` (component context) and
+        ``self.comp.field.write(idx, val)`` (action-body context).
+        """
+        ctx = item.context_expr
+        var = item.optional_vars
+        # Must be a plain Call with no as-binding
+        if not isinstance(ctx, ast.Call):
+            return None
+        if var is not None:
+            return None  # has a binding → handled by _parse_regfile_with_item
+
+        func = ctx.func
+        if not (isinstance(func, ast.Attribute) and func.attr == 'write'):
+            return None
+
+        # Must have exactly 2 args: index and value
+        if len(ctx.args) != 2:
+            return None
+
+        # Resolve the field.  Accept both:
+        #   self.field.write(idx, val)          (component method scope)
+        #   self.comp.field.write(idx, val)     (action body scope)
+        field_expr = func.value
+        field_idx = None
+        if (isinstance(field_expr, ast.Attribute) and
+                isinstance(field_expr.value, ast.Name) and
+                field_expr.value.id == 'self' and
+                scope is not None and
+                field_expr.attr in scope.field_indices):
+            # self.field.write(...)
+            field_idx = scope.field_indices[field_expr.attr]
+            comp_ref = TypeExprRefSelf()
+        elif (isinstance(field_expr, ast.Attribute) and
+                isinstance(field_expr.value, ast.Attribute) and
+                isinstance(field_expr.value.value, ast.Name) and
+                field_expr.value.value.id == 'self' and
+                field_expr.value.attr == 'comp' and
+                scope is not None and
+                field_expr.attr in scope.comp_field_indices):
+            # self.comp.field.write(...)  (action body)
+            field_idx = scope.comp_field_indices[field_expr.attr]
+            comp_ref = TypeExprRefSelf()
+        else:
+            return None
+
+        idx_ir = self._convert_ast_expr(ctx.args[0], scope)
+        val_ir = self._convert_ast_expr(ctx.args[1], scope)
+
+        return StmtAssign(
+            targets=[ExprSubscript(
+                value=ExprRefField(base=comp_ref, index=field_idx),
+                slice=idx_ir,
+            )],
+            value=val_ir,
+        )
+
     # ------------------------------------------------------------------
     # Action call inlining
     # ------------------------------------------------------------------
@@ -1751,7 +1908,7 @@ class DataModelFactory(object):
                 targets=[ExprRefLocal(name=var_name)],
                 value=ExprCall(
                     func=ExprRefUnresolved(name=getter_name),
-                    args=[ExprRefLocal(name='comp'), idx_expr],
+                    args=[TypeExprRefSelf(), idx_expr],
                 ),
             ))
         return stmts
@@ -1891,9 +2048,14 @@ class DataModelFactory(object):
         - ``self.comp``                           → component self (TypeExprRefSelf / sentinel)
         - ``self.comp.X``                         → ``ExprRefField(TypeExprRefSelf(), idx_of_X)``
         """
-        body_method = getattr(action_cls, 'body', None)
+        # Only use a body if the class itself defines one (not just inherits the Action stub).
+        body_method = action_cls.__dict__.get('body', None)
         if body_method is None:
-            return []
+            # No explicit body: try compiling @zdc.constraint methods as imperative logic
+            return self._compile_constraint_methods_as_body(
+                action_cls, result_var, action_field_names, local_prefix,
+                comp_field_indices, outer_scope
+            )
 
         try:
             import textwrap
@@ -1915,6 +2077,7 @@ class DataModelFactory(object):
             action_field_names=action_field_names,
             action_local_prefix=local_prefix,
             comp_field_indices=comp_field_indices,
+            action_cls=action_cls,
         )
 
         # Walk the function def body
@@ -1924,6 +2087,141 @@ class DataModelFactory(object):
 
         func_def = func_nodes[0]
         return self._convert_ast_body(func_def.body, action_scope)
+
+    def _compile_constraint_methods_as_body(
+        self,
+        action_cls: type,
+        result_var: str,
+        action_field_names: set,
+        local_prefix: str,
+        comp_field_indices: dict,
+        outer_scope: 'ConversionScope',
+    ) -> list:
+        """Compile @zdc.constraint methods as an imperative body for SW execution.
+
+        Each ``self.field == value`` in a constraint method is lowered to an
+        assignment ``self.field = value``.  The constraint guard (``if cond:``)
+        becomes a C ``if`` statement.
+        """
+        import textwrap
+
+        action_scope = ConversionScope(
+            component=outer_scope.component,
+            field_indices={},
+            method_params=set(),
+            local_vars=set(),
+            regfile_bindings={},
+            is_action_body=True,
+            action_result_var=result_var,
+            action_field_names=action_field_names,
+            action_local_prefix=local_prefix,
+            comp_field_indices=comp_field_indices,
+            action_cls=action_cls,
+            is_constraint_mode=True,
+        )
+
+        stmts = []
+        for name, member in inspect.getmembers(action_cls):
+            if name.startswith('__'):
+                continue
+            if not (hasattr(member, '_is_constraint') and member._is_constraint):
+                continue
+            try:
+                src = textwrap.dedent(inspect.getsource(member))
+                tree = ast.parse(src)
+            except Exception:
+                continue
+            func_nodes = [n for n in ast.walk(tree)
+                          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            if not func_nodes:
+                continue
+            func_def = func_nodes[0]
+            stmts.extend(self._convert_ast_body(func_def.body, action_scope))
+        return stmts
+
+    def _try_inline_instance_method_as_expr(self, method, parent_scope: 'ConversionScope'):
+        """Inline a simple single-return instance method as an IR expression.
+
+        Returns the converted IR expression, or None if the method is too complex
+        (e.g. multiple return statements or no return statement).
+        """
+        import textwrap
+        try:
+            src = textwrap.dedent(inspect.getsource(method))
+            tree = ast.parse(src)
+        except Exception:
+            return None
+        func_nodes = [n for n in ast.walk(tree)
+                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        if not func_nodes:
+            return None
+        func_def = func_nodes[0]
+        body = func_def.body
+        if len(body) == 1 and isinstance(body[0], ast.Return) and body[0].value is not None:
+            return self._convert_ast_expr(body[0].value, parent_scope)
+        return None
+
+    def _inline_method_with_return_assign(
+        self,
+        method,
+        target_expr,
+        parent_scope: 'ConversionScope',
+    ) -> Optional[list]:
+        """Inline a method body replacing every ``return X`` with ``target = X``.
+
+        Used to compile ``self.field == self._complex_method()`` constraint
+        expressions where the method has a match/if-else body.  Returns a list
+        of IR stmts, or None on failure.
+        """
+        import textwrap
+        try:
+            src = textwrap.dedent(inspect.getsource(method))
+            tree = ast.parse(src)
+        except Exception:
+            return None
+        func_nodes = [n for n in ast.walk(tree)
+                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        if not func_nodes:
+            return None
+        func_def = func_nodes[0]
+        return self._convert_body_return_to_assign(func_def.body, target_expr, parent_scope)
+
+    def _convert_body_return_to_assign(
+        self,
+        body_nodes: list,
+        target_expr,
+        scope: 'ConversionScope',
+    ) -> list:
+        """Convert a list of AST nodes, replacing ``return X`` with ``target = X``."""
+        stmts = []
+        for node in body_nodes:
+            if isinstance(node, ast.Return):
+                if node.value is not None:
+                    val_expr = self._convert_ast_expr(node.value, scope)
+                    stmts.append(StmtAssign(targets=[target_expr], value=val_expr))
+            elif isinstance(node, ast.If):
+                test_expr = self._convert_ast_expr(node.test, scope)
+                then_stmts = self._convert_body_return_to_assign(node.body, target_expr, scope)
+                else_stmts = self._convert_body_return_to_assign(node.orelse, target_expr, scope)
+                stmts.append(StmtIf(test=test_expr, body=then_stmts, orelse=else_stmts))
+            elif isinstance(node, ast.Match):
+                subject_expr = self._convert_ast_expr(node.subject, scope)
+                cases = []
+                for case in node.cases:
+                    pattern_expr = self._convert_ast_pattern(case.pattern, scope)
+                    guard = self._convert_ast_expr(case.guard, scope) if case.guard else None
+                    case_body = self._convert_body_return_to_assign(case.body, target_expr, scope)
+                    cases.append(StmtMatchCase(pattern=pattern_expr, guard=guard, body=case_body))
+                stmts.append(StmtMatch(subject=subject_expr, cases=cases))
+            else:
+                stmt = self._convert_ast_stmt(node, scope)
+                if stmt is not None:
+                    if isinstance(stmt, list):
+                        stmts.extend(stmt)
+                    else:
+                        stmts.append(stmt)
+        return stmts
+
 
     def _convert_ast_stmt(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Stmt]:
         """Convert an AST statement to a data model statement."""
@@ -1942,6 +2240,40 @@ class DataModelFactory(object):
                 test=self._convert_ast_expr(node.test, scope),
                 msg=self._convert_ast_expr(node.msg, scope) if node.msg else None,
             )
+
+        # In constraint mode: treat ``self.field == value`` as an assignment.
+        # This compiles @zdc.constraint methods (which use == for field binding)
+        # to imperative C assignments for SW execution.
+        if (scope is not None and scope.is_constraint_mode and
+                isinstance(node, ast.Expr) and isinstance(node.value, ast.Compare)):
+            compare = node.value
+            if (len(compare.ops) == 1 and isinstance(compare.ops[0], ast.Eq) and
+                    isinstance(compare.left, ast.Attribute) and
+                    isinstance(compare.left.value, ast.Name) and
+                    compare.left.value.id == 'self' and
+                    compare.left.attr in scope.action_field_names):
+                field_name = compare.left.attr
+                target = ExprAttribute(
+                    value=ExprRefLocal(name=scope.action_result_var),
+                    attr=field_name,
+                )
+                comparator = compare.comparators[0]
+                # For complex RHS method calls: inline the method body with return→assign
+                if (isinstance(comparator, ast.Call) and
+                        isinstance(comparator.func, ast.Attribute) and
+                        isinstance(comparator.func.value, ast.Name) and
+                        comparator.func.value.id == 'self' and
+                        scope.action_cls is not None):
+                    method_name = comparator.func.attr
+                    raw_member = scope.action_cls.__dict__.get(method_name)
+                    if not isinstance(raw_member, staticmethod):
+                        method = getattr(scope.action_cls, method_name, None)
+                        if method is not None and callable(method):
+                            block = self._inline_method_with_return_assign(method, target, scope)
+                            if block is not None:
+                                return block
+                value_expr = self._convert_ast_expr(comparator, scope)
+                return StmtAssign(targets=[target], value=value_expr)
 
         # Handle var.set(value) where var is an IndexedRegFile write binding
         if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and
@@ -2187,6 +2519,31 @@ class DataModelFactory(object):
                     value=ExprRefField(base=TypeExprRefSelf(), index=field_idx),
                     slice=idx_expr,
                 )
+
+            # In action-body scope: inline self._method() calls.
+            # - @staticmethod → direct call (no self argument)
+            # - simple instance method (single return) → inline the return expr
+            if (isinstance(node.func, ast.Attribute) and
+                    isinstance(node.func.value, ast.Name) and
+                    node.func.value.id == 'self' and
+                    scope is not None and scope.is_action_body and
+                    scope.action_cls is not None):
+                method_name = node.func.attr
+                raw_member = scope.action_cls.__dict__.get(method_name)
+                if isinstance(raw_member, staticmethod):
+                    # Emit as a direct C function call (static inline, no self)
+                    return ExprCall(
+                        func=ExprRefUnresolved(name=method_name),
+                        args=[self._convert_ast_expr(a, scope) for a in node.args],
+                    )
+                method = getattr(scope.action_cls, method_name, None)
+                if (method is not None and callable(method) and
+                        not (hasattr(method, '_is_constraint') and method._is_constraint) and
+                        method_name not in ('body',)):
+                    inlined = self._try_inline_instance_method_as_expr(method, scope)
+                    if inlined is not None:
+                        return inlined
+
             return ExprCall(
                 func=self._convert_ast_expr(node.func, scope),
                 args=[self._convert_ast_expr(a, scope) for a in node.args]
@@ -2272,6 +2629,13 @@ class DataModelFactory(object):
                 if prefixed in scope.local_vars:
                     return ExprRefLocal(name=prefixed)
             
+            # Try resolving as a module-level integer constant (e.g. _OP_OP = 0x33)
+            py_globals = self._get_scope_globals(scope)
+            if py_globals:
+                val = py_globals.get(name)
+                if isinstance(val, int) and not isinstance(val, bool):
+                    return ExprConstant(value=val)
+
             # Unresolved - could be a builtin or external reference
             return ExprRefUnresolved(name=name)
         elif isinstance(node, ast.Constant):

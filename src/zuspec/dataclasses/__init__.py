@@ -23,7 +23,7 @@ Docstring for src.zuspec.dataclasses
 from asyncio import Event as aEvent
 from typing import Callable
 from .decorators import (
-    dataclass, field, process, input, output, reg,
+    dataclass, field, process, input, output, reg, array,
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
@@ -65,7 +65,7 @@ __all__ = [
     # From asyncio
     'aEvent',
     # From decorators
-    'dataclass', 'field', 'process', 'input', 'output', 'reg',
+    'dataclass', 'field', 'process', 'input', 'output', 'reg', 'array',
     'const', 'bundle', 'mirror', 'monitor',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
@@ -87,14 +87,22 @@ __all__ = [
     # From types (re-exported via *)
     'Action',
     'Buffer', 'Stream', 'State', 'Resource',
-    'AddrHandle', 'AddressSpace', 'BackdoorMemory', 'BackdoorRegFile',
+    'AddrHandle', 'AddressSpace', 'Array', 'BackdoorMemory', 'BackdoorRegFile',
     'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
     'bit', 'bit1', 'bit16', 'bit2', 'bit3', 'bit32', 'bit4', 'bit5', 'bit6',
     'bit64', 'bit7', 'bit8', 'bitv', 'bv',
+    'bv1', 'bv2', 'bv3', 'bv4', 'bv5', 'bv6', 'bv7', 'bv8',
+    'bv9', 'bv10', 'bv11', 'bv12', 'bv13', 'bv14', 'bv15', 'bv16',
+    'bv17', 'bv18', 'bv19', 'bv20', 'bv21', 'bv22', 'bv23', 'bv24',
+    'bv25', 'bv26', 'bv27', 'bv28', 'bv29', 'bv30', 'bv31', 'bv32',
+    'bv64', 'bv128',
+    'concat',
     'i128', 'i16', 'i32', 'i64', 'i8',
+    's8', 's16', 's32', 's64', 's128',
+    'sext', 'zext',
     'int128_t', 'int16_t', 'int32_t', 'int64_t', 'int8_t',
     'u1', 'u10', 'u11', 'u12', 'u128', 'u13', 'u14', 'u15', 'u16', 'u17', 'u18',
     'u19', 'u2', 'u20', 'u21', 'u22', 'u23', 'u24', 'u25', 'u26', 'u27', 'u28',

@@ -14,6 +14,7 @@ class ProcessKind(enum.Enum):
     """Kind of hardware process"""
     COMB = enum.auto()  # Combinational logic
     SYNC = enum.auto()  # Synchronous (clocked) logic
+    WIRE = enum.auto()  # Continuous assignment (from @property getter)
 
 @dc.dataclass(kw_only=True)
 class DataType(Base):
@@ -92,6 +93,7 @@ class DataTypeComponent(DataTypeClass):
     bind_map : List['Bind'] = dc.field(default_factory=list)
     sync_processes : List[Function] = dc.field(default_factory=list)
     comb_processes : List[Function] = dc.field(default_factory=list)
+    wire_processes : List[Function] = dc.field(default_factory=list)
 
 
 @dc.dataclass(kw_only=True)

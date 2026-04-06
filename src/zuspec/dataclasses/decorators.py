@@ -106,6 +106,12 @@ def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
 
         cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
+        # For PackedStruct subclasses, compute bit-field layout after
+        # dataclass processing so all annotations are resolved.
+        from .types import PackedStruct
+        if isinstance(cls_t, type) and issubclass(cls_t, PackedStruct):
+            cls_t._build_packed_layout()
+
         # Detect activity/body mutual exclusion and parse the activity method
         has_activity = 'activity' in cls.__dict__
         has_body = 'body' in cls.__dict__
@@ -576,6 +582,26 @@ def reg(reset=None, width=None) -> Any:
     if width is not None:
         metadata["width"] = width
     return dc.field(default_factory=RegField, metadata=metadata)
+
+
+def array(depth: int, default=None) -> Any:
+    """Marks a fixed-size array field.
+
+    The array has exactly ``depth`` elements, fixed at elaboration time.
+    No elements can be added or removed at runtime.
+
+    Use with ``zdc.Array[T]`` as the field type annotation::
+
+        _cpuregs: zdc.Array[zdc.u32] = zdc.array(32)
+
+    Args:
+        depth:   Number of elements (must be a positive integer).
+        default: Optional per-element reset/default value.
+    """
+    metadata: dict = {"kind": "array", "depth": depth}
+    if default is not None:
+        metadata["default"] = default
+    return dc.field(default_factory=list, metadata=metadata)
 
 
 def const(default=None) -> Any:

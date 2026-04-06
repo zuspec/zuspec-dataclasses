@@ -277,12 +277,86 @@ class AnnotationFileSet(object):
     files: List[str] = dc.field(default_factory=list)
 
 
-class PackedStruct(TypeBase,SupportsInt):
+class PackedStruct(TypeBase, SupportsInt):
+    """Base class for bit-packed struct types.
+
+    Subclasses declare fields in LSB-first order using ``zdc.field()``.
+    The bit width of each field is inferred from its ``Annotated[int, U(N)]``
+    type annotation.  Fields are automatically assigned contiguous bit ranges
+    starting at bit 0.
+
+    Constructing from a raw integer via ``from_int()`` auto-extracts all fields::
+
+        @zdc.dataclass
+        class RV32Insn(zdc.PackedStruct):
+            opcode: zdc.u7 = zdc.field()   # bits [6:0]
+            rd:     zdc.u5 = zdc.field()   # bits [11:7]
+            funct3: zdc.u3 = zdc.field()   # bits [14:12]
+            rs1:    zdc.u5 = zdc.field()   # bits [19:15]
+            rs2:    zdc.u5 = zdc.field()   # bits [24:20]
+            funct7: zdc.u7 = zdc.field()   # bits [31:25]
+
+        insn = RV32Insn.from_int(0xFFF00013)
+        insn.funct3   # → extracted 3-bit field
+        int(insn)     # → raw integer value
+
+    ``int(insn)`` re-packs all fields back to a single integer.
+    """
+
+    # Populated by _build_packed_layout() after @zdc.dataclass processes the class.
+    # Maps field_name → (bit_offset, bit_width).
+    _packed_fields: "ClassVar[dict[str, tuple[int, int]]]" = {}
+
+    def __new__(cls, *args, **kwargs):
+        # Override TypeBase.__new__ which returns None.
+        return object.__new__(cls)
+
+    @classmethod
+    def _build_packed_layout(cls) -> None:
+        """Compute bit offsets for all declared fields in declaration order."""
+        from typing import get_type_hints, get_args, get_origin
+
+        hints = get_type_hints(cls, include_extras=True)
+        layout: dict[str, tuple[int, int]] = {}
+        offset = 0
+        for name, hint in hints.items():
+            if name.startswith('_'):
+                continue
+            width = None
+            if get_origin(hint) is Annotated:
+                for m in get_args(hint)[1:]:
+                    if isinstance(m, (U, S)):
+                        width = m.width
+                        break
+            if width is None or width < 0:
+                continue
+            layout[name] = (offset, width)
+            offset += width
+        cls._packed_fields = layout
+
+    @classmethod
+    def from_int(cls, raw: int) -> 'Self':
+        """Construct an instance by extracting fields from a raw integer.
+
+        Fields are extracted LSB-first in declaration order::
+
+            insn = RV32Insn.from_int(0x00100093)
+            insn.opcode   # → 0x13
+            insn.rd       # → 1
+        """
+        kwargs = {
+            name: (raw >> offset) & ((1 << width) - 1)
+            for name, (offset, width) in cls._packed_fields.items()
+        }
+        return cls(**kwargs)  # type: ignore[call-arg]
 
     def __int__(self) -> int:
-        return -1
-
-    pass
+        """Re-pack all fields to a single integer."""
+        result = 0
+        for name, (offset, width) in type(self)._packed_fields.items():
+            val = getattr(self, name, 0)
+            result |= (int(val) & ((1 << width) - 1)) << offset
+        return result
 
 
 class Struct(TypeBase):
@@ -973,6 +1047,43 @@ i32 = int32_t
 i64 = int64_t
 i128 = int128_t
 
+# Short signed aliases matching the uXX naming convention
+s8  = int8_t
+s16 = int16_t
+s32 = int32_t
+s64 = int64_t
+s128 = int128_t
+
+
+def sext(value: int, width: int) -> int:
+    """Sign-extend ``value`` from ``width`` bits to a full Python int.
+
+    Treats bit ``width-1`` as the sign bit.  Equivalent to Verilog
+    ``$signed(value[width-1:0])``.
+
+    Example::
+
+        sext(0b11110000, 8)   # → -16  (0xF0 sign-extended)
+        sext(raw >> 20, 12)   # I-type immediate sign extension
+    """
+    value &= (1 << width) - 1
+    sign_bit = 1 << (width - 1)
+    return (value ^ sign_bit) - sign_bit
+
+
+def zext(value: int, width: int) -> int:
+    """Zero-extend ``value`` to ``width`` bits (mask off upper bits).
+
+    Equivalent to Verilog ``value[width-1:0]`` in an unsigned context.
+    Useful to guarantee an unsigned ``width``-bit result after arithmetic.
+
+    Example::
+
+        zext(some_signed_val, 32)   # clamp to 32-bit unsigned
+    """
+    return value & ((1 << width) - 1)
+
+
 # Bit type aliases
 bit = uint1_t
 bit1 = uint1_t
@@ -993,10 +1104,138 @@ class MyE(enum.IntEnum):
 
 width = Annotated[MyE, U(16)]
 
+class bv(int):
+    """Bit-vector base type supporting bit/slice extraction via [] operator.
+
+    Use ``bv[N]`` or the pre-defined ``bvN`` aliases as field annotations and
+    constructors.  Use ``uXX``/``sXX`` when only integer arithmetic and literal
+    assignment are required.
+
+    Slice convention matches Verilog: high bit first, inclusive on both ends.
+        x[7:0]   → bits 7 down to 0   (8 bits)
+        x[0]     → bit 0              (1 bit)
+
+    Slice results carry ``_width`` so they can be passed directly to
+    ``zdc.concat()`` without needing an explicit width argument.
+
+    ``bv[N]`` returns a cached subclass whose constructor defaults ``_width``
+    to ``N``, so ``bv32(0)`` is equivalent to ``bv[32](0)``::
+
+        x: bv32 = bv32(0)          # construct with _width=32
+        concat(bv32(0), raw[7:0])  # width known, no tuple needed
+    """
+
+    _width: int = 0  # width in bits; 0 means unspecified
+
+    # Cache of width → subclass, so bv[32] always returns the same class.
+    _cache: "ClassVar[dict[int, type]]" = {}
+
+    def __new__(cls, value: int = 0, _width: int = 0) -> "bv":
+        obj = super().__new__(cls, value)
+        # Use the class-level _width if the caller didn't pass one explicitly,
+        # so that bv32(0) picks up _width=32 from the subclass.
+        obj._width = _width or getattr(cls, '_width', 0)
+        return obj
+
+    def __class_getitem__(cls, width: int) -> "type[bv]":
+        """Return a cached ``bv`` subclass with ``_width`` preset to ``width``."""
+        if width not in cls._cache:
+            subcls = type(f"bv{width}", (bv,), {"_width": width})
+            cls._cache[width] = subcls
+        return cls._cache[width]
+
+    def __getitem__(self, key: "int | slice") -> "bv":
+        if isinstance(key, slice):
+            high = key.start if key.start is not None else 0
+            low  = key.stop  if key.stop  is not None else 0
+            width = high - low + 1
+            return bv((int(self) >> low) & ((1 << width) - 1), _width=width)
+        return bv((int(self) >> int(key)) & 1, _width=1)
+
 # bitv is a special marker type for variable-width unsigned bit vectors.
 # The actual width must be supplied via input(width=...) / output(width=...).
 bitv = Annotated[int, U(-1)]
-bv = Annotated[int, U(-1)]
+
+# bvXX — sized bv subclasses via bv[N].  Usable as both type annotations and
+# constructors: bv32(0) produces a bv with _width=32.
+bv1   = bv[1]
+bv2   = bv[2]
+bv3   = bv[3]
+bv4   = bv[4]
+bv5   = bv[5]
+bv6   = bv[6]
+bv7   = bv[7]
+bv8   = bv[8]
+bv9   = bv[9]
+bv10  = bv[10]
+bv11  = bv[11]
+bv12  = bv[12]
+bv13  = bv[13]
+bv14  = bv[14]
+bv15  = bv[15]
+bv16  = bv[16]
+bv17  = bv[17]
+bv18  = bv[18]
+bv19  = bv[19]
+bv20  = bv[20]
+bv21  = bv[21]
+bv22  = bv[22]
+bv23  = bv[23]
+bv24  = bv[24]
+bv25  = bv[25]
+bv26  = bv[26]
+bv27  = bv[27]
+bv28  = bv[28]
+bv29  = bv[29]
+bv30  = bv[30]
+bv31  = bv[31]
+bv32  = bv[32]
+bv64  = bv[64]
+bv128 = bv[128]
+
+
+def concat(*parts: "bv | tuple[int, int]") -> bv:
+    """Concatenate bit fields, MSB first — equivalent to Verilog ``{a, b, c}``.
+
+    Each argument is either:
+
+    * A ``bv`` instance that carries ``_width`` (e.g. the result of a slice
+      like ``raw[31:12]`` or ``raw[0]``).
+    * A ``(value, width)`` tuple for plain integers or literal constants.
+
+    The result is a ``bv`` whose ``_width`` equals the sum of all part widths.
+
+    Example — rebuild a RISC-V J-type immediate from an instruction word::
+
+        raw: bv32 = ...
+        imm_j = zdc.concat(
+            raw[31],        # sign bit   (1 bit)
+            raw[19:12],     # bits 19:12 (8 bits)
+            raw[20],        # bit 20     (1 bit)
+            raw[30:21],     # bits 30:21 (10 bits)
+            (0, 1),         # implicit LSB = 0 (1 bit)
+        )   # → 21-bit value (sign-extend with sext if needed)
+
+    Equivalent Verilog::
+
+        {raw[31], raw[19:12], raw[20], raw[30:21], 1'b0}
+    """
+    result = 0
+    total_width = 0
+    for part in reversed(parts):  # process LSB-first internally
+        if isinstance(part, tuple):
+            val, width = part
+        elif isinstance(part, bv) and part._width > 0:
+            val, width = int(part), part._width
+        else:
+            raise TypeError(
+                f"concat: cannot determine width of {part!r}; "
+                "use a bv slice (e.g. x[7:0]) or a (value, width) tuple"
+            )
+        result |= (int(val) & ((1 << width) - 1)) << total_width
+        total_width += width
+    return bv(result, _width=total_width)
+
 
 class RegFile(TypeBase):
     regwidth : Optional[int] = None
@@ -1036,6 +1275,31 @@ class RegFifo[T]():
 
     async def read(self) -> T:
         pass
+
+
+_AT = TypeVar('_AT')
+
+class Array(Generic[_AT]):
+    """Fixed-size, index-addressable array of RTL signals or values.
+
+    Use ``zdc.Array[T]`` as the field annotation and ``zdc.array(depth)`` as
+    the initialiser.  The depth is fixed at elaboration time — no elements can
+    be added or removed at runtime.
+
+    Supports only index-read and index-write; no list-mutation methods.
+
+    Example::
+
+        _cpuregs: zdc.Array[zdc.u32] = zdc.array(32)
+
+        # Inside @sync or @comb:
+        self._cpuregs[rd]     = result   # index-write
+        val = self._cpuregs[rs1]         # index-read → u32
+    """
+
+    def __getitem__(self, idx: int) -> _AT: ...        # type: ignore[empty-body]
+    def __setitem__(self, idx: int, value: _AT) -> None: ...  # type: ignore[empty-body]
+    def __len__(self) -> int: ...                      # type: ignore[empty-body]
 
 
 class Memory[T](TypeBase):
