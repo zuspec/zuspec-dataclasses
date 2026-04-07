@@ -50,6 +50,12 @@ considered to be a post-initialization constant.</p>
     <span class="n">mem</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Memory</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span>
 </pre></div>
 </div>
+<p>Synthesis or tool attributes can be attached to individual field
+declarations using <a class="reference internal" href="pragmas.html"><span class="doc">pragma comments</span></a>.  For example, to
+prevent a signal from being optimised away during synthesis:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">dbg_instr</span> <span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u64</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">reset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># zdc: keep</span>
+</pre></div>
+</div>
 <section id="decorators">
 <h2>Decorators<a class="headerlink" href="#decorators" title="Link to this heading">¶</a></h2>
 <section id="dataclass">
@@ -506,6 +512,7 @@ configuration.</p>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
 <li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pragmas.html">Pragma Comments</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
 </ul>

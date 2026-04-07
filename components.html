@@ -240,6 +240,17 @@ model. User code may not invoke these methods directly.</p>
 <p>A <cite>&#64;comb</cite> exec method is evaluated whenever one of
 the variables references changes. The <cite>&#64;comb</cite> exec is
 exclusively used with RTL descriptions.</p>
+<p>Synthesis attributes such as <code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">parallel_case</span> <span class="pre">*)</span></code> and <code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">full_case</span> <span class="pre">*)</span></code>
+can be attached to <code class="docutils literal notranslate"><span class="pre">if</span></code> / <code class="docutils literal notranslate"><span class="pre">elif</span></code> chains inside <code class="docutils literal notranslate"><span class="pre">&#64;comb</span></code> (and <code class="docutils literal notranslate"><span class="pre">&#64;sync</span></code>)
+methods using <a class="reference internal" href="pragmas.html"><span class="doc">pragma comments</span></a>.  For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">comb</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_alu</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>  <span class="c1"># zdc: parallel_case, full_case</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+</pre></div>
+</div>
 <p>The <code class="docutils literal notranslate"><span class="pre">&#64;process</span></code> async exec method creates an independent background thread
 that starts when the first <code class="docutils literal notranslate"><span class="pre">wait()</span></code> call is made anywhere in the component tree.
 A <code class="docutils literal notranslate"><span class="pre">&#64;process</span></code> exec method is an independent thread of control in the model.</p>
@@ -413,6 +424,7 @@ The body of the method adheres to activity semantics.</p>
 <li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
 <li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
 <li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pragmas.html">Pragma Comments</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
 </ul>

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Pragma Comments &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Runtime Implementation (Developer)" href="runtime.html" />
+    <link rel="prev" title="Constraints" href="constraints.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="pragma-comments">
+<h1>Pragma Comments<a class="headerlink" href="#pragma-comments" title="Link to this heading">¶</a></h1>
+<p>Zuspec supports <em>pragma comments</em> — inline <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> comments that attach
+structured metadata to Python language elements.  Pragmas are designed to
+be as non-invasive as possible: they follow the same tradition as Python’s
+own tool-comment conventions (<code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">type:</span> <span class="pre">ignore</span></code>, <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">noqa</span></code>, etc.) and
+require no structural changes to the code.</p>
+<p>The pragma system has two primary uses:</p>
+<ol class="arabic simple">
+<li><p><strong>Synthesis attributes</strong> on statements in <code class="docutils literal notranslate"><span class="pre">&#64;comb</span></code> / <code class="docutils literal notranslate"><span class="pre">&#64;sync</span></code> method
+bodies — directs backend code generators to emit attributes such as
+<code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">parallel_case</span> <span class="pre">*)</span></code> or <code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">full_case</span> <span class="pre">*)</span></code> in the generated
+SystemVerilog.</p></li>
+<li><p><strong>Field metadata</strong> on component field declarations — attaches
+attributes such as <code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">keep</span> <span class="pre">*)</span></code> to the generated signal.</p></li>
+</ol>
+<section id="syntax">
+<h2>Syntax<a class="headerlink" href="#syntax" title="Link to this heading">¶</a></h2>
+<p>A pragma comment starts with the literal prefix <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> (case-insensitive,
+leading/trailing whitespace ignored) and contains a comma-separated list of
+<em>items</em>:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span># zdc: flag, key=value, key=&quot;string value&quot;
+</pre></div>
+</div>
+<p>Each item is one of:</p>
+<ul class="simple">
+<li><p><strong>bare flag</strong> — <code class="docutils literal notranslate"><span class="pre">flag</span></code> becomes <code class="docutils literal notranslate"><span class="pre">{flag:</span> <span class="pre">True}</span></code></p></li>
+<li><p><strong>integer value</strong> — <code class="docutils literal notranslate"><span class="pre">key=42</span></code> becomes <code class="docutils literal notranslate"><span class="pre">{key:</span> <span class="pre">42}</span></code></p></li>
+<li><p><strong>boolean value</strong> — <code class="docutils literal notranslate"><span class="pre">key=True</span></code> / <code class="docutils literal notranslate"><span class="pre">key=False</span></code> become <code class="docutils literal notranslate"><span class="pre">{key:</span> <span class="pre">True/False}</span></code></p></li>
+<li><p><strong>quoted string</strong> — <code class="docutils literal notranslate"><span class="pre">key=&quot;hello&quot;</span></code> becomes <code class="docutils literal notranslate"><span class="pre">{key:</span> <span class="pre">&quot;hello&quot;}</span></code></p></li>
+<li><p><strong>unquoted string fallback</strong> — <code class="docutils literal notranslate"><span class="pre">key=word</span></code> (not a number/bool literal)
+becomes <code class="docutils literal notranslate"><span class="pre">{key:</span> <span class="pre">&quot;word&quot;}</span></code></p></li>
+</ul>
+<p>Keys are lowercased; flag names are lowercased.  Multiple <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> items
+on the same logical comment are merged.</p>
+</section>
+<section id="statement-pragmas-in-comb-sync">
+<h2>Statement Pragmas in &#64;comb / &#64;sync<a class="headerlink" href="#statement-pragmas-in-comb-sync" title="Link to this heading">¶</a></h2>
+<p>Place a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> comment at the end of an <code class="docutils literal notranslate"><span class="pre">if</span></code> (or <code class="docutils literal notranslate"><span class="pre">match</span></code>) line to
+annotate that statement.  The pragma is attached to the top <code class="docutils literal notranslate"><span class="pre">if</span></code> of an
+if/elif/else chain and covers the entire chain.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Alu</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">a</span><span class="p">:</span>   <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">b</span><span class="p">:</span>   <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">sel</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u8</span>  <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">reset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">comb</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_result</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>  <span class="c1"># zdc: parallel_case, full_case</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">&amp;</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">a</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span>
+</pre></div>
+</div>
+<p>When <code class="docutils literal notranslate"><span class="pre">zuspec-be-sv</span></code> generates SystemVerilog from the above, it emits:</p>
+<div class="highlight-systemverilog notranslate"><div class="highlight"><pre><span></span><span class="p">(</span><span class="o">*</span><span class="w"> </span><span class="n">parallel_case</span><span class="p">,</span><span class="w"> </span><span class="n">full_case</span><span class="w"> </span><span class="o">*</span><span class="p">)</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">sel</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="k">begin</span>
+<span class="w">    </span><span class="n">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="k">end</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">...</span>
+</pre></div>
+</div>
+<p><strong>Supported synthesis flags:</strong></p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">parallel_case</span></code></dt><dd><p>Informs the synthesis tool that the <code class="docutils literal notranslate"><span class="pre">if</span></code>/<code class="docutils literal notranslate"><span class="pre">elif</span></code> branches are mutually
+exclusive (one-hot conditions).  Equivalent to Verilog
+<code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">parallel_case</span> <span class="pre">*)</span></code> on a <code class="docutils literal notranslate"><span class="pre">case(1'b1)</span></code> statement.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">full_case</span></code></dt><dd><p>Informs the synthesis tool that all possible input combinations are
+covered by the branches; unspecified combinations need not generate
+latches.  Equivalent to Verilog <code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">full_case</span> <span class="pre">*)</span></code>.</p>
+</dd>
+</dl>
+<p>Both flags are often combined: <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span> <span class="pre">parallel_case,</span> <span class="pre">full_case</span></code>.</p>
+</section>
+<section id="field-pragmas">
+<h2>Field Pragmas<a class="headerlink" href="#field-pragmas" title="Link to this heading">¶</a></h2>
+<p>Place a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> comment at the end of a field declaration line to
+annotate that field.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DebugView</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">clk</span><span class="p">:</span>           <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">dbg_ascii_instr</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u64</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">reset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># zdc: keep</span>
+    <span class="n">dbg_insn_imm</span><span class="p">:</span>  <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span>  <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">reset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>   <span class="c1"># zdc: keep</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">keep</span></code> pragma prevents synthesis tools from optimising away signals
+that are only used for debug or formal verification:</p>
+<div class="highlight-systemverilog notranslate"><div class="highlight"><pre><span></span><span class="p">(</span><span class="o">*</span><span class="w"> </span><span class="n">keep</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="kt">logic</span><span class="w"> </span><span class="p">[</span><span class="mi">63</span><span class="o">:</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="n">dbg_ascii_instr</span><span class="p">;</span>
+<span class="p">(</span><span class="o">*</span><span class="w"> </span><span class="n">keep</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="kt">logic</span><span class="w"> </span><span class="p">[</span><span class="mi">31</span><span class="o">:</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="n">dbg_insn_imm</span><span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Supported field flag:</strong></p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">keep</span></code></dt><dd><p>Prevents the synthesis tool from removing the signal during
+optimisation.  Equivalent to Verilog <code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">keep</span> <span class="pre">*)</span></code>.</p>
+</dd>
+</dl>
+</section>
+<section id="labels">
+<h2>Labels<a class="headerlink" href="#labels" title="Link to this heading">¶</a></h2>
+<p>The pragma system also supports arbitrary key/value metadata via the
+<code class="docutils literal notranslate"><span class="pre">label</span></code> key, which can be used to tag specific statements or fields
+for external tools:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clk</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">rst</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_cpu_fsm</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cpu_state</span> <span class="o">==</span> <span class="n">CpuState</span><span class="o">.</span><span class="n">FETCH</span><span class="p">:</span>  <span class="c1"># zdc: parallel_case, full_case, label=cpu_fsm_top</span>
+        <span class="o">...</span>
+</pre></div>
+</div>
+<p>The label is stored in <code class="docutils literal notranslate"><span class="pre">stmt.pragmas[&quot;label&quot;]</span></code> and can be queried by
+analysis passes or synthesis backends to locate specific IR nodes without
+traversing the full AST.</p>
+</section>
+<section id="programmatic-access">
+<h2>Programmatic Access<a class="headerlink" href="#programmatic-access" title="Link to this heading">¶</a></h2>
+<p>Pragma maps can be scanned from any source string using the public API:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">scan_pragmas</span><span class="p">,</span> <span class="n">parse_pragma_str</span>
+
+<span class="c1"># Scan an entire source file/method body</span>
+<span class="n">source</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">if self.sel == 0:  # zdc: parallel_case, full_case</span>
+<span class="s2">    pass</span>
+<span class="s2">x: int = 0  # zdc: keep</span>
+<span class="s2">&quot;&quot;&quot;</span>
+<span class="n">pragmas</span> <span class="o">=</span> <span class="n">scan_pragmas</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<span class="c1"># {2: {&#39;parallel_case&#39;: True, &#39;full_case&#39;: True}, 4: {&#39;keep&#39;: True}}</span>
+
+<span class="c1"># Parse a single pragma string</span>
+<span class="n">attrs</span> <span class="o">=</span> <span class="n">parse_pragma_str</span><span class="p">(</span><span class="s2">&quot;parallel_case, full_case, label=my_fsm&quot;</span><span class="p">)</span>
+<span class="c1"># {&#39;parallel_case&#39;: True, &#39;full_case&#39;: True, &#39;label&#39;: &#39;my_fsm&#39;}</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">scan_pragmas(source)</span></code></dt><dd><p>Returns a <code class="docutils literal notranslate"><span class="pre">Dict[int,</span> <span class="pre">Dict[str,</span> <span class="pre">Any]]</span></code> mapping 1-based line numbers
+to pragma dictionaries.  Lines without a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> comment are absent
+from the result.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">parse_pragma_str(text)</span></code></dt><dd><p>Parses a single comma-separated pragma item string (the text after
+<code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code>) and returns a <code class="docutils literal notranslate"><span class="pre">Dict[str,</span> <span class="pre">Any]</span></code>.</p>
+</dd>
+</dl>
+</section>
+<section id="ir-storage">
+<h2>IR Storage<a class="headerlink" href="#ir-storage" title="Link to this heading">¶</a></h2>
+<p>After parsing, pragmas are stored in two IR locations:</p>
+<ul class="simple">
+<li><p><strong>Statement nodes</strong> — <code class="docutils literal notranslate"><span class="pre">StmtIf.pragmas</span></code> and <code class="docutils literal notranslate"><span class="pre">StmtMatch.pragmas</span></code> (both
+<code class="docutils literal notranslate"><span class="pre">Dict[str,</span> <span class="pre">Any]</span></code>), populated by <code class="docutils literal notranslate"><span class="pre">DataModelFactory</span></code> when it converts
+the method body AST.</p></li>
+<li><p><strong>Field nodes</strong> — <code class="docutils literal notranslate"><span class="pre">Field.pragmas</span></code> (<code class="docutils literal notranslate"><span class="pre">Dict[str,</span> <span class="pre">Any]</span></code>), populated when
+<code class="docutils literal notranslate"><span class="pre">DataModelFactory</span></code> scans the class body.</p></li>
+</ul>
+<p>Backend generators (e.g. <code class="docutils literal notranslate"><span class="pre">zuspec-be-sv</span></code>) query <code class="docutils literal notranslate"><span class="pre">stmt.pragmas</span></code> /
+<code class="docutils literal notranslate"><span class="pre">field.pragmas</span></code> to decide whether to emit <code class="docutils literal notranslate"><span class="pre">(*</span> <span class="pre">…</span> <span class="pre">*)</span></code> attributes in the
+generated SystemVerilog output.</p>
+</section>
+<section id="combining-with-other-comments">
+<h2>Combining with Other Comments<a class="headerlink" href="#combining-with-other-comments" title="Link to this heading">¶</a></h2>
+<p>A pragma comment may appear alongside other <code class="docutils literal notranslate"><span class="pre">#</span></code> comments on the same
+physical line as long as the <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> token comes after any other
+comment text:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mem_wordsize</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>  <span class="c1"># word (0=32-bit)  # zdc: full_case</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+<p>Only the last <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">zdc:</span></code> token on a line is used; earlier ones on the
+same line are ignored.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Pragma Comments</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#syntax">Syntax</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#statement-pragmas-in-comb-sync">Statement Pragmas in &#64;comb / &#64;sync</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#field-pragmas">Field Pragmas</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#labels">Labels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#programmatic-access">Programmatic Access</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ir-storage">IR Storage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#combining-with-other-comments">Combining with Other Comments</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="constraints.html" title="previous chapter">Constraints</a></li>
+      <li>Next: <a href="runtime.html" title="next chapter">Runtime Implementation (Developer)</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2022-2026, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/pragmas.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
