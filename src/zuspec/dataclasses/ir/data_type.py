@@ -218,6 +218,8 @@ class Function(Base):
     is_import : bool = dc.field(default=False)
     is_target : bool = dc.field(default=False)  # import target
     is_solve : bool = dc.field(default=False)   # import solve
+    # Leading comment block from Python source (docstring or # lines above decorator)
+    comment : Optional[str] = dc.field(default=None)
 
 @dc.dataclass(kw_only=True)
 class Process(Base):

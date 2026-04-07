@@ -76,6 +76,8 @@ class ConversionScope:
     pragma_map: Optional[dict] = None
     # Comment map from scan_line_comments(): line_number -> comment_text
     comment_map: Optional[dict] = None
+    # Leading comment for the current method (set by _extract_method_body)
+    method_comment: Optional[str] = None
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -1444,6 +1446,7 @@ class DataModelFactory(object):
         func = Function(
             name=name,
             body=body,
+            comment=scope.method_comment,
             metadata={
                 "kind": "sync",
                 "clock": clock_expr,
@@ -1482,6 +1485,7 @@ class DataModelFactory(object):
         func = Function(
             name=name,
             body=body,
+            comment=scope.method_comment,
             metadata={
                 "kind": "comb",
                 "sensitivity": sensitivity_list,
@@ -1674,6 +1678,9 @@ class DataModelFactory(object):
                 for item in class_node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         if item.name == method_name:
+                            # Collect leading comment for this method
+                            if scope is not None:
+                                scope.method_comment = self._collect_method_comment(item, scope.comment_map)
                             return self._convert_ast_body(item.body, scope)
         except SyntaxError as e:
             raise RuntimeError(
@@ -1681,6 +1688,41 @@ class DataModelFactory(object):
             ) from e
         
         return []
+
+    def _collect_method_comment(self, func_node, comment_map: Optional[dict]) -> Optional[str]:
+        """Return the comment text associated with a method definition.
+
+        Combines two sources in order (earlier first):
+          1. Leading ``#`` block — consecutive comment lines sitting immediately
+             above the first decorator (or the ``def`` line if undecorated),
+             collected from *comment_map*.
+          2. Docstring — the ``\"\"\"...\"\"\"`` string literal that is the first
+             statement in the function body, if present.
+
+        Returns ``None`` when neither source yields any text.
+        """
+        parts = []
+
+        # 1. Leading # block (above the decorator or def)
+        if comment_map:
+            if func_node.decorator_list:
+                start = min(d.lineno for d in func_node.decorator_list)
+            else:
+                start = func_node.lineno
+            comment_lines = []
+            lineno = start - 1
+            while lineno > 0 and lineno in comment_map:
+                comment_lines.append(comment_map[lineno])
+                lineno -= 1
+            if comment_lines:
+                parts.append('\n'.join(reversed(comment_lines)))
+
+        # 2. Docstring
+        docstring = ast.get_docstring(func_node)
+        if docstring:
+            parts.append(docstring)
+
+        return '\n'.join(parts) if parts else None
 
     def _convert_ast_body(self, body : list, scope: ConversionScope = None) -> list:
         """Convert AST statement list to data model statements."""
