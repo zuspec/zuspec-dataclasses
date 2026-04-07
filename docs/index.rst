@@ -29,6 +29,7 @@ Version: 2026.1 (January 2026)
    fields
    types
    constraints
+   pragmas
    runtime
    checker
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 import dataclasses as dc
 import enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from .base import Base
 from .data_type import DataType
 from .expr import Expr
@@ -51,6 +51,7 @@ class Field(Base):
     size : Optional[int] = dc.field(default=None)  # Array size (for fixed-size arrays)
     max_size : Optional[int] = dc.field(default=None)  # Maximum size for variable-size arrays
     is_variable_size : bool = dc.field(default=False)  # True if array has variable size
+    pragmas : Dict[str, Any] = dc.field(default_factory=dict)  # From ``# zdc: key=value, flag`` comments
     
     @property
     def is_array(self) -> bool:

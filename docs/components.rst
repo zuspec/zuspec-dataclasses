@@ -241,7 +241,18 @@ comb
 ****
 A `@comb` exec method is evaluated whenever one of 
 the variables references changes. The `@comb` exec is 
-exclusively used with RTL descriptions. 
+exclusively used with RTL descriptions.
+
+Synthesis attributes such as ``(* parallel_case *)`` and ``(* full_case *)``
+can be attached to ``if`` / ``elif`` chains inside ``@comb`` (and ``@sync``)
+methods using :doc:`pragma comments <pragmas>`.  For example::
+
+    @zdc.comb
+    def _alu(self):
+        if self.sel == 0:  # zdc: parallel_case, full_case
+            self.out = self.a + self.b
+        elif self.sel == 1:
+            self.out = self.a - self.b
 
 process
 ****

@@ -21,6 +21,7 @@ import inspect
 import textwrap
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .pragma import scan_pragmas
 from .ir.activity import (
     ActivityAnonTraversal,
     ActivityAtomic,
@@ -98,6 +99,7 @@ class ActivityParser:
         self._src_file = src_file
         self._start_lineno = start_lineno
         self._method_globals: Dict[str, Any] = getattr(method, "__globals__", {})
+        self._pragmas: Dict[int, Dict[str, Any]] = scan_pragmas(source)
 
         tree = ast.parse(source)
 
@@ -133,30 +135,32 @@ class ActivityParser:
                 return None
 
         if isinstance(node, ast.Expr):
-            return self._parse_expr_stmt(node.value)
+            ir = self._parse_expr_stmt(node.value)
+        elif isinstance(node, ast.Assign):
+            ir = self._parse_assign(node)
+        elif isinstance(node, ast.With):
+            ir = self._parse_with(node)
+        elif isinstance(node, ast.AsyncWith):
+            ir = self._parse_async_with(node)
+        elif isinstance(node, ast.For):
+            ir = self._parse_for(node)
+        elif isinstance(node, ast.If):
+            ir = self._parse_if(node)
+        elif isinstance(node, ast.Match):
+            ir = self._parse_match(node)
+        else:
+            raise ActivityParseError(
+                f"Unsupported activity statement type: {type(node).__name__} "
+                f"at line {getattr(node, 'lineno', '?')}"
+            )
 
-        if isinstance(node, ast.Assign):
-            return self._parse_assign(node)
-
-        if isinstance(node, ast.With):
-            return self._parse_with(node)
-
-        if isinstance(node, ast.AsyncWith):
-            return self._parse_async_with(node)
-
-        if isinstance(node, ast.For):
-            return self._parse_for(node)
-
-        if isinstance(node, ast.If):
-            return self._parse_if(node)
-
-        if isinstance(node, ast.Match):
-            return self._parse_match(node)
-
-        raise ActivityParseError(
-            f"Unsupported activity statement type: {type(node).__name__} "
-            f"at line {getattr(node, 'lineno', '?')}"
-        )
+        # Attach any # zdc: pragmas from the statement's source line
+        line = getattr(node, "lineno", None)
+        if line is not None and ir is not None:
+            pragmas = getattr(self, "_pragmas", {}).get(line)
+            if pragmas:
+                ir.pragmas.update(pragmas)
+        return ir
 
     # ------------------------------------------------------------------
     # Expression-statement parsing
