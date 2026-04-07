@@ -35,6 +35,7 @@ from .decorators import (
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
 from .activity_parser import ActivityParser, ActivityParseError
+from .pragma import scan_pragmas, parse_pragma_str, scan_line_comments
 from .activity_dsl import (
     do, parallel, schedule, sequence, atomic, select, branch,
     do_while, while_do, replicate, constraint as activity_constraint, bind as activity_bind
@@ -81,6 +82,7 @@ __all__ = [
     'ConstraintParser', 'extract_rand_fields',
     # From activity_parser
     'ActivityParser', 'ActivityParseError',
+    'scan_pragmas', 'parse_pragma_str', 'scan_line_comments',
     # From activity_dsl
     'do', 'parallel', 'schedule', 'sequence', 'atomic', 'select', 'branch',
     'do_while', 'while_do', 'replicate',

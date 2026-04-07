@@ -72,6 +72,10 @@ class ConversionScope:
     action_cls: type = None
     # True when converting @zdc.constraint methods as imperative stmts (treats == as =)
     is_constraint_mode: bool = False
+    # Pragma map from scan_pragmas(): line_number -> {key: value}
+    pragma_map: Optional[dict] = None
+    # Comment map from scan_line_comments(): line_number -> comment_text
+    comment_map: Optional[dict] = None
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -753,10 +757,31 @@ class DataModelFactory(object):
 
     def _extract_fields(self, t : Type) -> list:
         """Extract fields from a dataclass type."""
+        from .pragma import scan_pragmas as _scan_pragmas
         fields = []
         
         if not dc.is_dataclass(t):
             return fields
+
+        # Build a map from field name → pragma dict by scanning source once
+        field_pragmas: dict = {}
+        try:
+            import textwrap
+            source_lines, start_lineno = inspect.getsourcelines(t)
+            source = textwrap.dedent(''.join(source_lines))
+            pragmas_by_line = _scan_pragmas(source)
+            if pragmas_by_line:
+                # Walk AST to correlate AnnAssign field names with their line's pragmas
+                tree = ast.parse(source)
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef) and node.name == t.__name__:
+                        for stmt in node.body:
+                            if (isinstance(stmt, ast.AnnAssign)
+                                    and isinstance(stmt.target, ast.Name)
+                                    and stmt.lineno in pragmas_by_line):
+                                field_pragmas[stmt.target.id] = pragmas_by_line[stmt.lineno]
+        except (OSError, TypeError):
+            pass
         
         # Get type hints
         try:
@@ -999,7 +1024,8 @@ class DataModelFactory(object):
                     size=array_size,
                     max_size=max_array_size,
                     is_variable_size=is_variable_size,
-                    loc=field_loc
+                    loc=field_loc,
+                    pragmas=field_pragmas.get(f.name, {}),
                 )
             else:
                 field_dm = Field(
@@ -1014,7 +1040,8 @@ class DataModelFactory(object):
                     size=array_size,
                     max_size=max_array_size,
                     is_variable_size=is_variable_size,
-                    loc=field_loc
+                    loc=field_loc,
+                    pragmas=field_pragmas.get(f.name, {}),
                 )
             fields.append(field_dm)
         
@@ -1627,6 +1654,12 @@ class DataModelFactory(object):
         try:
             source = textwrap.dedent(source)
             tree = ast.parse(source)
+
+            # Build pragma map once for this class source and attach to scope.
+            if scope is not None and scope.pragma_map is None:
+                from .pragma import scan_pragmas as _scan_pragmas, scan_line_comments as _scan_line_comments
+                scope.pragma_map = _scan_pragmas(source)
+                scope.comment_map = _scan_line_comments(source)
             
             # Find the class definition - need to handle nested classes in functions
             # Use ast.walk() but filter to the right class name
@@ -2226,6 +2259,20 @@ class DataModelFactory(object):
     def _convert_ast_stmt(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Stmt]:
         """Convert an AST statement to a data model statement."""
 
+        def _leading_comment(n) -> Optional[str]:
+            """Collect the block of plain comment lines immediately above n.lineno."""
+            if not (scope and scope.comment_map):
+                return None
+            lines = []
+            lineno = getattr(n, 'lineno', None)
+            if lineno is None:
+                return None
+            lineno -= 1
+            while lineno > 0 and lineno in scope.comment_map:
+                lines.append(scope.comment_map[lineno])
+                lineno -= 1
+            return '\n'.join(reversed(lines)) if lines else None
+
         def is_call_named(call: ast.Call, name: str) -> bool:
             # zdc.cover(...)
             if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
@@ -2333,19 +2380,24 @@ class DataModelFactory(object):
                 target=self._convert_ast_expr(node.target, scope),
                 iter=self._convert_ast_expr(node.iter, scope),
                 body=self._convert_ast_body(node.body, scope),
-                orelse=self._convert_ast_body(node.orelse, scope)
+                orelse=self._convert_ast_body(node.orelse, scope),
+                comment=_leading_comment(node),
             )
         elif isinstance(node, ast.While):
             return StmtWhile(
                 test=self._convert_ast_expr(node.test, scope),
                 body=self._convert_ast_body(node.body, scope),
-                orelse=self._convert_ast_body(node.orelse, scope) if node.orelse else []
+                orelse=self._convert_ast_body(node.orelse, scope) if node.orelse else [],
+                comment=_leading_comment(node),
             )
         elif isinstance(node, ast.If):
+            pragmas = scope.pragma_map.get(node.lineno, {}) if (scope and scope.pragma_map) else {}
             return StmtIf(
                 test=self._convert_ast_expr(node.test, scope),
                 body=self._convert_ast_body(node.body, scope),
-                orelse=self._convert_ast_body(node.orelse, scope)
+                orelse=self._convert_ast_body(node.orelse, scope),
+                pragmas=pragmas,
+                comment=_leading_comment(node),
             )
         elif isinstance(node, ast.Assign):
             # Check for unannotated action call: ``var = await ActionCls(kwargs)(comp=self)``
@@ -2418,9 +2470,12 @@ class DataModelFactory(object):
                         if scope.is_action_body and scope.action_local_prefix:
                             var_name = scope.action_local_prefix + var_name
                         scope.local_vars.add(var_name)
+            _assign_pragmas = scope.pragma_map.get(node.lineno, {}) if (scope and scope.pragma_map) else {}
             return StmtAssign(
                 targets=[self._convert_ast_expr(t, scope) for t in node.targets],
-                value=self._convert_ast_expr(node.value, scope)
+                value=self._convert_ast_expr(node.value, scope),
+                pragmas=_assign_pragmas,
+                comment=_leading_comment(node),
             )
         elif isinstance(node, ast.AugAssign):
             # Convert augmented assignment (e.g., x += 1)
@@ -2442,7 +2497,8 @@ class DataModelFactory(object):
             return StmtAugAssign(
                 target=self._convert_ast_expr(node.target, scope),
                 op=op,
-                value=self._convert_ast_expr(node.value, scope)
+                value=self._convert_ast_expr(node.value, scope),
+                comment=_leading_comment(node),
             )
         elif isinstance(node, ast.AnnAssign):
             # Annotated assignment: ``name: Type = value``
@@ -2495,9 +2551,12 @@ class DataModelFactory(object):
                     guard=guard,
                     body=body
                 ))
+            pragmas = scope.pragma_map.get(node.lineno, {}) if (scope and scope.pragma_map) else {}
             return StmtMatch(
                 subject=self._convert_ast_expr(node.subject, scope),
-                cases=cases
+                cases=cases,
+                pragmas=pragmas,
+                comment=_leading_comment(node),
             )
         elif isinstance(node, (ast.AsyncWith, ast.With)):
             return self._convert_async_with(node, scope)
@@ -2695,6 +2754,14 @@ class DataModelFactory(object):
             # Otherwise use ExprList from phase2
             from .ir.expr_phase2 import ExprList
             return ExprList(elts=elts)
+        elif isinstance(node, ast.Slice):
+            # Handle bit-slice expressions, e.g. x[4:0] → ExprSlice(lower=4, upper=0)
+            from .ir.expr import ExprSlice
+            return ExprSlice(
+                lower=self._convert_ast_expr(node.lower, scope) if node.lower is not None else None,
+                upper=self._convert_ast_expr(node.upper, scope) if node.upper is not None else None,
+                is_bit_slice=True,
+            )
         elif isinstance(node, ast.Subscript):
             # Handle subscript operations (e.g., array[index])
             return ExprSubscript(
