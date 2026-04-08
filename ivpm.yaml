@@ -4,6 +4,7 @@ package:
 
     dep-sets:
     - name: default-dev
+      uses: default
       deps:
       - name: pytest
         src: pypi
