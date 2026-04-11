@@ -31,6 +31,8 @@ from .decorators import (
     lock, share, extend, pool, flow_output, flow_input,
     indexed_regfile,
     indexed_pool,
+    pipeline, stage, forward,
+    PipelineError, _StageDSL,
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
@@ -72,6 +74,8 @@ __all__ = [
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
+    # Pipeline process API
+    'pipeline', 'stage', 'PipelineError', '_StageDSL',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
     # From coverage

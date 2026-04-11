@@ -772,8 +772,8 @@ class ExecProc(Exec): pass
 @dc.dataclass
 class ExecSync(Exec):
     """Synchronous process"""
-    clock : Optional[Callable] = dc.field(default=None)
-    reset : Optional[Callable] = dc.field(default=None)
+    clock : Optional[str] = dc.field(default=None)
+    reset : Optional[str] = dc.field(default=None)
 
 @dc.dataclass
 class ExecComb(Exec):
@@ -792,7 +792,7 @@ def process(T):
     # Datamodel Mapping
     return ExecProc(T)
 
-def sync(clock: Callable = None, reset: Callable = None):
+def sync(clock: str = None, reset: str = None):
     """
     Decorator for synchronous processes.
     
@@ -801,11 +801,11 @@ def sync(clock: Callable = None, reset: Callable = None):
     after the method completes but before next evaluation.
     
     Args:
-        clock: Lambda expression that returns clock signal reference
-        reset: Lambda expression that returns reset signal reference
+        clock: Clock field name (e.g. ``"clk"``).
+        reset: Reset field name (e.g. ``"rst_n"``).
         
     Example:
-        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
+        @zdc.sync(clock="clk", reset="rst_n")
         def _count(self):
             if self.reset:
                 self.count = 0
@@ -829,6 +829,231 @@ def comb(method):
             self.out = self.a ^ self.b
     """
     return ExecComb(method=method)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline process support
+# ---------------------------------------------------------------------------
+
+class PipelineError(Exception):
+    """Raised when a ``@zdc.pipeline`` body violates the pipeline contract.
+
+    Common causes:
+
+    - A ``@zdc.stage`` method is declared ``async def`` (not allowed).
+    - A ``@zdc.stage`` method is missing parameter type annotations.
+    - The pipeline root body contains non-stage calls.
+    - A RAW hazard cannot be resolved given the ``forward=`` setting.
+    """
+
+
+class _LegacyForwardingDecl:
+    """Returned by the deprecated :func:`forward` helper for backward compat."""
+    __slots__ = ("signal", "from_stage", "to_stage")
+
+    def __init__(self, signal: str, from_stage: str = "", to_stage: str = "") -> None:
+        self.signal = signal
+        self.from_stage = from_stage
+        self.to_stage = to_stage
+
+
+def forward(signal: str = "", from_stage: str = "", to_stage: str = "") -> "_LegacyForwardingDecl":
+    """Deprecated — use ``@zdc.stage`` ``no_forward`` annotation instead.
+
+    Previously used as ``forward=[zdc.forward(signal="x", ...)]`` in the
+    ``@zdc.pipeline`` decorator; the old sentinel-based pipeline API no longer
+    requires this helper.  It is kept only for backward compatibility and will
+    be removed in a future release.
+    """
+    import warnings
+    warnings.warn(
+        "zdc.forward() is deprecated. "
+        "Use @zdc.stage(no_forward=True) in the new method-per-stage API instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _LegacyForwardingDecl(signal=signal, from_stage=from_stage, to_stage=to_stage)
+
+
+class _StageDSL:
+    """Singleton DSL object for pipeline stage decoration and meta-methods.
+
+    **As a decorator** — decorate stage methods on a pipeline component:
+
+    .. code-block:: python
+
+        @zdc.stage
+        def IF(self) -> tuple[zdc.u32, zdc.u32]:
+            ...
+
+        @zdc.stage(no_forward=True)
+        def MEM(self, alu_result: zdc.u32, ...) -> ...:
+            ...
+
+    **As meta-methods** inside stage and sync bodies (synthesizer annotations;
+    all are no-ops at Python runtime):
+
+    .. code-block:: python
+
+        zdc.stage.stall(~self.imem_valid)
+        zdc.stage.cancel(cond=is_nop)
+        zdc.stage.flush(self.IF, cond=mispredicted)
+        ok = zdc.stage.valid(self.ID)
+        rdy = zdc.stage.ready(self.IF)
+        stld = zdc.stage.stalled(self.MEM)
+    """
+
+    def __call__(self, func=None, *, no_forward: bool = False):
+        """Handle both ``@zdc.stage`` (bare) and ``@zdc.stage(no_forward=True)`` forms.
+
+        Args:
+            func:        The stage method, when used as a bare decorator.
+            no_forward:  When True, exclude all outputs of this stage from
+                         forwarding; generate stall logic instead.
+        """
+        if func is not None:
+            # Bare @zdc.stage form
+            func._zdc_stage = True
+            func._zdc_stage_no_forward = False
+            return func
+        # Parametric @zdc.stage(no_forward=...) form
+        def decorator(method):
+            method._zdc_stage = True
+            method._zdc_stage_no_forward = no_forward
+            return method
+        return decorator
+
+    @staticmethod
+    def stall(cond=None):
+        """Suppress valid propagation to the next stage while *cond* is true.
+
+        This is a synthesizer annotation; it is a no-op at Python runtime.
+
+        The current stage remains valid (transaction is paused, not discarded).
+        All upstream stages are frozen as well.  The next stage receives a bubble.
+
+        Args:
+            cond: Combinational Boolean condition; may be keyword ``cond=``.
+        """
+
+    @staticmethod
+    def cancel(cond: bool = True):
+        """Clear this stage's valid without freezing upstream.
+
+        This is a synthesizer annotation; it is a no-op at Python runtime.
+
+        The transaction in this stage is discarded (as if it never happened).
+        Upstream stages continue to advance normally.
+
+        Args:
+            cond: Combinational Boolean enable; defaults to ``True``.
+        """
+
+    @staticmethod
+    def flush(target, cond: bool = True):
+        """Flush (invalidate) a target stage.
+
+        This is a synthesizer annotation; it is a no-op at Python runtime.
+
+        Priority: flush > cancel > stall > normal propagation.
+
+        Args:
+            target: The stage method reference (e.g. ``self.IF``).
+            cond:   Combinational Boolean enable; defaults to ``True``.
+        """
+
+    @staticmethod
+    def valid(stage_method) -> bool:
+        """Return True if *stage_method*'s stage holds a live transaction.
+
+        Synthesizer query — substituted with ``{STAGE}_valid`` in RTL;
+        always returns False at Python runtime.
+
+        Args:
+            stage_method: Stage method reference (e.g. ``self.ID``).
+        """
+        return False
+
+    @staticmethod
+    def ready(stage_method) -> bool:
+        """Return True if *stage_method*'s stage can accept a new transaction.
+
+        Synthesizer query — substituted with ``(~{STAGE}_valid | ~{STAGE}_stalled)``;
+        always returns True at Python runtime.
+
+        Args:
+            stage_method: Stage method reference (e.g. ``self.IF``).
+        """
+        return True
+
+    @staticmethod
+    def stalled(stage_method) -> bool:
+        """Return True if *stage_method*'s stage is currently stalled.
+
+        Synthesizer query — substituted with ``{STAGE}_stalled`` in RTL;
+        always returns False at Python runtime.
+
+        Args:
+            stage_method: Stage method reference (e.g. ``self.MEM``).
+        """
+        return False
+
+
+#: Singleton DSL object.  Use ``@zdc.stage`` to decorate stage methods and
+#: ``zdc.stage.stall/cancel/flush/valid/ready/stalled(...)`` inside bodies.
+stage = _StageDSL()
+
+
+def pipeline(
+    clock: str = None,
+    reset: str = None,
+    forward=True,
+    no_forward: list = None,
+    stages=None,  # Deprecated: kept for backward compat with old sentinel-based API
+):
+    """Decorator for pipeline processes.
+
+    Unlike ``@zdc.sync`` (which describes single-cycle sequential logic), a
+    pipeline process describes a single *transaction* flowing through multiple
+    clock-edge boundaries.  Multiple transactions are in-flight simultaneously;
+    the hardware repeats the body continuously, accepting a new transaction each
+    cycle.
+
+    The body must be a plain ``def`` (not ``async def``) and its body is a
+    sequence of ``self.STAGE(args)`` calls, one per ``@zdc.stage`` method,
+    in pipeline order.
+
+    Args:
+        clock:      Clock field name (e.g. ``"clk"``).
+        reset:      Reset field name (e.g. ``"rst_n"``).
+        forward:    Process-level default for unresolved RAW hazards:
+                    ``True`` (default) — forward via bypass mux;
+                    ``False`` — stall.
+        no_forward: Optional list of signal names to exclude from forwarding
+                    at the process level (per-signal escape hatch).
+        stages:     Deprecated.  Accepted for backward compatibility with the
+                    old sentinel-based API; ignored by the new
+                    ``PipelineFrontendPass``.
+
+    Example::
+
+        @zdc.pipeline(clock="clk", reset="rst_n", forward=True)
+        def execute(self):
+            pc, insn = self.IF()
+            rs1, rs2, rd = self.ID(insn)
+            result = self.EX(rs1, rs2)
+            self.WB(rd, result)
+    """
+    def decorator(method):
+        method._zdc_pipeline        = True
+        method._zdc_pipeline_clock  = clock
+        method._zdc_pipeline_reset  = reset
+        method._zdc_pipeline_forward = forward
+        method._zdc_pipeline_no_forward = no_forward or []
+        # Store for backward compat with PipelineAnnotationPass
+        method._zdc_pipeline_stages = stages
+        return method
+    return decorator
 
 def invariant(func):
     """Decorator to mark a method as a structural invariant.

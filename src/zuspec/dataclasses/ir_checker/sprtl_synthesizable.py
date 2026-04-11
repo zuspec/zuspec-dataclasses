@@ -4,6 +4,8 @@ This checker validates that code can be synthesized to hardware (FSM).
 It extends the Retargetable profile with additional synthesis-specific rules.
 """
 
+import ast as _ast
+
 from typing import List, Dict, Set, Optional, Any
 from .base import BaseIRChecker, CheckError, CheckContext
 from .retargetable import RetargetableIRChecker
@@ -43,6 +45,10 @@ class SPRTLSynthesizableChecker(RetargetableIRChecker):
     - ZDS006: Invalid await pattern
     - ZDS007: @sync process must have while True loop
     - ZDS008: Non-synthesizable statement in @sync process
+    - ZDS010: @zdc.stage method must not be async def
+    - ZDS011: @zdc.stage parameter missing type annotation
+    - ZDS012: @zdc.stage body contains illegal 'await'
+    - ZDS013: @zdc.stage body contains illegal 'yield'
     """
     
     PROFILE_NAME = 'SPRTLSynthesizable'
@@ -64,6 +70,90 @@ class SPRTLSynthesizableChecker(RetargetableIRChecker):
         self._call_graph: Dict[str, Set[str]] = {}  # func_name -> called functions
         self._current_func: Optional[str] = None
     
+    def check_type(self, datatype, check_ctx: CheckContext) -> List[CheckError]:
+        """Check a DataType, adding @zdc.stage method validation for pipeline components."""
+        errors = super().check_type(datatype, check_ctx)
+
+        stage_method_irs = getattr(datatype, 'stage_method_irs', None)
+        if stage_method_irs:
+            for smir in stage_method_irs:
+                errors.extend(self._check_stage_method_ir(smir))
+
+        return errors
+
+    def _check_stage_method_ir(self, smir) -> List[CheckError]:
+        """Validate a StageMethodIR for synthesizability constraints.
+
+        Rules:
+        - ZDS010: must be ``def``, not ``async def``
+        - ZDS011: every input parameter must have a type annotation
+        - ZDS012: body must not contain ``await``
+        - ZDS013: body must not contain ``yield`` / ``yield from``
+        """
+        errors: List[CheckError] = []
+        body_ast = smir.body_ast
+
+        # ZDS010 — reject async stage methods
+        if body_ast is not None and isinstance(body_ast, _ast.AsyncFunctionDef):
+            errors.append(CheckError(
+                code='ZDS010',
+                message=(
+                    f"@zdc.stage method '{smir.name}' must be 'def', not 'async def'. "
+                    "Stage methods express combinational logic, not sequential flows. "
+                    "Use @zdc.sync for sequential protocol logic."
+                ),
+                filename='',
+                lineno=body_ast.lineno,
+                col_offset=body_ast.col_offset,
+            ))
+
+        # ZDS011 — require type annotations on all input parameters
+        for port in smir.inputs:
+            if port.annotation_ast is None:
+                lineno = body_ast.lineno if body_ast is not None else 1
+                errors.append(CheckError(
+                    code='ZDS011',
+                    message=(
+                        f"Parameter '{port.name}' in @zdc.stage method '{smir.name}' "
+                        "lacks a type annotation. The synthesizer requires annotated "
+                        "parameters to determine pipeline register widths "
+                        "(e.g. 'def IF(self, insn: zdc.u32) -> ...')."
+                    ),
+                    filename='',
+                    lineno=lineno,
+                    col_offset=0,
+                ))
+
+        # ZDS012/ZDS013 — reject await/yield inside stage bodies
+        if body_ast is not None:
+            for node in _ast.walk(body_ast):
+                if isinstance(node, _ast.Await):
+                    errors.append(CheckError(
+                        code='ZDS012',
+                        message=(
+                            f"@zdc.stage method '{smir.name}' contains 'await', "
+                            "which is not permitted in stage methods. "
+                            "Stage methods must be fully combinational. "
+                            "Move sequential protocol logic into a @zdc.sync method."
+                        ),
+                        filename='',
+                        lineno=getattr(node, 'lineno', 1),
+                        col_offset=getattr(node, 'col_offset', 0),
+                    ))
+                elif isinstance(node, (_ast.Yield, _ast.YieldFrom)):
+                    errors.append(CheckError(
+                        code='ZDS013',
+                        message=(
+                            f"@zdc.stage method '{smir.name}' contains 'yield', "
+                            "which is not synthesizable in stage context."
+                        ),
+                        filename='',
+                        lineno=getattr(node, 'lineno', 1),
+                        col_offset=getattr(node, 'col_offset', 0),
+                    ))
+
+        return errors
+
     def check_function(self, func: 'Function', check_ctx: CheckContext) -> List[CheckError]:
         """
         Check function for synthesizability.

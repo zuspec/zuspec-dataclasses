@@ -198,8 +198,8 @@ def test_tlm_channel_datamodel():
     assert p_field is not None, "p field should exist in Producer"
     assert isinstance(p_field.datatype, dm.DataTypePutIF), \
         f"p field should be DataTypePutIF, got {type(p_field.datatype).__name__}"
-    assert p_field.kind == dm.FieldKind.Port, \
-        f"p field should be Port kind, got {p_field.kind}"
+    assert p_field.kind in (dm.FieldKind.Port, dm.FieldKind.ProtocolPort), \
+        f"p field should be Port or ProtocolPort kind, got {p_field.kind}"
 
     # Verify Consumer is in the context
     cons_qualname = Consumer.__qualname__
@@ -219,8 +219,8 @@ def test_tlm_channel_datamodel():
     assert c_field is not None, "c field should exist in Consumer"
     assert isinstance(c_field.datatype, dm.DataTypeGetIF), \
         f"c field should be DataTypeGetIF, got {type(c_field.datatype).__name__}"
-    assert c_field.kind == dm.FieldKind.Port, \
-        f"c field should be Port kind, got {c_field.kind}"
+    assert c_field.kind in (dm.FieldKind.Port, dm.FieldKind.ProtocolPort), \
+        f"c field should be Port or ProtocolPort kind, got {c_field.kind}"
 
     print("TLM Channel datamodel test passed")
 

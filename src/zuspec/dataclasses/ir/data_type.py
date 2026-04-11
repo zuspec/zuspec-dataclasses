@@ -94,6 +94,10 @@ class DataTypeComponent(DataTypeClass):
     sync_processes : List[Function] = dc.field(default_factory=list)
     comb_processes : List[Function] = dc.field(default_factory=list)
     wire_processes : List[Function] = dc.field(default_factory=list)
+    # New-style pipeline IRs (populated when @zdc.pipeline + @zdc.stage are present)
+    pipeline_root_ir: Optional[Any] = dc.field(default=None)   # PipelineRootIR | None
+    stage_method_irs: List[Any]     = dc.field(default_factory=list)  # List[StageMethodIR]
+    sync_method_irs:  List[Any]     = dc.field(default_factory=list)  # List[SyncMethodIR]
 
 
 @dc.dataclass(kw_only=True)

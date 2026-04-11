@@ -745,6 +745,10 @@ class DataModelFactory(object):
 
         # Extract bind map from __bind__ method
         bind_map = self._extract_bind_map(t)
+
+        # Build pipeline IRs for new-style @zdc.pipeline / @zdc.stage components
+        pipeline_root_ir, stage_method_irs, sync_method_irs = \
+            self._build_pipeline_irs(t)
         
         dm = DataTypeComponent(
             super=super_dt,
@@ -754,6 +758,9 @@ class DataModelFactory(object):
             sync_processes=sync_processes,
             comb_processes=comb_processes,
             wire_processes=wire_processes,
+            pipeline_root_ir=pipeline_root_ir,
+            stage_method_irs=stage_method_irs,
+            sync_method_irs=sync_method_irs,
         )
         return dm
 
@@ -1346,6 +1353,274 @@ class DataModelFactory(object):
         # A better approach would be to validate after the full datamodel is built
         return None
 
+    # -----------------------------------------------------------------------
+    # Pipeline IR builders (DC-6)
+    # -----------------------------------------------------------------------
+
+    def _build_pipeline_irs(self, t: Type):
+        """Return (pipeline_root_ir, stage_method_irs, sync_method_irs) for *t*.
+
+        Scans ``t.__dict__`` for:
+        * A method decorated with ``@zdc.pipeline`` (has ``_zdc_pipeline`` attr)
+        * Methods decorated with ``@zdc.stage``  (have ``_zdc_stage`` attr)
+        * ExecSync members (already processed elsewhere, but we also build SyncMethodIR)
+
+        Returns ``(None, [], [])`` when no pipeline decorators are present.
+        """
+        import textwrap
+        from .ir.pipeline import (
+            PipelineRootIR, StageCallNode,
+            StallDeclNode, CancelDeclNode, FlushDeclNode, StageQueryNode,
+            PortSpec, StageMethodIR, SyncMethodIR,
+        )
+
+        pipeline_root_ir = None
+        stage_method_irs = []
+        sync_method_irs = []
+
+        # ---- locate pipeline root method and stage methods ------------------
+        pipeline_methods = []  # (name, method)
+        stage_methods = []     # (name, method)
+        sync_methods = []      # (name, ExecSync)
+
+        for name, member in t.__dict__.items():
+            if hasattr(member, '_zdc_pipeline'):
+                pipeline_methods.append((name, member))
+            elif hasattr(member, '_zdc_stage'):
+                stage_methods.append((name, member))
+            elif isinstance(member, ExecSync):
+                sync_methods.append((name, member))
+
+        if not pipeline_methods:
+            return None, [], []
+
+        # Build PipelineRootIR from the first (and expected only) root method
+        _, root_method = pipeline_methods[0]
+        pipeline_root_ir = self._parse_pipeline_root(root_method)
+
+        # Build StageMethodIR for each @zdc.stage method
+        for mname, member in stage_methods:
+            smir = self._parse_stage_method(mname, member)
+            stage_method_irs.append(smir)
+
+        # Build SyncMethodIR for each ExecSync member
+        for mname, member in sync_methods:
+            from .ir.pipeline import SyncMethodIR
+            flush_decls: list = []
+            query_nodes: list = []
+            body_ast = self._get_func_ast(member.method) if hasattr(member, 'method') else None
+            if body_ast is not None:
+                self._extract_dsl_calls(body_ast, [], [], flush_decls, query_nodes)
+            smir = SyncMethodIR(
+                name=mname,
+                clock=getattr(member, 'clock', None),
+                reset=getattr(member, 'reset', None),
+                flush_decls=flush_decls,
+                query_nodes=query_nodes,
+                body_ast=body_ast,
+            )
+            sync_method_irs.append(smir)
+
+        return pipeline_root_ir, stage_method_irs, sync_method_irs
+
+    def _parse_pipeline_root(self, method) -> 'PipelineRootIR':
+        """Parse a @zdc.pipeline method body into a PipelineRootIR."""
+        import textwrap
+        from .ir.pipeline import PipelineRootIR, StageCallNode
+
+        clock     = getattr(method, '_zdc_pipeline_clock',      None)
+        reset     = getattr(method, '_zdc_pipeline_reset',      None)
+        forward   = getattr(method, '_zdc_pipeline_forward',    True)
+        no_forward = getattr(method, '_zdc_pipeline_no_forward', None)
+
+        stage_calls: list = []
+        func_def = self._get_func_ast(method)
+        if func_def is not None:
+            for stmt in func_def.body:
+                node = self._extract_stage_call(stmt)
+                if node is not None:
+                    stage_calls.append(node)
+
+        return PipelineRootIR(
+            clock=clock,
+            reset=reset,
+            forward=forward,
+            no_forward=no_forward or [],
+            stage_calls=stage_calls,
+        )
+
+    def _parse_stage_method(self, name: str, method) -> 'StageMethodIR':
+        """Parse a @zdc.stage method into a StageMethodIR."""
+        import inspect
+        import textwrap
+        from .ir.pipeline import (
+            StallDeclNode, CancelDeclNode, FlushDeclNode, StageQueryNode,
+            PortSpec, StageMethodIR,
+        )
+
+        no_forward = getattr(method, '_zdc_stage_no_forward', False)
+
+        # Inputs: parameters (skip 'self')
+        inputs = []
+        try:
+            sig = inspect.signature(method)
+            for pname, param in sig.parameters.items():
+                if pname == 'self':
+                    continue
+                ann = param.annotation if param.annotation is not inspect.Parameter.empty else None
+                inputs.append(PortSpec(name=pname, annotation_ast=ann))
+        except (ValueError, TypeError):
+            pass
+
+        # Outputs: return annotation
+        outputs = []
+        try:
+            hints = get_type_hints(method)
+            ret = hints.get('return')
+            if ret is not None:
+                import typing
+                origin = get_origin(ret)
+                args = get_args(ret)
+                if origin is tuple and args:
+                    for i, a in enumerate(args):
+                        outputs.append(PortSpec(name=f'_out{i}', annotation_ast=a))
+                else:
+                    outputs.append(PortSpec(name='_out', annotation_ast=ret))
+        except Exception:
+            pass
+
+        # Body DSL calls
+        stall_decls: list = []
+        cancel_decls: list = []
+        flush_decls: list = []
+        query_nodes: list = []
+
+        func_def = self._get_func_ast(method)
+        if func_def is not None:
+            self._extract_dsl_calls(
+                func_def, stall_decls, cancel_decls, flush_decls, query_nodes)
+
+        return StageMethodIR(
+            name=name,
+            no_forward=no_forward,
+            inputs=inputs,
+            outputs=outputs,
+            stall_decls=stall_decls,
+            cancel_decls=cancel_decls,
+            flush_decls=flush_decls,
+            query_nodes=query_nodes,
+            body_ast=func_def,
+        )
+
+    def _get_func_ast(self, method):
+        """Return the ast.FunctionDef node for *method*, or None on error."""
+        import textwrap
+        try:
+            src = inspect.getsource(method)
+            src = textwrap.dedent(src)
+            tree = ast.parse(src)
+            mname = method.__name__
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node.name == mname:
+                        return node
+        except Exception:
+            pass
+        return None
+
+    def _extract_stage_call(self, stmt) -> 'Optional[StageCallNode]':
+        """Return a StageCallNode if *stmt* is a ``self.STAGE(...)`` call, else None."""
+        from .ir.pipeline import StageCallNode
+
+        call = None
+        return_names: list = []
+
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+        elif isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            for tgt in stmt.targets:
+                if isinstance(tgt, ast.Name):
+                    return_names.append(tgt.id)
+                elif isinstance(tgt, ast.Tuple):
+                    for elt in tgt.elts:
+                        if isinstance(elt, ast.Name):
+                            return_names.append(elt.id)
+
+        if call is None:
+            return None
+        if not isinstance(call.func, ast.Attribute):
+            return None
+        if not (isinstance(call.func.value, ast.Name) and call.func.value.id == 'self'):
+            return None
+
+        stage_name = call.func.attr
+        arg_names = []
+        for arg in call.args:
+            if isinstance(arg, ast.Name):
+                arg_names.append(arg.id)
+            else:
+                try:
+                    arg_names.append(ast.unparse(arg))
+                except Exception:
+                    arg_names.append('<expr>')
+
+        return StageCallNode(
+            stage_name=stage_name,
+            arg_names=arg_names,
+            return_names=return_names,
+        )
+
+    def _extract_dsl_calls(self, func_def, stall_decls, cancel_decls, flush_decls, query_nodes):
+        """Walk *func_def* body and populate the four DSL-call lists in-place."""
+        from .ir.pipeline import StallDeclNode, CancelDeclNode, FlushDeclNode, StageQueryNode
+
+        for node in ast.walk(func_def):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute):
+                continue
+            # Match zdc.stage.METHOD(...)  or  stage.METHOD(...)
+            receiver = func.value
+            method_name = func.attr
+            # Accept zdc.stage.X or stage.X (Attribute or Name)
+            receiver_ok = (
+                isinstance(receiver, ast.Attribute) and receiver.attr == 'stage'
+            ) or (
+                isinstance(receiver, ast.Name) and receiver.id == 'stage'
+            )
+            if not receiver_ok:
+                continue
+
+            if method_name == 'stall':
+                # stall(self, condition) or stall(condition) — condition is last arg
+                cond_ast = node.args[1] if len(node.args) > 1 else (
+                    node.args[0] if node.args else (
+                    node.keywords[0].value if node.keywords else None))
+                stall_decls.append(StallDeclNode(cond_ast=cond_ast))
+            elif method_name == 'cancel':
+                # cancel(self, condition) or cancel(condition) — condition is last arg
+                cond_ast = node.args[1] if len(node.args) > 1 else (
+                    node.args[0] if node.args else (
+                    node.keywords[0].value if node.keywords else None))
+                cancel_decls.append(CancelDeclNode(cond_ast=cond_ast))
+            elif method_name == 'flush':
+                # flush(self.STAGE, cond=...)
+                target_ast = node.args[0] if node.args else None
+                cond_ast = node.args[1] if len(node.args) > 1 else (
+                    node.keywords[0].value if node.keywords else None)
+                target_name = None
+                if isinstance(target_ast, ast.Attribute):
+                    target_name = target_ast.attr
+                flush_decls.append(FlushDeclNode(target_stage=target_name, cond_ast=cond_ast))
+            elif method_name in ('valid', 'ready', 'stalled'):
+                target_ast = node.args[0] if node.args else None
+                target_name = None
+                if isinstance(target_ast, ast.Attribute):
+                    target_name = target_ast.attr
+                query_nodes.append(StageQueryNode(kind=method_name, stage_name=target_name))
+
     def _extract_process(self, cls : Type, name : str, exec_proc : ExecProc, field_indices: dict = None) -> Optional[Process]:
         """Extract a Process from an @process decorated method.
 
@@ -1403,28 +1678,41 @@ class DataModelFactory(object):
                             field_types: dict) -> Optional[Function]:
         """Convert a @sync decorated method to a datamodel Function."""
         
-        # Create proxy instance to evaluate clock/reset lambdas
-        proxy_inst = _create_bind_proxy_class(cls, field_indices, field_types)
-        
-        # Evaluate lambdas to get ExprRefField for clock and reset
+        # Resolve clock/reset: ExecSync stores string field names (not lambdas)
         clock_expr = None
         reset_expr = None
-        
+
         try:
             if exec_sync.clock is not None:
-                clock_result = exec_sync.clock(proxy_inst)
-                clock_expr = self._normalize_bind_expr(clock_result)
-                if clock_expr is None:
-                    raise ValueError(f"Clock lambda in @sync for '{name}' did not return a valid field reference")
-            
+                if callable(exec_sync.clock):
+                    proxy_inst = _create_bind_proxy_class(cls, field_indices, field_types)
+                    clock_expr = self._normalize_bind_expr(exec_sync.clock(proxy_inst))
+                    if clock_expr is None:
+                        raise ValueError(
+                            f"Clock lambda for @sync '{name}' did not return a valid field reference"
+                        )
+                elif isinstance(exec_sync.clock, str):
+                    idx = field_indices.get(exec_sync.clock)
+                    if idx is not None:
+                        clock_expr = ExprRefField(base=TypeExprRefSelf(), index=idx)
+                    # else: clock field not declared on component — silently omit
+
             if exec_sync.reset is not None:
-                reset_result = exec_sync.reset(proxy_inst)
-                reset_expr = self._normalize_bind_expr(reset_result)
-                if reset_expr is None:
-                    raise ValueError(f"Reset lambda in @sync for '{name}' did not return a valid field reference")
+                if callable(exec_sync.reset):
+                    proxy_inst = _create_bind_proxy_class(cls, field_indices, field_types)
+                    reset_expr = self._normalize_bind_expr(exec_sync.reset(proxy_inst))
+                    if reset_expr is None:
+                        raise ValueError(
+                            f"Reset lambda for @sync '{name}' did not return a valid field reference"
+                        )
+                elif isinstance(exec_sync.reset, str):
+                    idx = field_indices.get(exec_sync.reset)
+                    if idx is not None:
+                        reset_expr = ExprRefField(base=TypeExprRefSelf(), index=idx)
+                    # else: reset field not declared on component — silently omit
         except Exception as e:
             raise RuntimeError(
-                f"Failed to evaluate clock/reset lambdas for @sync method '{name}' in class '{cls.__name__}': {e}"
+                f"Failed to resolve clock/reset for @sync method '{name}' in class '{cls.__name__}': {e}"
             ) from e
         
         # Extract method body as AST

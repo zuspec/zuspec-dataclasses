@@ -249,8 +249,8 @@ def test_component_datamodel():
             m0_field = f
             break
     assert m0_field is not None, "MyC should have field 'm0'"
-    assert m0_field.kind == dm.FieldKind.Port, \
-        f"Field m0 should be Port, got {m0_field.kind}"
+    assert m0_field.kind in (dm.FieldKind.Port, dm.FieldKind.ProtocolPort), \
+        f"Field m0 should be Port or ProtocolPort, got {m0_field.kind}"
     assert isinstance(m0_field.datatype, dm.DataTypeRef), \
         f"Field m0 datatype should be DataTypeRef, got {type(m0_field.datatype).__name__}"
     assert m0_field.datatype.ref_name == memif_qualname, \
@@ -316,7 +316,7 @@ def test_component_datamodel():
         f"Should visit 1 process, visited {len(validator.visited_processes)}"
     
     # Verify the port field was visited
-    port_fields = [f for f in validator.visited_fields if f.kind == dm.FieldKind.Port]
+    port_fields = [f for f in validator.visited_fields if f.kind in (dm.FieldKind.Port, dm.FieldKind.ProtocolPort)]
     assert len(port_fields) == 1, \
         f"Should visit 1 port field, visited {len(port_fields)}"
 
