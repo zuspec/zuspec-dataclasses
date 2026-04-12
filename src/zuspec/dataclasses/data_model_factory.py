@@ -1440,6 +1440,14 @@ class DataModelFactory(object):
                 node = self._extract_stage_call(stmt)
                 if node is not None:
                     stage_calls.append(node)
+                elif isinstance(stmt, ast.With):
+                    cycles_n = self._extract_cycles_context(stmt)
+                    if cycles_n is not None:
+                        for inner_stmt in stmt.body:
+                            node = self._extract_stage_call(inner_stmt)
+                            if node is not None:
+                                node.cycles = cycles_n
+                                stage_calls.append(node)
 
         return PipelineRootIR(
             clock=clock,
@@ -1448,6 +1456,23 @@ class DataModelFactory(object):
             no_forward=no_forward or [],
             stage_calls=stage_calls,
         )
+
+    def _extract_cycles_context(self, with_node) -> 'Optional[int]':
+        """Return N if *with_node* is ``with zdc.stage.cycles(N):``, else None."""
+        if len(with_node.items) != 1:
+            return None
+        ctx = with_node.items[0].context_expr
+        # Accept: zdc.stage.cycles(N) or stage.cycles(N)
+        if not (isinstance(ctx, ast.Call) and isinstance(ctx.func, ast.Attribute)):
+            return None
+        if ctx.func.attr != 'cycles':
+            return None
+        if not ctx.args or not isinstance(ctx.args[0], ast.Constant):
+            return None
+        val = ctx.args[0].value
+        if not isinstance(val, int) or val < 1:
+            return None
+        return val
 
     def _parse_stage_method(self, name: str, method) -> 'StageMethodIR':
         """Parse a @zdc.stage method into a StageMethodIR."""
@@ -1459,6 +1484,7 @@ class DataModelFactory(object):
         )
 
         no_forward = getattr(method, '_zdc_stage_no_forward', False)
+        cycles = getattr(method, '_zdc_stage_cycles', 1)
 
         # Inputs: parameters (skip 'self')
         inputs = []
@@ -1503,6 +1529,7 @@ class DataModelFactory(object):
         return StageMethodIR(
             name=name,
             no_forward=no_forward,
+            cycles=cycles,
             inputs=inputs,
             outputs=outputs,
             stall_decls=stall_decls,
@@ -1739,6 +1766,8 @@ class DataModelFactory(object):
                 "kind": "sync",
                 "clock": clock_expr,
                 "reset": reset_expr,
+                "reset_async": exec_sync.reset_async,
+                "reset_active_low": exec_sync.reset_active_low,
                 "method": exec_sync.method
             }
         )

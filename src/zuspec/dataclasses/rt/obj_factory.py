@@ -680,7 +680,8 @@ class ObjFactory(ObjFactoryP):
 
     @staticmethod
     def __comp_build__(comp, parent, name, timebase: Timebase, port_bindings: Dict[str, Any] = None):
-        factory = ObjFactory.inst()
+        from ..config import Config
+        factory = Config.inst().factory
         tracer = factory.tracer
         enable_signal_tracing = factory.enable_signal_tracing
         comp._impl = CompImplRT(

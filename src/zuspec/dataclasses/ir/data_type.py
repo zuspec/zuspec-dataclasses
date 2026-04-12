@@ -123,8 +123,12 @@ class DataTypeEnum(DataType):
     ``items`` maps member name → integer value (in declaration order).
     Values are auto-assigned (starting from 0, incrementing by 1) when no
     explicit value is given, matching PSS §7.5 semantics.
+
+    ``width`` is the bit width of the enum type. If not specified, it is
+    inferred from the number of members (ceiling log2 of len(items)+1).
     """
     items: dict = dc.field(default_factory=dict)  # OrderedDict[str, int]
+    width: int = dc.field(default=0)  # 0 = auto-infer from items
 
 @dc.dataclass(kw_only=True)
 class DataTypeString(DataType): ...

@@ -44,11 +44,13 @@ _PSS_CONSTANTS: dict[str, Any] = {
 }
 from ..ir.stmt import (Stmt, StmtAssign, StmtAugAssign, StmtAnnAssign, StmtIf, StmtPass,
                        StmtExpr, StmtFor, StmtWhile, StmtBreak, StmtContinue, StmtReturn,
-                       StmtForeach, StmtRepeatWhile, StmtMatch, PatternValue, PatternAs)
+                       StmtForeach, StmtRepeatWhile, StmtMatch, PatternValue, PatternAs,
+                       StmtRepeat, StmtAssert, StmtAssume)
 from ..ir.expr import (
     Expr, ExprConstant, ExprRefField, ExprBin, ExprAttribute,
     BinOp, AugOp, TypeExprRefSelf, ExprRefLocal, ExprRefUnresolved, ExprCall,
-    ExprCompare, CmpOp, ExprSubscript, ExprBool, BoolOp
+    ExprCompare, CmpOp, ExprSubscript, ExprBool, BoolOp,
+    ExprUnary, ExprSlice, ExprCast, ExprStructLiteral, UnaryOp
 )
 from ..ir.expr_phase2 import ExprIfExp
 from .eval_state import EvalState
@@ -139,6 +141,17 @@ class Executor:
             self.execute_foreach(stmt)
         elif isinstance(stmt, StmtMatch):
             self.execute_match(stmt)
+        elif isinstance(stmt, StmtRepeat):
+            self.execute_repeat(stmt)
+        elif isinstance(stmt, StmtAssert):
+            cond = self.evaluate_expr(stmt.test)
+            if not cond:
+                msg = self.evaluate_expr(stmt.msg) if stmt.msg is not None else "Assertion failed"
+                raise AssertionError(f"[zdc sim] {msg}")
+        elif isinstance(stmt, StmtAssume):
+            cond = self.evaluate_expr(stmt.test)
+            if not cond:
+                raise AssertionError("[zdc sim] assume violated")
         elif isinstance(stmt, StmtBreak):
             raise _BreakSignal()
         elif isinstance(stmt, StmtContinue):
@@ -248,6 +261,23 @@ class Executor:
                 break
             if not self.evaluate_expr(stmt.condition):
                 break
+
+    def execute_repeat(self, stmt: StmtRepeat):
+        """Execute a PSS repeat(count) { body } statement."""
+        count = int(self.evaluate_expr(stmt.count))
+        iter_name = stmt.iterator.name if (stmt.iterator is not None and
+                                           isinstance(stmt.iterator, ExprRefLocal)) else None
+        for i in range(count):
+            if iter_name is not None:
+                self.locals[iter_name] = i
+            try:
+                self.execute_stmts(stmt.body)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
+        if iter_name is not None:
+            self.locals.pop(iter_name, None)
 
     def execute_foreach(self, stmt: StmtForeach):
         """Execute a foreach loop over a list or array."""
@@ -405,12 +435,57 @@ class Executor:
             else:
                 return self.evaluate_expr(expr.orelse)
         
+        elif isinstance(expr, ExprUnary):
+            operand = self.evaluate_expr(expr.operand)
+            if expr.op == UnaryOp.Invert:
+                # Bitwise NOT — mask to signal width to maintain hardware semantics.
+                # Width is not tracked here, so use 64-bit as a safe default.
+                width = getattr(operand, '_width', 64)
+                mask = (1 << width) - 1
+                return (~int(operand)) & mask
+            elif expr.op == UnaryOp.USub:
+                return -int(operand)
+            elif expr.op == UnaryOp.Not:
+                return 0 if operand else 1
+            elif expr.op == UnaryOp.UAdd:
+                return +int(operand)
+            raise NotImplementedError(f"UnaryOp {expr.op} not implemented")
+
+        elif isinstance(expr, ExprCast):
+            val = int(self.evaluate_expr(expr.value))
+            target = expr.target_type
+            # DataTypeInt has a 'bits' field; use it to truncate.
+            bits = getattr(target, 'bits', -1)
+            if bits and bits > 0:
+                mask = (1 << bits) - 1
+                return val & mask
+            return val
+
+        elif isinstance(expr, ExprStructLiteral):
+            return {f.name: self.evaluate_expr(f.value) for f in expr.fields}
+
         elif isinstance(expr, ExprSubscript):
-            # Handle subscript operations (e.g., array[index])
+            # Handle subscript operations: array[index] or signal[msb:lsb] (bit slice).
             base = self.evaluate_expr(expr.value)
-            index = self.evaluate_expr(expr.slice)
-            return base[int(index)]
-        
+            if isinstance(expr.slice, ExprSlice):
+                # Bit-slice extraction: sig[upper:lower] or sig[bit]
+                sl = expr.slice
+                if sl.upper is not None and sl.lower is not None:
+                    high = int(self.evaluate_expr(sl.upper))
+                    low  = int(self.evaluate_expr(sl.lower))
+                elif sl.lower is not None:
+                    high = low = int(self.evaluate_expr(sl.lower))
+                elif sl.upper is not None:
+                    high = low = int(self.evaluate_expr(sl.upper))
+                else:
+                    return base
+                width = high - low + 1
+                mask = (1 << width) - 1
+                return (int(base) >> low) & mask
+            else:
+                index = self.evaluate_expr(expr.slice)
+                return base[int(index)]
+
         # Handle phase2 expressions
         from ..ir.expr_phase2 import ExprList
         if isinstance(expr, ExprList):

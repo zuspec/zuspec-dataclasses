@@ -44,6 +44,9 @@ from .activity_dsl import (
 )
 from .types import *
 from .tlm import *
+# Re-import after `from .types import *` to ensure our decorator wins over
+# the stdlib `enum` module that `types.py` imports into its namespace.
+from .decorators import enum
 from . import ir
 from . import profiles
 from . import transform
@@ -57,7 +60,12 @@ from .rt.activity_runner import ScheduleGraph
 from .rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
 from .rt.indexed_pool_rt import IndexedPoolRT
 from .rt.memory_rt import MemoryRT
+from .rt.simulate import simulate
 from .solver.api import randomize, randomize_with, RandomizationError
+from .errors import (
+    ZuspeccError, ZuspeccCDCError, ZuspeccWidthError,
+    ZuspeccSynthError, ZuspeccConflictError,
+)
 from .coverage import (
     Covergroup, coverpoint, cross,
     binsof, cross_bins, cross_ignore, cross_illegal
@@ -74,10 +82,14 @@ __all__ = [
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
+    'enum',
     # Pipeline process API
     'pipeline', 'stage', 'PipelineError', '_StageDSL',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
+    # From errors
+    'ZuspeccError', 'ZuspeccCDCError', 'ZuspeccWidthError',
+    'ZuspeccSynthError', 'ZuspeccConflictError',
     # From coverage
     'Covergroup', 'coverpoint', 'cross',
     # From constraint_helpers
@@ -100,6 +112,7 @@ __all__ = [
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
     'bit', 'bit1', 'bit16', 'bit2', 'bit3', 'bit32', 'bit4', 'bit5', 'bit6',
     'bit64', 'bit7', 'bit8', 'bitv', 'bv',
+    'b', 'b2', 'b3', 'b4', 'b8', 'b16', 'b32', 'b64',
     'bv1', 'bv2', 'bv3', 'bv4', 'bv5', 'bv6', 'bv7', 'bv8',
     'bv9', 'bv10', 'bv11', 'bv12', 'bv13', 'bv14', 'bv15', 'bv16',
     'bv17', 'bv18', 'bv19', 'bv20', 'bv21', 'bv22', 'bv23', 'bv24',
@@ -133,6 +146,8 @@ __all__ = [
     'IndexedRegFileRT', 'IndexedRegFileClaim',
     # From rt.memory_rt
     'MemoryRT',
+    # From rt.simulate
+    'simulate',
     # Submodules
     'ir', 'profiles',
     # Other exports

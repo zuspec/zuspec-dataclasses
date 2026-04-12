@@ -242,6 +242,11 @@ class CompImplRT(object):
         """
         self._init_eval(comp)
         
+        # Mask value to declared width to match hardware overflow semantics.
+        if width > 0 and isinstance(value, int):
+            mask = (1 << width) - 1
+            value = value & mask
+
         # Store width for tracing
         if name not in self._signal_widths:
             self._signal_widths[name] = width

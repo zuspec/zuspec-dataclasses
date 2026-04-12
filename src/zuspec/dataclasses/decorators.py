@@ -774,6 +774,8 @@ class ExecSync(Exec):
     """Synchronous process"""
     clock : Optional[str] = dc.field(default=None)
     reset : Optional[str] = dc.field(default=None)
+    reset_async : bool = dc.field(default=False)
+    reset_active_low : bool = dc.field(default=True)
 
 @dc.dataclass
 class ExecComb(Exec):
@@ -792,7 +794,8 @@ def process(T):
     # Datamodel Mapping
     return ExecProc(T)
 
-def sync(clock: str = None, reset: str = None):
+def sync(clock: str = None, reset: str = None,
+         reset_async: bool = False, reset_active_low: bool = True):
     """
     Decorator for synchronous processes.
     
@@ -801,8 +804,13 @@ def sync(clock: str = None, reset: str = None):
     after the method completes but before next evaluation.
     
     Args:
-        clock: Clock field name (e.g. ``"clk"``).
-        reset: Reset field name (e.g. ``"rst_n"``).
+        clock: Clock field name or lambda (e.g. ``"clk"`` or ``lambda s: s.clk``).
+        reset: Reset field name or lambda (e.g. ``"rst_n"``).
+        reset_async: If ``True``, generate ``always_ff @(posedge clk or [neg/pos]edge rst)``
+            sensitivity list (asynchronous reset). Default: ``False`` (synchronous reset).
+        reset_active_low: If ``True`` (default), reset asserts low (active-low, e.g. ``rst_n``).
+            Controls the edge polarity in the async sensitivity list: ``negedge rst_n``.
+            If ``False``, reset asserts high: ``posedge rst``.
         
     Example:
         @zdc.sync(clock="clk", reset="rst_n")
@@ -811,9 +819,18 @@ def sync(clock: str = None, reset: str = None):
                 self.count = 0
             else:
                 self.count += 1
+
+        # Asynchronous active-low reset:
+        @zdc.sync(clock="clk", reset="rst_n", reset_async=True, reset_active_low=True)
+        def _ff(self):
+            if self.rst_n == 0:
+                self.q = 0
+            else:
+                self.q = self.d
     """
     def decorator(method):
-        return ExecSync(method=method, clock=clock, reset=reset)
+        return ExecSync(method=method, clock=clock, reset=reset,
+                        reset_async=reset_async, reset_active_low=reset_active_low)
     return decorator
 
 def comb(method):
@@ -829,6 +846,63 @@ def comb(method):
             self.out = self.a ^ self.b
     """
     return ExecComb(method=method)
+
+
+def enum(cls=None, *, width: int = None):
+    """Declare a synthesizable enum type.
+
+    Marks a plain Python class as a synthesizable HDL enum. The class body
+    must contain integer-valued class attributes (members). The decorated class
+    gains ``_zdc_enum = True``, ``_zdc_enum_members``, ``_zdc_enum_width``, and
+    a ``_zdc_data_type`` attribute pointing at the corresponding
+    :class:`~zuspec.dataclasses.ir.data_type.DataTypeEnum` IR node.
+
+    Usage::
+
+        @zdc.enum
+        class State:
+            IDLE  = 0
+            FETCH = 1
+            EXEC  = 2
+
+        @zdc.enum(width=4)    # explicit bit width
+        class Opcode:
+            ADD = 0
+            SUB = 1
+
+    The bit width is inferred from the number of members if not specified:
+    ``ceil(log2(len(members) + 1))`` bits, with a minimum of 1.
+
+    Args:
+        cls: The class to decorate (when used as ``@zdc.enum`` without arguments).
+        width: Optional explicit bit width for the enum type.
+
+    Returns:
+        The decorated class (with ``_zdc_enum`` markers and IR node attached).
+    """
+    import math
+    from .ir.data_type import DataTypeEnum
+
+    def _apply(cls):
+        members = {
+            k: v for k, v in cls.__dict__.items()
+            if not k.startswith('_') and isinstance(v, int)
+        }
+        inferred_width = width if width is not None else max(
+            1, math.ceil(math.log2(max(len(members), 1) + 1))
+        )
+        cls._zdc_enum = True
+        cls._zdc_enum_members = members
+        cls._zdc_enum_width = inferred_width
+        cls._zdc_data_type = DataTypeEnum(
+            name=cls.__name__,
+            items=dict(members),
+            width=inferred_width,
+            py_type=cls,
+        )
+        return cls
+
+    return _apply(cls) if cls is not None else _apply
 
 
 # ---------------------------------------------------------------------------
@@ -901,25 +975,56 @@ class _StageDSL:
         ok = zdc.stage.valid(self.ID)
         rdy = zdc.stage.ready(self.IF)
         stld = zdc.stage.stalled(self.MEM)
+
+    **Multi-cycle stages**
+
+    By default each stage occupies one pipeline register (one clock-cycle
+    latency).  Use ``cycles=N`` to insert additional pipeline registers::
+
+        # Form A — at definition site (applies everywhere this stage is used)
+        @zdc.stage(cycles=2)
+        def EX(self, insn: zdc.u32) -> (zdc.u32,):
+            ...
+
+        # Form B — at call site (overrides Form A for this pipeline body only)
+        @zdc.pipeline(clock='clk', reset='rst_n')
+        def execute(self):
+            (insn,) = self.IF()
+            with zdc.stage.cycles(3):      # EX expanded to 3 substages here
+                (result,) = self.EX(insn)
+            self.WB(result)
+
+    Form B overrides Form A when both are present.
+    Substages are named ``EX_c1``, ``EX_c2``, …, ``EX_cN`` in generated Verilog.
     """
 
-    def __call__(self, func=None, *, no_forward: bool = False):
-        """Handle both ``@zdc.stage`` (bare) and ``@zdc.stage(no_forward=True)`` forms.
+    def __call__(self, func=None, *, no_forward: bool = False, cycles: int = 1):
+        """Handle both ``@zdc.stage`` (bare) and ``@zdc.stage(...)`` forms.
 
         Args:
             func:        The stage method, when used as a bare decorator.
             no_forward:  When True, exclude all outputs of this stage from
                          forwarding; generate stall logic instead.
+            cycles:      Number of pipeline registers for this stage (≥ 1).
+                         Defaults to 1.  Can be overridden per call-site with
+                         ``with zdc.stage.cycles(N):`` in the pipeline body.
+
+        Raises:
+            ValueError: If *cycles* is less than 1.
         """
+        if cycles < 1:
+            raise ValueError(f"@zdc.stage cycles must be >= 1, got {cycles!r}")
         if func is not None:
             # Bare @zdc.stage form
             func._zdc_stage = True
             func._zdc_stage_no_forward = False
+            func._zdc_stage_cycles = 1
             return func
-        # Parametric @zdc.stage(no_forward=...) form
+        # Parametric @zdc.stage(no_forward=..., cycles=...) form
         def decorator(method):
             method._zdc_stage = True
             method._zdc_stage_no_forward = no_forward
+            method._zdc_stage_cycles = cycles
             return method
         return decorator
 
@@ -997,6 +1102,41 @@ class _StageDSL:
             stage_method: Stage method reference (e.g. ``self.MEM``).
         """
         return False
+
+    @staticmethod
+    def cycles(n: int):
+        """Override the number of pipeline registers for the enclosed stage call(s).
+
+        This is a synthesizer annotation; it is a no-op at Python runtime.
+        The enclosed ``self.STAGE(...)`` calls are each expanded into *n* pipeline
+        registers (substages) during synthesis.
+
+        Args:
+            n: Number of pipeline registers (≥ 1).  ``n=1`` is the default and
+               has no effect.
+
+        Raises:
+            ValueError: If *n* is less than 1.
+
+        Example::
+
+            @zdc.pipeline(clock='clk', reset='rst_n')
+            def execute(self):
+                (insn,) = self.IF()
+                with zdc.stage.cycles(3):
+                    (result,) = self.EX(insn)   # EX split into 3 pipeline stages
+                self.WB(result)
+        """
+        import contextlib
+
+        if n < 1:
+            raise ValueError(f"zdc.stage.cycles n must be >= 1, got {n!r}")
+
+        @contextlib.contextmanager
+        def _cm():
+            yield
+
+        return _cm()
 
 
 #: Singleton DSL object.  Use ``@zdc.stage`` to decorate stage methods and

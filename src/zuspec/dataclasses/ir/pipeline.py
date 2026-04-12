@@ -37,10 +37,16 @@ class StageCallNode:
         (i.e., the call arguments — these become stage-register inputs).
     :attr:`return_names` is the list of variable names that receive the
         stage's return values (i.e., the LHS of the assignment, if any).
+    :attr:`cycles` is the number of pipeline registers for this call site,
+        set by ``with zdc.stage.cycles(N):`` in the pipeline body (Form B).
+        Defaults to 1.  The synthesis pass also checks the decorator-level
+        default (Form A) via ``StageMethodIR.cycles`` and uses whichever is
+        larger (Form B wins when explicitly set).
     """
     stage_name:    str
     arg_names:     List[str] = field(default_factory=list)
     return_names:  List[str] = field(default_factory=list)
+    cycles:        int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +140,10 @@ class StageMethodIR:
 
     :attr:`name`         — method name (e.g. ``"IF"``).
     :attr:`no_forward`   — per-stage no-forward flag (from decorator arg).
+    :attr:`cycles`       — decorator-level pipeline-register count (Form A).
+                           Set from ``@zdc.stage(cycles=N)``; defaults to 1.
+                           Can be overridden per call-site via
+                           ``with zdc.stage.cycles(N):`` (Form B).
     :attr:`inputs`       — ordered input port specs (from method parameters).
     :attr:`outputs`      — ordered output port specs (from return annotation).
     :attr:`stall_decls`  — ``zdc.stage.stall(...)`` calls found in the body.
@@ -144,6 +154,7 @@ class StageMethodIR:
     """
     name:         str
     no_forward:   bool                  = False
+    cycles:       int                   = 1
     inputs:       List[PortSpec]        = field(default_factory=list)
     outputs:      List[PortSpec]        = field(default_factory=list)
     stall_decls:  List[StallDeclNode]   = field(default_factory=list)

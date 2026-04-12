@@ -479,6 +479,14 @@ class Component(TypeBase):
         assert self._impl is not None
         return self._impl.time()
 
+    def close(self) -> None:
+        """Shut down simulation for this component: cancel tasks and close any tracer (e.g. VCD)."""
+        if self._impl is not None:
+            self._impl.shutdown()
+            tracer = getattr(self._impl, '_tracer', None)
+            if tracer is not None and hasattr(tracer, 'close'):
+                tracer.close()
+
     def __new__(cls, **kwargs):
         from .config import Config
         if "_impl" not in kwargs.keys():
@@ -1084,7 +1092,7 @@ def zext(value: int, width: int) -> int:
     return value & ((1 << width) - 1)
 
 
-# Bit type aliases
+# Bit type aliases — long form
 bit = uint1_t
 bit1 = uint1_t
 bit2 = uint2_t
@@ -1097,6 +1105,16 @@ bit8 = uint8_t
 bit16 = uint16_t
 bit32 = uint32_t
 bit64 = uint64_t
+
+# Bit type aliases — short form (b, b8, b16, b32, b64)
+b   = uint1_t
+b2  = uint2_t
+b3  = uint3_t
+b4  = uint4_t
+b8  = uint8_t
+b16 = uint16_t
+b32 = uint32_t
+b64 = uint64_t
 
 class MyE(enum.IntEnum):
     a = 1
