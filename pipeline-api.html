@@ -65,6 +65,13 @@ fully-synthesisable Verilog 2005.</p>
 </ul>
 </li>
 <li><p><a class="reference internal" href="#migration-guide-old-sentinel-api-new-method-api" id="id9">Migration Guide — Old Sentinel API → New Method API</a></p></li>
+<li><p><a class="reference internal" href="#explicit-ports-and-clock-domain-recommended" id="id10">Explicit Ports and Clock Domain (Recommended)</a></p>
+<ul>
+<li><p><a class="reference internal" href="#key-building-blocks" id="id11">Key building blocks</a></p></li>
+<li><p><a class="reference internal" href="#minimal-example" id="id12">Minimal example</a></p></li>
+<li><p><a class="reference internal" href="#pattern-constraints" id="id13">Pattern constraints</a></p></li>
+</ul>
+</li>
 </ul>
 </nav>
 <p>—</p>
@@ -362,6 +369,79 @@ pipeline body:</p>
 </ul>
 <p>The old <code class="docutils literal notranslate"><span class="pre">PipelineAnnotationPass</span></code> in <code class="docutils literal notranslate"><span class="pre">zuspec-synth</span></code> is deprecated.  The new
 <code class="docutils literal notranslate"><span class="pre">PipelineFrontendPass</span></code> handles components using the method-per-stage API.</p>
+<p>—</p>
+</section>
+<section id="explicit-ports-and-clock-domain-recommended">
+<span id="port-domain-api"></span><h2><a class="toc-backref" href="#id10" role="doc-backlink">Explicit Ports and Clock Domain (Recommended)</a><a class="headerlink" href="#explicit-ports-and-clock-domain-recommended" title="Link to this heading">¶</a></h2>
+<p>The preferred API for synthesisable pipelines uses explicit ingress/egress ports
+and a first-class <code class="docutils literal notranslate"><span class="pre">ClockDomain</span></code> field.  This maps cleanly to RTL module
+ports and makes clock/reset relationships unambiguous.</p>
+<section id="key-building-blocks">
+<h3><a class="toc-backref" href="#id11" role="doc-backlink">Key building blocks</a><a class="headerlink" href="#key-building-blocks" title="Link to this heading">¶</a></h3>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">zdc.ClockDomain</span></code> / <code class="docutils literal notranslate"><span class="pre">zdc.clock_domain()</span></code></dt><dd><p>A field that bundles a clock and its reset.  Pipelines use it with the
+<code class="docutils literal notranslate"><span class="pre">clock_domain=</span></code> decorator kwarg.  In behavioral simulation it provides
+<code class="docutils literal notranslate"><span class="pre">wait_cycle()</span></code> / <code class="docutils literal notranslate"><span class="pre">wait_cycles(n)</span></code> for cycle-accurate modelling.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">zdc.InPort[T]</span></code> / <code class="docutils literal notranslate"><span class="pre">zdc.in_port()</span></code></dt><dd><p>An ingress port.  The pipeline calls <code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">self.port.get()</span></code> in the first
+stage to receive a value for each pipeline token.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">zdc.OutPort[T]</span></code> / <code class="docutils literal notranslate"><span class="pre">zdc.out_port()</span></code></dt><dd><p>An egress port.  The pipeline calls <code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">self.port.put(value)</span></code> in the
+last stage to emit the result.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">&#64;zdc.pipeline(clock_domain=lambda</span> <span class="pre">s:</span> <span class="pre">s.clk)</span></code></dt><dd><p>Binds the pipeline to a <code class="docutils literal notranslate"><span class="pre">ClockDomain</span></code> field instead of separate
+<code class="docutils literal notranslate"><span class="pre">clock=</span></code> / <code class="docutils literal notranslate"><span class="pre">reset=</span></code> lambdas.</p>
+</dd>
+</dl>
+</section>
+<section id="minimal-example">
+<h3><a class="toc-backref" href="#id12" role="doc-backlink">Minimal example</a><a class="headerlink" href="#minimal-example" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Adder</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="c1"># One clock domain drives the whole component</span>
+    <span class="n">clk</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ClockDomain</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">clock_domain</span><span class="p">()</span>
+
+    <span class="c1"># Ingress: two operands arrive together each cycle</span>
+    <span class="n">a_in</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">InPort</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">in_port</span><span class="p">()</span>
+    <span class="n">b_in</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">InPort</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">in_port</span><span class="p">()</span>
+
+    <span class="c1"># Egress: sum leaves the pipeline after the last stage</span>
+    <span class="n">sum_out</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">OutPort</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">out_port</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="n">clock_domain</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">clk</span><span class="p">)</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">async</span> <span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">pipeline</span><span class="o">.</span><span class="n">stage</span><span class="p">()</span> <span class="k">as</span> <span class="n">FETCH</span><span class="p">:</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">a_in</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">b_in</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+        <span class="k">async</span> <span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">pipeline</span><span class="o">.</span><span class="n">stage</span><span class="p">()</span> <span class="k">as</span> <span class="n">EXEC</span><span class="p">:</span>
+            <span class="n">result</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+        <span class="k">async</span> <span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">pipeline</span><span class="o">.</span><span class="n">stage</span><span class="p">()</span> <span class="k">as</span> <span class="n">WB</span><span class="p">:</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">sum_out</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The synthesiser maps:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">clk</span></code> → RTL module ports <code class="docutils literal notranslate"><span class="pre">clk</span></code> + <code class="docutils literal notranslate"><span class="pre">rst_n</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">a_in</span></code> / <code class="docutils literal notranslate"><span class="pre">b_in</span></code> → input ports <code class="docutils literal notranslate"><span class="pre">a_in</span></code> / <code class="docutils literal notranslate"><span class="pre">b_in</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sum_out</span></code> → output port <code class="docutils literal notranslate"><span class="pre">sum_out</span></code></p></li>
+<li><p>Each <code class="docutils literal notranslate"><span class="pre">async</span> <span class="pre">with</span> <span class="pre">zdc.pipeline.stage()</span></code> block → one pipeline stage register</p></li>
+</ul>
+</section>
+<section id="pattern-constraints">
+<h3><a class="toc-backref" href="#id13" role="doc-backlink">Pattern constraints</a><a class="headerlink" href="#pattern-constraints" title="Link to this heading">¶</a></h3>
+<p>The pipeline body must follow the <strong>GET … PUT</strong> pattern:</p>
+<ol class="arabic simple">
+<li><p>All <code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">self.PORT.get()</span></code> calls appear in the <strong>first</strong> stage (or early stages).</p></li>
+<li><p>All <code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">self.PORT.put(value)</span></code> calls appear in the <strong>last</strong> stage.</p></li>
+<li><p>No top-level <code class="docutils literal notranslate"><span class="pre">while</span></code> loop — the decorator implicitly repeats the body each cycle.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">self.clk.wait_cycle()</span></code> (<code class="docutils literal notranslate"><span class="pre">ClockDomain.wait_cycle()</span></code>) can be used inside
+a stage to insert an explicit pipeline bubble.</p></li>
+</ol>
+</section>
 </section>
 </section>
 
@@ -407,6 +487,7 @@ pipeline body:</p>
 <li class="toctree-l2"><a class="reference internal" href="#zdc-stage-stage-methods"><code class="docutils literal notranslate"><span class="pre">&#64;zdc.stage</span></code> — Stage Methods</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#zdc-sync-synchronous-fsms"><code class="docutils literal notranslate"><span class="pre">&#64;zdc.sync</span></code> — Synchronous FSMs</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#migration-guide-old-sentinel-api-new-method-api">Migration Guide — Old Sentinel API → New Method API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#explicit-ports-and-clock-domain-recommended">Explicit Ports and Clock Domain (Recommended)</a></li>
 </ul>
 </li>
 </ul>

@@ -293,3 +293,83 @@ Key changes:
 
 The old ``PipelineAnnotationPass`` in ``zuspec-synth`` is deprecated.  The new
 ``PipelineFrontendPass`` handles components using the method-per-stage API.
+
+---
+
+.. _port-domain-api:
+
+Explicit Ports and Clock Domain (Recommended)
+=============================================
+
+The preferred API for synthesisable pipelines uses explicit ingress/egress ports
+and a first-class ``ClockDomain`` field.  This maps cleanly to RTL module
+ports and makes clock/reset relationships unambiguous.
+
+Key building blocks
+-------------------
+
+``zdc.ClockDomain`` / ``zdc.clock_domain()``
+    A field that bundles a clock and its reset.  Pipelines use it with the
+    ``clock_domain=`` decorator kwarg.  In behavioral simulation it provides
+    ``wait_cycle()`` / ``wait_cycles(n)`` for cycle-accurate modelling.
+
+``zdc.InPort[T]`` / ``zdc.in_port()``
+    An ingress port.  The pipeline calls ``await self.port.get()`` in the first
+    stage to receive a value for each pipeline token.
+
+``zdc.OutPort[T]`` / ``zdc.out_port()``
+    An egress port.  The pipeline calls ``await self.port.put(value)`` in the
+    last stage to emit the result.
+
+``@zdc.pipeline(clock_domain=lambda s: s.clk)``
+    Binds the pipeline to a ``ClockDomain`` field instead of separate
+    ``clock=`` / ``reset=`` lambdas.
+
+Minimal example
+---------------
+
+.. code-block:: python
+
+    import zuspec.dataclasses as zdc
+
+    @zdc.dataclass
+    class Adder(zdc.Component):
+        # One clock domain drives the whole component
+        clk: zdc.ClockDomain = zdc.clock_domain()
+
+        # Ingress: two operands arrive together each cycle
+        a_in: zdc.InPort[zdc.u32] = zdc.in_port()
+        b_in: zdc.InPort[zdc.u32] = zdc.in_port()
+
+        # Egress: sum leaves the pipeline after the last stage
+        sum_out: zdc.OutPort[zdc.u32] = zdc.out_port()
+
+        @zdc.pipeline(clock_domain=lambda s: s.clk)
+        async def add(self):
+            async with zdc.pipeline.stage() as FETCH:
+                a = await self.a_in.get()
+                b = await self.b_in.get()
+
+            async with zdc.pipeline.stage() as EXEC:
+                result: zdc.u32 = a + b
+
+            async with zdc.pipeline.stage() as WB:
+                await self.sum_out.put(result)
+
+The synthesiser maps:
+
+* ``clk`` → RTL module ports ``clk`` + ``rst_n``
+* ``a_in`` / ``b_in`` → input ports ``a_in`` / ``b_in``
+* ``sum_out`` → output port ``sum_out``
+* Each ``async with zdc.pipeline.stage()`` block → one pipeline stage register
+
+Pattern constraints
+-------------------
+
+The pipeline body must follow the **GET … PUT** pattern:
+
+1. All ``await self.PORT.get()`` calls appear in the **first** stage (or early stages).
+2. All ``await self.PORT.put(value)`` calls appear in the **last** stage.
+3. No top-level ``while`` loop — the decorator implicitly repeats the body each cycle.
+4. ``await self.clk.wait_cycle()`` (``ClockDomain.wait_cycle()``) can be used inside
+   a stage to insert an explicit pipeline bubble.
