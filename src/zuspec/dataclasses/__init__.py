@@ -14,7 +14,66 @@
 # limitations under the License.
 #****************************************************************************
 """
-Docstring for src.zuspec.dataclasses
+``zuspec.dataclasses`` — RTL behavioral modeling and async pipeline DSL.
+
+This package provides a Python-native way to describe hardware components,
+processes, and pipelines for both behavioral simulation and RTL synthesis.
+
+Core API
+--------
+``@zdc.dataclass`` / ``@zdc.field``
+    Declare a hardware component with typed ports and fields.
+
+``@zdc.sync`` / ``@zdc.comb``
+    Synchronous (clocked) and combinational process decorators.
+
+``zdc.pipeline``
+    Async pipeline DSL singleton — the entry point for the behavioral
+    pipeline model.  Replaces the removed ``@zdc.stage`` API.
+
+Async Pipeline Quick-Start
+--------------------------
+::
+
+    @zdc.dataclass
+    class Adder(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        a_in:  zdc.u32 = zdc.input()
+        b_in:  zdc.u32 = zdc.input()
+        out:   zdc.u32 = zdc.output()
+
+        @zdc.pipeline(clock=lambda s: s.clock)
+        async def run(self):
+            async with zdc.pipeline.stage() as FETCH:
+                a, b = self.a_in, self.b_in
+            async with zdc.pipeline.stage() as COMPUTE:
+                result = a + b
+            async with zdc.pipeline.stage() as WB:
+                self.out = result
+
+Hazard Tracking
+---------------
+::
+
+    rf = zdc.pipeline.resource(32, lock=zdc.BypassLock())
+
+    # Inside a @zdc.pipeline method:
+    await zdc.pipeline.reserve(self.rf[rd])     # claim write slot (IF)
+    val = await zdc.pipeline.block(self.rf[rs]) # wait for RAW hazard (ID)
+    zdc.pipeline.write(self.rf[rd], result)     # bypass forward (EX)
+    zdc.pipeline.release(self.rf[rd])           # relinquish claim (WB)
+
+Lock strategies: :class:`QueueLock` (stall, no bypass),
+:class:`BypassLock` (stall + bypass network), :class:`RenameLock`
+(Tomasulo-style out-of-order rename).
+
+Trace / Observer
+----------------
+After ``asyncio.run(comp.wait(...))``, access ``comp.<method>_trace`` for a
+:class:`~zuspec.dataclasses.rt.pipeline_rt.PipelineTrace` with Gantt output::
+
+    comp.run_trace.add_observer(lambda tok, ev, **kw: ...)
+    comp.run_trace.print_trace()
 """
 
 # Datamodel Mapping
@@ -31,8 +90,7 @@ from .decorators import (
     lock, share, extend, pool, flow_output, flow_input,
     indexed_regfile,
     indexed_pool,
-    pipeline, stage, forward,
-    PipelineError, _StageDSL,
+
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
@@ -78,6 +136,9 @@ from .domain import (
     clock_port, clock_bind, reset_bind,
 )
 from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
+from .pipeline_ns import pipeline, _StageHandle, _Snap
+from .pipeline_locks import HazardLock, QueueLock, BypassLock, RenameLock
+from .pipeline_resource import PipelineResource
 from typing import Type
 
 __all__ = [
@@ -91,8 +152,10 @@ __all__ = [
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
     'enum',
-    # Pipeline process API
-    'pipeline', 'stage', 'PipelineError', '_StageDSL',
+    # Pipeline process API — new async API
+    'pipeline', '_StageHandle', '_Snap',
+    'HazardLock', 'QueueLock', 'BypassLock', 'RenameLock',
+    'PipelineResource',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
     # From errors

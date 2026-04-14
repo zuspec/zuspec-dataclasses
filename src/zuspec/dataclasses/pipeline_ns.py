@@ -69,11 +69,25 @@ class _Snap:
 
 
 class _StageHandle:
-    """Async context manager returned by ``zdc.pipeline.stage()``.
+    """Async context manager returned by ``zdc.pipeline.stage()`` outside ``rt``.
 
-    At import / stub time this is the real object used.  During ``rt``
-    execution ``_PipelineNamespace.stage()`` returns a ``PipelineStage``
-    instead (which has the same async CM interface plus cycle accounting).
+    During ``rt`` execution :meth:`_PipelineNamespace.stage` returns a
+    :class:`~zuspec.dataclasses.rt.pipeline_rt.PipelineStage` instead, which
+    carries full cycle accounting.  This stub exists so pipeline methods can
+    be imported, type-checked, and unit-tested without the rt engine running.
+
+    Lifecycle
+    ---------
+    The body of an ``async with zdc.pipeline.stage() as ST:`` block is the
+    *stage body*.  Inside it:
+
+    * :meth:`stall` — request extra occupancy cycles (e.g. waiting for a
+      multi-cycle functional unit).
+    * :meth:`bubble` — mark this token as invalid; downstream stages drain
+      it without side effects.
+    * :attr:`cycle` — the simulation cycle on which this token entered the
+      stage (useful for scheduling assertions).
+    * :attr:`valid` — ``False`` once :meth:`bubble` has been called.
     """
 
     def __init__(self, *, cycles: int = 1):
@@ -86,10 +100,10 @@ class _StageHandle:
         return False
 
     async def stall(self, n: int = 1) -> None:
-        """Extend this stage's occupancy by *n* additional cycles (stub)."""
+        """Extend this stage's occupancy by *n* additional cycles (stub — no-op)."""
 
     async def bubble(self) -> None:
-        """Invalidate this token; slot drains without side effects (stub)."""
+        """Invalidate this token; slot drains without side effects (stub — no-op)."""
 
     @property
     def cycle(self) -> int:

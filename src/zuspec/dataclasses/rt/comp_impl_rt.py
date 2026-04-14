@@ -623,8 +623,60 @@ class CompImplRT(object):
     def start_processes(self, comp: Component):
         """Start all registered processes for this component."""
         for name, proc in self._processes:
-            task = asyncio.create_task(proc.method(comp))
+            if getattr(proc.method, '_zdc_async_pipeline', False):
+                # Async pipeline — wrap in the pipeline runtime loop
+                domain_lambda = getattr(proc.method, '_zdc_pipeline_clock', None)
+                domain = domain_lambda(comp) if domain_lambda else None
+                tb = self.timebase()
+                from .pipeline_rt import PipelineRuntime
+                rt = PipelineRuntime(comp, domain, tb)
+                # Expose trace on comp as <method_name>_trace
+                trace_attr = f"{proc.method.__name__}_trace"
+                object.__setattr__(comp, trace_attr, rt.trace)
+                task = asyncio.create_task(self._run_pipeline(comp, proc.method, rt))
+            else:
+                task = asyncio.create_task(proc.method(comp))
             self._tasks.append(task)
+
+    @staticmethod
+    async def _run_pipeline(comp, method, rt) -> None:
+        """Concurrent token issuer: spawn one token task per cycle.
+
+        Each spawned task inherits ``_PIPELINE_RT`` via ContextVar copy
+        (``asyncio.create_task`` copies the current context).  Per-token
+        state (``_CURRENT_TOKEN``, ``_CURRENT_STAGE_IDX``) is set inside
+        the task so each task has its own independent view.
+        """
+        from ..pipeline_ns import _PIPELINE_RT, _CURRENT_TOKEN, _CURRENT_STAGE_IDX
+        pipeline_token = _PIPELINE_RT.set(rt)
+        tasks = []
+
+        async def run_token(tok):
+            tok_ctx = _CURRENT_TOKEN.set(tok)
+            idx_ctx = _CURRENT_STAGE_IDX.set(0)
+            try:
+                await method(comp)
+                rt._complete_token(tok)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                _CURRENT_TOKEN.reset(tok_ctx)
+                _CURRENT_STAGE_IDX.reset(idx_ctx)
+
+        try:
+            while True:
+                tok = rt.new_token()
+                tok.cycle = rt._cycle
+                tasks.append(asyncio.create_task(run_token(tok)))
+                rt._cycle += 1
+                await rt._timebase.wait_cycles(1, rt._domain)
+        except asyncio.CancelledError:
+            for t in tasks:
+                t.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            _PIPELINE_RT.reset(pipeline_token)
 
     def start_all_processes(self, comp: Component):
         """Recursively start all processes in the component tree."""

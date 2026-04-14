@@ -719,13 +719,16 @@ class ObjFactory(ObjFactoryP):
         if parent is None:
             comp._impl.set_timebase(timebase)
 
-        # Discover @process decorated methods
+        # Discover @process and @zdc.pipeline decorated methods
         # Note: @sync and @comb methods are discovered through datamodel, not here
         has_eval = False
         for attr_name in dir(type(comp)):
             attr = getattr(type(comp), attr_name, None)
             if isinstance(attr, ExecProc):
                 comp._impl.add_process(attr_name, attr)
+            elif callable(attr) and getattr(attr, '_zdc_async_pipeline', False):
+                # Wrap the bare async pipeline method in ExecProc for uniform handling
+                comp._impl.add_process(attr_name, ExecProc(attr))
             elif isinstance(attr, (ExecSync, ExecComb)):
                 has_eval = True
         
