@@ -242,6 +242,11 @@ class CompImplRT(object):
         """
         self._init_eval(comp)
         
+        # Mask value to declared width to match hardware overflow semantics.
+        if width > 0 and isinstance(value, int):
+            mask = (1 << width) - 1
+            value = value & mask
+
         # Store width for tracing
         if name not in self._signal_widths:
             self._signal_widths[name] = width
@@ -547,7 +552,7 @@ class CompImplRT(object):
         self._initialize_eval_state(comp)
         if not hasattr(self, '_eval_state') or not hasattr(self, '_datamodel'):
             return
-        
+
         # Execute all sync processes for this clock
         for sync_func in self._datamodel.sync_processes:
             clock_expr = sync_func.metadata.get('clock')
@@ -555,16 +560,57 @@ class CompImplRT(object):
                 clock_path = self._get_field_path_from_expr(clock_expr, comp)
                 if clock_path == clock_field:
                     self._sync_executor.execute_stmts(sync_func.body)
-        
+
         # Commit deferred writes
         self._eval_state.commit()
-        
+
         # Update component fields from evaluation state
         for field in dc.fields(comp):
             if not field.name.startswith('_'):
                 value = self._eval_state.read(field.name)
                 object.__setattr__(comp, field.name, value)
-    
+
+    def domain_clock_edge(self, comp: Component):
+        """Process a domain clock tick — triggers domain-bound sync methods.
+
+        Domain-bound sync methods are those whose ``metadata['clock']`` is
+        ``None`` (bare ``@zdc.sync`` or ``@zdc.sync(domain=...)``).  Legacy
+        clock-expression-based methods are intentionally skipped.
+
+        Uses the same deferred-write execution path as ``_schedule_sync_eval``
+        so that testbench writes (``c.enable = 1``) are visible to the sync body.
+        """
+        self._init_eval(comp)
+
+        for sync_func in self._sync_processes:
+            if sync_func.metadata.get('clock') is None:
+                self._eval_mode = EvalMode.SYNC_EVAL
+                self._execute_function(comp, sync_func)
+                self._eval_mode = EvalMode.IDLE
+
+                for sig_name, val in self._deferred_writes.items():
+                    old_value = self._signal_values.get(sig_name)
+                    self._signal_values[sig_name] = val
+
+                    if old_value != val:
+                        width = self._signal_widths.get(sig_name, 32)
+                        self._notify_signal_tracer(comp, sig_name, old_value, val, width)
+
+                    if old_value != val and sig_name in self._signal_bindings:
+                        width = self._signal_widths.get(sig_name, 32)
+                        for t_comp, t_sig in self._signal_bindings[sig_name]:
+                            t_comp._impl.signal_write(t_comp, t_sig, val, width)
+
+                self._deferred_writes.clear()
+
+        # Flush committed values back to the component's Python attributes
+        for sig_name, val in self._signal_values.items():
+            if not sig_name.startswith('_'):
+                try:
+                    object.__setattr__(comp, sig_name, val)
+                except Exception:
+                    pass
+
     def eval_comb(self, comp: Component):
         """Evaluate all combinational processes."""
         self._initialize_eval_state(comp)
@@ -577,8 +623,71 @@ class CompImplRT(object):
     def start_processes(self, comp: Component):
         """Start all registered processes for this component."""
         for name, proc in self._processes:
-            task = asyncio.create_task(proc.method(comp))
+            if getattr(proc.method, '_zdc_async_pipeline', False):
+                # Async pipeline — wrap in the pipeline runtime loop.
+                # Resolve clock domain: prefer new clock_domain= form, fall back to clock=.
+                cd_lambda = getattr(proc.method, '_zdc_pipeline_clock_domain', None)
+                domain_lambda = getattr(proc.method, '_zdc_pipeline_clock', None)
+                tb = self.timebase()
+                if cd_lambda is not None:
+                    # New style: clock_domain= gives us a ClockDomain field object.
+                    cd = cd_lambda(comp)
+                    # Wire the timebase into the ClockDomain so wait_cycle() works.
+                    cd._timebase = tb
+                    cd._rt_domain = domain_lambda(comp) if domain_lambda else None
+                    domain = cd._rt_domain
+                else:
+                    cd = None
+                    domain = domain_lambda(comp) if domain_lambda else None
+                from .pipeline_rt import PipelineRuntime
+                rt = PipelineRuntime(comp, domain, tb)
+                # Expose trace on comp as <method_name>_trace
+                trace_attr = f"{proc.method.__name__}_trace"
+                object.__setattr__(comp, trace_attr, rt.trace)
+                task = asyncio.create_task(self._run_pipeline(comp, proc.method, rt))
+            else:
+                task = asyncio.create_task(proc.method(comp))
             self._tasks.append(task)
+
+    @staticmethod
+    async def _run_pipeline(comp, method, rt) -> None:
+        """Concurrent token issuer: spawn one token task per cycle.
+
+        Each spawned task inherits ``_PIPELINE_RT`` via ContextVar copy
+        (``asyncio.create_task`` copies the current context).  Per-token
+        state (``_CURRENT_TOKEN``, ``_CURRENT_STAGE_IDX``) is set inside
+        the task so each task has its own independent view.
+        """
+        from ..pipeline_ns import _PIPELINE_RT, _CURRENT_TOKEN, _CURRENT_STAGE_IDX
+        pipeline_token = _PIPELINE_RT.set(rt)
+        tasks = []
+
+        async def run_token(tok):
+            tok_ctx = _CURRENT_TOKEN.set(tok)
+            idx_ctx = _CURRENT_STAGE_IDX.set(0)
+            try:
+                await method(comp)
+                rt._complete_token(tok)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                _CURRENT_TOKEN.reset(tok_ctx)
+                _CURRENT_STAGE_IDX.reset(idx_ctx)
+
+        try:
+            while True:
+                tok = rt.new_token()
+                tok.cycle = rt._cycle
+                tasks.append(asyncio.create_task(run_token(tok)))
+                rt._cycle += 1
+                await rt._timebase.wait_cycles(1, rt._domain)
+        except asyncio.CancelledError:
+            for t in tasks:
+                t.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            _PIPELINE_RT.reset(pipeline_token)
 
     def start_all_processes(self, comp: Component):
         """Recursively start all processes in the component tree."""

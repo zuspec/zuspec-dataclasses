@@ -79,7 +79,8 @@ class MultiStepChainScenario(zdc.Action[Comp]):
     """a → b (b.in_val == a.out_val + 1) → c (c.in_val == b.in_val * 2)."""
     async def activity(self):
         with zdc.do(ActionA) as a:
-            pass
+            # Bound out_val so that (out_val+1)*2 fits in U(32)
+            assert a.out_val < 1000
         with zdc.do(ActionB) as b:
             assert b.in_val == a.out_val + 1
         with zdc.do(ActionB) as c:

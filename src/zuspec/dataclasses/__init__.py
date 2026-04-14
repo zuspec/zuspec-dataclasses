@@ -14,7 +14,66 @@
 # limitations under the License.
 #****************************************************************************
 """
-Docstring for src.zuspec.dataclasses
+``zuspec.dataclasses`` — RTL behavioral modeling and async pipeline DSL.
+
+This package provides a Python-native way to describe hardware components,
+processes, and pipelines for both behavioral simulation and RTL synthesis.
+
+Core API
+--------
+``@zdc.dataclass`` / ``@zdc.field``
+    Declare a hardware component with typed ports and fields.
+
+``@zdc.sync`` / ``@zdc.comb``
+    Synchronous (clocked) and combinational process decorators.
+
+``zdc.pipeline``
+    Async pipeline DSL singleton — the entry point for the behavioral
+    pipeline model.  Replaces the removed ``@zdc.stage`` API.
+
+Async Pipeline Quick-Start
+--------------------------
+::
+
+    @zdc.dataclass
+    class Adder(zdc.Component):
+        clock: zdc.bit = zdc.input()
+        a_in:  zdc.u32 = zdc.input()
+        b_in:  zdc.u32 = zdc.input()
+        out:   zdc.u32 = zdc.output()
+
+        @zdc.pipeline(clock=lambda s: s.clock)
+        async def run(self):
+            async with zdc.pipeline.stage() as FETCH:
+                a, b = self.a_in, self.b_in
+            async with zdc.pipeline.stage() as COMPUTE:
+                result = a + b
+            async with zdc.pipeline.stage() as WB:
+                self.out = result
+
+Hazard Tracking
+---------------
+::
+
+    rf = zdc.pipeline.resource(32, lock=zdc.BypassLock())
+
+    # Inside a @zdc.pipeline method:
+    await zdc.pipeline.reserve(self.rf[rd])     # claim write slot (IF)
+    val = await zdc.pipeline.block(self.rf[rs]) # wait for RAW hazard (ID)
+    zdc.pipeline.write(self.rf[rd], result)     # bypass forward (EX)
+    zdc.pipeline.release(self.rf[rd])           # relinquish claim (WB)
+
+Lock strategies: :class:`QueueLock` (stall, no bypass),
+:class:`BypassLock` (stall + bypass network), :class:`RenameLock`
+(Tomasulo-style out-of-order rename).
+
+Trace / Observer
+----------------
+After ``asyncio.run(comp.wait(...))``, access ``comp.<method>_trace`` for a
+:class:`~zuspec.dataclasses.rt.pipeline_rt.PipelineTrace` with Gantt output::
+
+    comp.run_trace.add_observer(lambda tok, ev, **kw: ...)
+    comp.run_trace.print_trace()
 """
 
 # Datamodel Mapping
@@ -23,24 +82,32 @@ Docstring for src.zuspec.dataclasses
 from asyncio import Event as aEvent
 from typing import Callable
 from .decorators import (
-    dataclass, field, process, input, output, reg,
+    dataclass, field, process, input, output, reg, array,
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view, constraint, rand, randc,
-    lock, share, extend, pool, flow_output, flow_input
+    lock, share, extend, pool, flow_output, flow_input,
+    indexed_regfile,
+    indexed_pool,
+
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
 from .constraint_parser import ConstraintParser, extract_rand_fields
 from .activity_parser import ActivityParser, ActivityParseError
+from .pragma import scan_pragmas, parse_pragma_str, scan_line_comments
 from .activity_dsl import (
     do, parallel, schedule, sequence, atomic, select, branch,
     do_while, while_do, replicate, constraint as activity_constraint, bind as activity_bind
 )
 from .types import *
 from .tlm import *
+# Re-import after `from .types import *` to ensure our decorator wins over
+# the stdlib `enum` module that `types.py` imports into its namespace.
+from .decorators import enum
 from . import ir
 from . import profiles
+from . import transform
 from .data_model_factory import DataModelFactory
 from .rt.edge import posedge, negedge, edge
 from .rt.gather import gather
@@ -49,25 +116,58 @@ from .rt.resource_rt import get_resource_fields, acquire_resources, release_reso
 from .rt.binding_solver import BindingSolver
 from .rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
 from .rt.activity_runner import ScheduleGraph
+from .rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
+from .rt.indexed_pool_rt import IndexedPoolRT
+from .rt.memory_rt import MemoryRT
+from .rt.simulate import simulate
+from .rt.sim_domain import SimDomain
 from .solver.api import randomize, randomize_with, RandomizationError
+from .errors import (
+    ZuspeccError, ZuspeccCDCError, ZuspeccWidthError,
+    ZuspeccSynthError, ZuspeccConflictError,
+)
 from .coverage import (
     Covergroup, coverpoint, cross,
     binsof, cross_bins, cross_ignore, cross_illegal
 )
+from .domain import (
+    ClockDomain, DerivedClockDomain, InheritedDomain,
+    ResetDomain, SoftwareResetDomain, HardwareResetDomain,
+    ClockPort, ClockBind, ResetBind,
+    clock_port, clock_bind, reset_bind,
+    clock_domain,
+)
+from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
+from .pipeline_ns import pipeline, _StageHandle, _Snap
+from .pipeline_locks import HazardLock, QueueLock, BypassLock, RenameLock
+from .pipeline_resource import PipelineResource
+from .method_port import InPort, OutPort, in_port, out_port
 from typing import Type
 
 __all__ = [
     # From asyncio
     'aEvent',
     # From decorators
-    'dataclass', 'field', 'process', 'input', 'output', 'reg',
+    'dataclass', 'field', 'process', 'input', 'output', 'reg', 'array',
     'const', 'bundle', 'mirror', 'monitor',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
+    'enum',
+    # Pipeline process API — new async API
+    'pipeline', '_StageHandle', '_Snap',
+    'HazardLock', 'QueueLock', 'BypassLock', 'RenameLock',
+    'PipelineResource',
+    # Method ports
+    'InPort', 'OutPort', 'in_port', 'out_port',
+    # Clock domain field factory
+    'clock_domain',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
+    # From errors
+    'ZuspeccError', 'ZuspeccCDCError', 'ZuspeccWidthError',
+    'ZuspeccSynthError', 'ZuspeccConflictError',
     # From coverage
     'Covergroup', 'coverpoint', 'cross',
     # From constraint_helpers
@@ -76,19 +176,30 @@ __all__ = [
     'ConstraintParser', 'extract_rand_fields',
     # From activity_parser
     'ActivityParser', 'ActivityParseError',
+    'scan_pragmas', 'parse_pragma_str', 'scan_line_comments',
     # From activity_dsl
     'do', 'parallel', 'schedule', 'sequence', 'atomic', 'select', 'branch',
     'do_while', 'while_do', 'replicate',
     # From types (re-exported via *)
     'Action',
     'Buffer', 'Stream', 'State', 'Resource',
-    'AddrHandle', 'AddressSpace', 'Bundle', 'ClaimPool', 'CompImpl', 'Component',
+    'AddrHandle', 'AddressSpace', 'Array', 'BackdoorMemory', 'BackdoorRegFile',
+    'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
     'bit', 'bit1', 'bit16', 'bit2', 'bit3', 'bit32', 'bit4', 'bit5', 'bit6',
     'bit64', 'bit7', 'bit8', 'bitv', 'bv',
+    'b', 'b2', 'b3', 'b4', 'b8', 'b16', 'b32', 'b64',
+    'bv1', 'bv2', 'bv3', 'bv4', 'bv5', 'bv6', 'bv7', 'bv8',
+    'bv9', 'bv10', 'bv11', 'bv12', 'bv13', 'bv14', 'bv15', 'bv16',
+    'bv17', 'bv18', 'bv19', 'bv20', 'bv21', 'bv22', 'bv23', 'bv24',
+    'bv25', 'bv26', 'bv27', 'bv28', 'bv29', 'bv30', 'bv31', 'bv32',
+    'bv64', 'bv128',
+    'concat',
     'i128', 'i16', 'i32', 'i64', 'i8',
+    's8', 's16', 's32', 's64', 's128',
+    'sext', 'zext',
     'int128_t', 'int16_t', 'int32_t', 'int64_t', 'int8_t',
     'u1', 'u10', 'u11', 'u12', 'u128', 'u13', 'u14', 'u15', 'u16', 'u17', 'u18',
     'u19', 'u2', 'u20', 'u21', 'u22', 'u23', 'u24', 'u25', 'u26', 'u27', 'u28',
@@ -109,6 +220,21 @@ __all__ = [
     'BufferInstance', 'StreamInstance', 'StatePool',
     # From rt.activity_runner
     'ScheduleGraph',
+    # From rt.indexed_regfile_rt
+    'IndexedRegFileRT', 'IndexedRegFileClaim',
+    # From rt.memory_rt
+    'MemoryRT',
+    # From rt.simulate
+    'simulate',
+    # From rt.sim_domain
+    'SimDomain',
+    # From domain
+    'ClockDomain', 'DerivedClockDomain', 'InheritedDomain',
+    'ResetDomain', 'SoftwareResetDomain', 'HardwareResetDomain',
+    'ClockPort', 'ClockBind', 'ResetBind',
+    'clock_port', 'clock_bind', 'reset_bind',
+    # From cdc
+    'TwoFFSync', 'AsyncFIFO', 'cdc_unchecked',
     # Submodules
     'ir', 'profiles',
     # Other exports

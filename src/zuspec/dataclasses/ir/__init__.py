@@ -46,15 +46,21 @@ def json_converter(pmod, *args, **kwargs):
     return closure
 
 
+# M0 additions: provenance, pass infrastructure, connections, RTL IR
+from .provenance import Provenance
+from .domain_node import DomainNode
+from .connection import Connection, Signal, Bundle, MethodInterface
+
 # Re-export data model types
 from .fields import Bind, BindSet, Field, FieldInOut, FieldKind, SignalDirection
 from .data_type import (
-    DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass, DataTypeComponent, DataTypeExtern,
+    DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass, DataTypeAction, DataTypeComponent, DataTypeExtern,
     DataTypeExpr, DataTypeEnum, DataTypeString, DataTypeChandle,
     DataTypeList, DataTypeArray, DataTypeMap, DataTypeSet,
     DataTypeLock, DataTypeEvent, DataTypeMemory,
     DataTypeAddressSpace, DataTypeAddrHandle, DataTypeProtocol, DataTypeRef,
-    DataTypeGetIF, DataTypePutIF, DataTypeChannel, DataTypeTuple,
+    DataTypeGetIF, DataTypePutIF, DataTypeChannel, DataTypeTuple, DataTypeTupleReturn,
+    DataTypeClaimPool,
     Function, Process, ProcessKind,
     # Template support
     TemplateParamKind, TemplateParam, TemplateParamType, TemplateParamValue, TemplateParamEnum,
@@ -116,12 +122,13 @@ from .activity import (
 __all__ = [
     "profile","Base","BaseP","Visitor","JsonConverter","json_converter",
     "Bind","BindSet","Field","FieldInOut","FieldKind","SignalDirection",
-    "DataType","DataTypeInt","DataTypeUptr","DataTypeStruct","DataTypeClass","DataTypeComponent","DataTypeExtern",
+    "DataType","DataTypeInt","DataTypeUptr","DataTypeStruct","DataTypeClass","DataTypeAction","DataTypeComponent","DataTypeExtern",
     "DataTypeExpr","DataTypeEnum","DataTypeString","DataTypeChandle",
     "DataTypeList","DataTypeArray","DataTypeMap","DataTypeSet",
     "DataTypeLock","DataTypeEvent","DataTypeMemory",
     "DataTypeAddressSpace","DataTypeAddrHandle","DataTypeProtocol","DataTypeRef",
-    "DataTypeGetIF","DataTypePutIF","DataTypeChannel","DataTypeTuple",
+    "DataTypeGetIF","DataTypePutIF","DataTypeChannel","DataTypeTuple","DataTypeTupleReturn",
+    "DataTypeClaimPool",
     "Function","Process","ProcessKind",
     # Template support
     "TemplateParamKind","TemplateParam","TemplateParamType","TemplateParamValue","TemplateParamEnum",
@@ -155,6 +162,8 @@ __all__ = [
     "SelectBranch","ActivitySelect",
     "ActivityIfElse","MatchCase","ActivityMatch",
     "ActivityConstraint","ActivityBind",
+    # M0 foundations
+    "Provenance","DomainNode","Connection","Signal","Bundle","MethodInterface",
 ]
 
 # Important to place after all data-model classes have been imported

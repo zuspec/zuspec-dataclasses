@@ -188,5 +188,163 @@ def test_sync_and_comb_together():
     asyncio.run(run())
 
 
+
+# ---------------------------------------------------------------------------
+# ACTION-4 tests: new IR node handlers
+# ---------------------------------------------------------------------------
+
+def test_bitwise_not_unary():
+    """ExprUnary Invert (~) produces bitwise complement masked to 64 bits."""
+    from zuspec.dataclasses.ir.expr import ExprUnary, ExprConstant, UnaryOp
+    from zuspec.dataclasses.rt.executor import Executor
+
+    class _FakeBackend:
+        def signal_write(self, comp, name, value, width=32):
+            pass
+        def get_signal(self, comp, name):
+            return 0
+
+    exec_ = Executor(state_backend=_FakeBackend(), component=None)
+
+    expr = ExprUnary(op=UnaryOp.Invert, operand=ExprConstant(value=0))
+    result = exec_.evaluate_expr(expr)
+    # ~0 masked to 64 bits
+    assert result == (1 << 64) - 1
+
+    expr2 = ExprUnary(op=UnaryOp.Not, operand=ExprConstant(value=5))
+    assert exec_.evaluate_expr(expr2) == 0
+
+    expr3 = ExprUnary(op=UnaryOp.USub, operand=ExprConstant(value=7))
+    assert exec_.evaluate_expr(expr3) == -7
+
+
+def test_bit_slice_extraction():
+    """ExprSubscript with ExprSlice extracts correct bit range."""
+    from zuspec.dataclasses.ir.expr import ExprSubscript, ExprSlice, ExprConstant
+    from zuspec.dataclasses.rt.executor import Executor
+
+    class _FakeBackend:
+        def signal_write(self, comp, name, value, width=32):
+            pass
+        def get_signal(self, comp, name):
+            return 0
+
+    exec_ = Executor(state_backend=_FakeBackend(), component=None)
+
+    # 0xAB = 0b10101011 — bits [3:0] = 0b1011 = 0xB
+    val = 0xAB
+    expr = ExprSubscript(
+        value=ExprConstant(value=val),
+        slice=ExprSlice(upper=ExprConstant(value=3),
+                        lower=ExprConstant(value=0))
+    )
+    assert exec_.evaluate_expr(expr) == 0xB
+
+    # bits [7:4] = 0b1010 = 0xA
+    expr2 = ExprSubscript(
+        value=ExprConstant(value=val),
+        slice=ExprSlice(upper=ExprConstant(value=7),
+                        lower=ExprConstant(value=4))
+    )
+    assert exec_.evaluate_expr(expr2) == 0xA
+
+
+def test_stmt_repeat_executes_n_times():
+    """StmtRepeat executes its body exactly N times."""
+    from zuspec.dataclasses.ir.stmt import StmtRepeat, StmtAugAssign
+    from zuspec.dataclasses.ir.expr import ExprConstant, ExprRefLocal, AugOp
+    from zuspec.dataclasses.rt.executor import Executor
+
+    class _FakeBackend:
+        def signal_write(self, comp, name, value, width=32):
+            pass
+        def get_signal(self, comp, name):
+            return 0
+
+    exec_ = Executor(state_backend=_FakeBackend(), component=None)
+    exec_.locals['counter'] = 0
+
+    # Build: repeat (5) { counter += 1 }
+    body = [StmtAugAssign(
+        target=ExprRefLocal(name='counter'),
+        op=AugOp.Add,
+        value=ExprConstant(value=1),
+    )]
+    stmt = StmtRepeat(count=ExprConstant(value=5), body=body)
+    exec_.execute_stmt(stmt)
+    assert exec_.locals['counter'] == 5
+
+
+def test_stmt_assert_raises_on_false():
+    """StmtAssert raises AssertionError when condition is False."""
+    import pytest
+    from zuspec.dataclasses.ir.stmt import StmtAssert
+    from zuspec.dataclasses.ir.expr import ExprConstant
+    from zuspec.dataclasses.rt.executor import Executor
+
+    class _FakeBackend:
+        def signal_write(self, comp, name, value, width=32): pass
+        def get_signal(self, comp, name): return 0
+
+    exec_ = Executor(state_backend=_FakeBackend(), component=None)
+
+    # assert True — should not raise
+    exec_.execute_stmt(StmtAssert(test=ExprConstant(value=1)))
+
+    # assert False — must raise
+    with pytest.raises(AssertionError, match=r"\[zdc sim\]"):
+        exec_.execute_stmt(StmtAssert(test=ExprConstant(value=0),
+                                      msg=ExprConstant(value="boom")))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# ACTION-2: @zdc.enum decorator tests
+# ---------------------------------------------------------------------------
+
+def test_enum_decorator_creates_ir_node():
+    """@zdc.enum marks class and creates DataTypeEnum IR node."""
+    from zuspec.dataclasses.ir.data_type import DataTypeEnum
+
+    @zdc.enum
+    class State:
+        IDLE  = 0
+        FETCH = 1
+        EXEC  = 2
+
+    assert hasattr(State, '_zdc_enum') and State._zdc_enum
+    assert State._zdc_enum_members == {'IDLE': 0, 'FETCH': 1, 'EXEC': 2}
+    assert State._zdc_enum_width == 2
+    assert isinstance(State._zdc_data_type, DataTypeEnum)
+    assert State._zdc_data_type.name == 'State'
+    assert State._zdc_data_type.width == 2
+    assert State._zdc_data_type.items == {'IDLE': 0, 'FETCH': 1, 'EXEC': 2}
+
+
+def test_enum_decorator_explicit_width():
+    """@zdc.enum(width=N) stores explicit bit width."""
+
+    @zdc.enum(width=4)
+    class Opcode:
+        ADD = 0
+        SUB = 1
+
+    assert Opcode._zdc_enum_width == 4
+
+
+def test_enum_values_accessible_as_attributes():
+    """Enum member values are plain int attributes on the class."""
+
+    @zdc.enum
+    class Color:
+        RED   = 0
+        GREEN = 1
+        BLUE  = 2
+
+    assert Color.RED == 0
+    assert Color.GREEN == 1
+    assert Color.BLUE == 2
+    assert isinstance(Color.RED, int)

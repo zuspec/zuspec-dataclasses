@@ -97,6 +97,21 @@ class ConstraintParser:
                 exprs.append(expr)
                 continue
 
+            # Parse if statements: `if cond: body` → implication (cond → consequents)
+            if isinstance(stmt, ast.If):
+                condition = self.parse_expr(stmt.test)
+                consequents = [self.parse_expr(s.value)
+                               for s in stmt.body if isinstance(s, ast.Expr)]
+                exprs.append({
+                    'type': 'implies',
+                    'antecedent': condition,
+                    'consequent': consequents,
+                })
+                if stmt.orelse:
+                    raise NotImplementedError(
+                        "else branches in @constraint if-statements are not yet supported")
+                continue
+
             # Parse expression statements
             if isinstance(stmt, ast.Expr):
                 expr = self.parse_expr(stmt.value)
@@ -218,6 +233,8 @@ class ConstraintParser:
         # Special handling for constraint helpers
         if func_name == 'implies':
             return self.parse_implies(node)
+        elif func_name == 'soft':
+            return self.parse_soft(node)
         elif func_name == 'dist':
             return self.parse_dist(node)
         elif func_name == 'unique':
@@ -244,6 +261,15 @@ class ConstraintParser:
             'type': 'implies',
             'antecedent': self.parse_expr(node.args[0]),
             'consequent': self.parse_expr(node.args[1])
+        }
+    
+    def parse_soft(self, node: ast.Call) -> Dict[str, Any]:
+        """Parse soft(expr) — a soft constraint that may be violated under conflict."""
+        if len(node.args) != 1:
+            raise ValueError(f"soft() requires 1 argument, got {len(node.args)}")
+        return {
+            'type': 'soft',
+            'expr': self.parse_expr(node.args[0]),
         }
     
     def parse_dist(self, node: ast.Call) -> Dict[str, Any]:

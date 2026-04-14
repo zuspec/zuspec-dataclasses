@@ -14,6 +14,7 @@ class ProcessKind(enum.Enum):
     """Kind of hardware process"""
     COMB = enum.auto()  # Combinational logic
     SYNC = enum.auto()  # Synchronous (clocked) logic
+    WIRE = enum.auto()  # Continuous assignment (from @property getter)
 
 @dc.dataclass(kw_only=True)
 class DataType(Base):
@@ -68,12 +69,38 @@ class DataTypeClass(DataTypeStruct):
     activity_ir: Optional['ActivitySequenceBlock'] = dc.field(default=None)
 
 @dc.dataclass(kw_only=True)
+class DataTypeAction(DataTypeClass):
+    """An action type (subclass of zdc.Action[T]).
+
+    Attributes
+    ----------
+    comp_type_name:
+        Name of the owning component type T from ``Action[T]``.
+    body_stmts:
+        IR statements from the ``body()`` method (populated by DataModelFactory).
+        When the action call is inlined into a parent coroutine these stmts are
+        inserted verbatim (after translation of ``self`` / ``self.comp`` refs).
+    """
+    comp_type_name: Optional[str] = dc.field(default=None)
+    body_stmts: List = dc.field(default_factory=list)  # List[Stmt]
+    static_methods: List = dc.field(default_factory=list)  # List[Function]
+
+
+@dc.dataclass(kw_only=True)
 class DataTypeComponent(DataTypeClass):
     """Components are structural building blocks that can have ports, exports, 
     and bindings. The bind_map captures connections between ports/exports."""
     bind_map : List['Bind'] = dc.field(default_factory=list)
     sync_processes : List[Function] = dc.field(default_factory=list)
     comb_processes : List[Function] = dc.field(default_factory=list)
+    wire_processes : List[Function] = dc.field(default_factory=list)
+    # New-style pipeline IRs (populated when @zdc.pipeline + @zdc.stage are present)
+    pipeline_root_ir: Optional[Any] = dc.field(default=None)   # PipelineRootIR | None
+    stage_method_irs: List[Any]     = dc.field(default_factory=list)  # List[StageMethodIR]
+    sync_method_irs:  List[Any]     = dc.field(default_factory=list)  # List[SyncMethodIR]
+    # Clock/reset domain (None → inherit from parent at elaboration time)
+    clock_domain:     Optional[Any] = dc.field(default=None)   # ClockDomain | None
+    reset_domain:     Optional[Any] = dc.field(default=None)   # ResetDomain | None
 
 
 @dc.dataclass(kw_only=True)
@@ -99,8 +126,12 @@ class DataTypeEnum(DataType):
     ``items`` maps member name → integer value (in declaration order).
     Values are auto-assigned (starting from 0, incrementing by 1) when no
     explicit value is given, matching PSS §7.5 semantics.
+
+    ``width`` is the bit width of the enum type. If not specified, it is
+    inferred from the number of members (ceiling log2 of len(items)+1).
     """
     items: dict = dc.field(default_factory=dict)  # OrderedDict[str, int]
+    width: int = dc.field(default=0)  # 0 = auto-infer from items
 
 @dc.dataclass(kw_only=True)
 class DataTypeString(DataType): ...
@@ -198,6 +229,8 @@ class Function(Base):
     is_import : bool = dc.field(default=False)
     is_target : bool = dc.field(default=False)  # import target
     is_solve : bool = dc.field(default=False)   # import solve
+    # Leading comment block from Python source (docstring or # lines above decorator)
+    comment : Optional[str] = dc.field(default=None)
 
 @dc.dataclass(kw_only=True)
 class Process(Base):
@@ -236,6 +269,27 @@ class DataTypeTuple(DataType):
 class DataTypeChannel(DataType):
     """Represents a TLM Channel - bidirectional communication channel"""
     element_type : Optional[DataType] = dc.field(default=None)
+
+
+@dc.dataclass(kw_only=True)
+class DataTypeTupleReturn(DataType):
+    """Return type of a multi-value function call (e.g. regfile.read_all()).
+
+    Used to lower tuple-unpack assignments ``a, b = f(...)`` to a temporary
+    struct variable and individual field extractions ``a = _tmp.v0; b = _tmp.v1``.
+    The C struct type is ``_zsp_tupleN_t`` where N is the arity.
+    """
+    arity: int = dc.field(default=2)
+
+
+@dc.dataclass(kw_only=True)
+class DataTypeClaimPool(DataType):
+    """Represents a ``ClaimPool[ElemType]`` field.
+
+    Carries the element component type name so that the SW backend can emit
+    the element struct inline and resolve calls through claim handles.
+    """
+    elem_type_name: str = dc.field(default="")
 
 
 # =============================================================================

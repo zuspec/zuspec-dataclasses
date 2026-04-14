@@ -106,6 +106,12 @@ def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
 
         cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
 
+        # For PackedStruct subclasses, compute bit-field layout after
+        # dataclass processing so all annotations are resolved.
+        from .types import PackedStruct
+        if isinstance(cls_t, type) and issubclass(cls_t, PackedStruct):
+            cls_t._build_packed_layout()
+
         # Detect activity/body mutual exclusion and parse the activity method
         has_activity = 'activity' in cls.__dict__
         has_body = 'body' in cls.__dict__
@@ -194,6 +200,82 @@ def pool(size: Optional[int] = None, default_factory=None) -> Any:
         meta["size"] = size
     if default_factory is not None:
         return dc.field(default_factory=default_factory, metadata=meta)
+    return dc.field(default=None, metadata=meta)
+
+
+def indexed_regfile(
+        read_ports:  int  = 2,
+        write_ports: int  = 1,
+        shared_port: bool = False,
+) -> Any:
+    """Declare an :class:`IndexedRegFile` field on a Component.
+
+    Parameters
+    ----------
+    read_ports:
+        Number of independent read port slots.  Controls how many concurrent
+        reads are structurally allowed and how many ``rp{N}_addr / rp{N}_data``
+        wire groups appear on the synthesised register file module.
+    write_ports:
+        Number of independent write port slots.  Controls how many concurrent
+        writes are structurally allowed and how many ``wp{N}_addr / wp{N}_data
+        / wp{N}_we`` wire groups appear on the synthesised module.
+    shared_port:
+        If ``True``, read and write slot pools are merged into a single pool of
+        size 1.  A read and a write cannot occur in the same cycle — this maps
+        to a true single-port Block RAM (Xilinx BRAM SP mode, Intel M20K SP).
+        Hazard resolution moves to the pipeline controller (stall logic).
+
+        If ``False`` (default), reads and writes use independent slot pools and
+        can proceed concurrently on separate physical buses.  RAW hazard
+        comparators and forwarding muxes are generated inside the register file
+        module by MLS.
+
+    Example::
+
+        # Standard RISC-V: 2 read ports, 1 write port, separate buses
+        regfile: IndexedRegFile[zdc.u5, zdc.u32] = zdc.indexed_regfile()
+
+        # FPGA single-port BRAM
+        regfile: IndexedRegFile[zdc.u5, zdc.u32] = zdc.indexed_regfile(
+            read_ports=1, write_ports=1, shared_port=True
+        )
+    """
+    return dc.field(default=None, metadata={
+        'kind':        'indexed_regfile',
+        'read_ports':  read_ports,
+        'write_ports': write_ports,
+        'shared_port': shared_port,
+    })
+
+
+def indexed_pool(
+        depth:    int           = 32,
+        noop_idx: int | None    = None,
+) -> Any:
+    """Declare an :class:`IndexedPool` field on a Component.
+
+    Parameters
+    ----------
+    depth:
+        Number of addressable slots — should match the number of registers
+        (e.g. 32 for RV32/RV64) or whatever indexed resource the pool tracks.
+    noop_idx:
+        Optional slot index whose lock / share operations are no-ops.
+        Use ``noop_idx=0`` for RISC-V so that writes to ``x0`` and reads of
+        ``x0`` never consume a scoreboard slot and never generate hazard
+        comparators in the synthesised hardware.
+
+    Example::
+
+        # RISC-V integer scoreboard — x0 is always a no-op
+        rd_sched: IndexedPool[zdc.u5] = zdc.indexed_pool(depth=32, noop_idx=0)
+    """
+    meta: dict = {
+        'kind':     'indexed_pool',
+        'depth':    depth,
+        'noop_idx': noop_idx,
+    }
     return dc.field(default=None, metadata=meta)
 
 
@@ -320,7 +402,8 @@ def rand(
         default: Any = 0,
         size: Optional[int] = None,
         max_size: Optional[int] = None,
-        width=None):
+        width=None,
+        soft=None):
     """Mark a field as a random variable.
     
     Random variables are solved by the constraint solver during randomization.
@@ -378,6 +461,9 @@ def rand(
     
     if width is not None:
         metadata["width"] = width
+    
+    if soft is not None:
+        metadata["soft_default"] = soft
     
     return dc.field(default=default, metadata=metadata)
 
@@ -498,6 +584,26 @@ def reg(reset=None, width=None) -> Any:
     return dc.field(default_factory=RegField, metadata=metadata)
 
 
+def array(depth: int, default=None) -> Any:
+    """Marks a fixed-size array field.
+
+    The array has exactly ``depth`` elements, fixed at elaboration time.
+    No elements can be added or removed at runtime.
+
+    Use with ``zdc.Array[T]`` as the field type annotation::
+
+        _cpuregs: zdc.Array[zdc.u32] = zdc.array(32)
+
+    Args:
+        depth:   Number of elements (must be a positive integer).
+        default: Optional per-element reset/default value.
+    """
+    metadata: dict = {"kind": "array", "depth": depth}
+    if default is not None:
+        metadata["default"] = default
+    return dc.field(default_factory=list, metadata=metadata)
+
+
 def const(default=None) -> Any:
     """Marks a post-construction constant.
 
@@ -539,15 +645,75 @@ def monitor(
     return dc.field(init=False, default_factory=default_factory, metadata=metadata)
 
 def port():
-    """A 'port' field is an API consumer. It must be bound
-    to a matching 'export' field that provides an implementation
-    of the API"""
+    """Declare a *required* API port on a Component — the consumer side.
+
+    A ``port`` field must be bound before the component is used.  Binding
+    supplies the concrete implementation of the declared API.
+
+    Two annotation forms are supported:
+
+    **Callable port** — a single async function::
+
+        icache: Callable[[zdc.u32], Awaitable[zdc.u32]] = zdc.port()
+
+        # Bind at construction:
+        core = RVCore(icache=my_fetch_fn)
+
+        # Use inside a body:
+        insn = await self.comp.icache(self.pc_in)
+
+    **Protocol port** — a duck-typed object with named async methods::
+
+        dcache: DCacheIface = zdc.port()   # DCacheIface is a typing.Protocol
+
+        # Bind at construction (whole object):
+        core = RVCore(dcache=MockCache())
+
+        # Use inside a body:
+        data = await self.comp.dcache.load(addr, funct3)
+
+    Ports can also be wired inside a containing component via ``__bind__``::
+
+        def __bind__(self):
+            return {
+                self.core.icache: self.mem.fetch,       # Callable form
+                self.core.dcache: self.mem,             # Protocol form (whole object)
+                self.core.dcache.load: self._do_load,  # Protocol form (per-method)
+            }
+
+    During synthesis the synthesizer maps each port to ready-valid SV channels:
+    a Callable port becomes a single req/resp pair; a Protocol port becomes one
+    req/resp pair per method.
+
+    See ``zdc.export()`` for the provider side.
+    """
     return dc.field(init=False, metadata={"kind": "port"})
 
 def export():
-    """An 'export' field is an API provider. It must be bound
-    to implementations of the API class -- either per method 
-    or on a whole-class basis."""
+    """Declare an *offered* API export on a Component — the provider side.
+
+    An ``export`` field advertises that this component implements the declared
+    API and can be bound to a matching ``port`` on another component.
+
+    The annotation follows the same two forms as ``zdc.port()``:
+
+    **Callable export**::
+
+        fetch: Callable[[zdc.u32], Awaitable[zdc.u32]] = zdc.export()
+
+    **Protocol export**::
+
+        mem_iface: MemIface = zdc.export()   # MemIface is a typing.Protocol
+
+    Binding is set up by the containing component's ``__bind__`` method, or
+    at construction time by the consumer that holds both the port and the
+    export::
+
+        def __bind__(self):
+            return {self.requester.api: self.provider}
+
+    See ``zdc.port()`` for the consumer side.
+    """
     return dc.field(init=False, metadata={"kind": "export"})
 
 def inst(
@@ -605,9 +771,23 @@ class ExecProc(Exec): pass
 
 @dc.dataclass
 class ExecSync(Exec):
-    """Synchronous process"""
-    clock : Optional[Callable] = dc.field(default=None)
-    reset : Optional[Callable] = dc.field(default=None)
+    """Synchronous process.
+
+    New-style: ``domain=`` points to a :class:`~zuspec.dataclasses.domain.ClockDomain`
+    class-level attribute.  When ``None``, the process uses the component's
+    default clock/reset domain (set via ``clock_domain`` / ``reset_domain``
+    class attributes, or inherited from the parent).
+
+    Legacy fields ``clock``/``reset``/``reset_async``/``reset_active_low`` are
+    kept for backward compatibility and will be removed after Phase 7.
+    """
+    # New-style domain reference (lambda or None → use component default)
+    domain: Optional[Any] = dc.field(default=None)
+    # Legacy fields (deprecated; will be removed in Phase 7)
+    clock : Optional[Any] = dc.field(default=None)
+    reset : Optional[Any] = dc.field(default=None)
+    reset_async : bool = dc.field(default=False)
+    reset_active_low : bool = dc.field(default=True)
 
 @dc.dataclass
 class ExecComb(Exec):
@@ -626,28 +806,55 @@ def process(T):
     # Datamodel Mapping
     return ExecProc(T)
 
-def sync(clock: Callable = None, reset: Callable = None):
-    """
-    Decorator for synchronous processes.
-    
-    The process is evaluated on positive edge of clock or reset.
-    Assignments in sync processes are deferred - they take effect
-    after the method completes but before next evaluation.
-    
-    Args:
-        clock: Lambda expression that returns clock signal reference
-        reset: Lambda expression that returns reset signal reference
-        
-    Example:
-        @zdc.sync(clock=lambda s:s.clock, reset=lambda s:s.reset)
+def sync(_method=None, *,
+         domain=None,
+         clock: str = None, reset: str = None,
+         reset_async: bool = False, reset_active_low: bool = True):
+    """Decorator for synchronous (clocked) processes.
+
+    **New-style** — bind to the component's default domain (or a named domain)::
+
+        @zdc.sync
+        def _count(self):
+            self.count = self.count + 1
+
+        @zdc.sync(domain=lambda s: s.fast_clk)
+        def _fast(self):
+            ...
+
+    **Legacy** — explicit clock/reset field references (deprecated, removed in Phase 7)::
+
+        @zdc.sync(clock="clk", reset="rst_n")
         def _count(self):
             if self.reset:
                 self.count = 0
             else:
                 self.count += 1
+
+    The process is evaluated on the positive edge of the clock.  Assignments
+    inside a sync process are deferred — they take effect after the method
+    completes, before the next evaluation.
+
+    Args:
+        domain: Lambda ``lambda s: s.<domain_attr>`` resolving to a
+            :class:`~zuspec.dataclasses.domain.ClockDomain` attribute on the
+            component class.  ``None`` (default) means "use the component's
+            default ``clock_domain``".
+        clock: *Deprecated.* Clock field name or lambda.
+        reset: *Deprecated.* Reset field name or lambda.
+        reset_async: *Deprecated.* Generate async-reset sensitivity list.
+        reset_active_low: *Deprecated.* Reset polarity.
     """
+    if _method is not None:
+        # Used as bare @zdc.sync (no call)
+        return ExecSync(method=_method, domain=None,
+                        clock=None, reset=None,
+                        reset_async=False, reset_active_low=True)
+
     def decorator(method):
-        return ExecSync(method=method, clock=clock, reset=reset)
+        return ExecSync(method=method, domain=domain,
+                        clock=clock, reset=reset,
+                        reset_async=reset_async, reset_active_low=reset_active_low)
     return decorator
 
 def comb(method):
@@ -663,6 +870,64 @@ def comb(method):
             self.out = self.a ^ self.b
     """
     return ExecComb(method=method)
+
+
+def enum(cls=None, *, width: int = None):
+    """Declare a synthesizable enum type.
+
+    Marks a plain Python class as a synthesizable HDL enum. The class body
+    must contain integer-valued class attributes (members). The decorated class
+    gains ``_zdc_enum = True``, ``_zdc_enum_members``, ``_zdc_enum_width``, and
+    a ``_zdc_data_type`` attribute pointing at the corresponding
+    :class:`~zuspec.dataclasses.ir.data_type.DataTypeEnum` IR node.
+
+    Usage::
+
+        @zdc.enum
+        class State:
+            IDLE  = 0
+            FETCH = 1
+            EXEC  = 2
+
+        @zdc.enum(width=4)    # explicit bit width
+        class Opcode:
+            ADD = 0
+            SUB = 1
+
+    The bit width is inferred from the number of members if not specified:
+    ``ceil(log2(len(members) + 1))`` bits, with a minimum of 1.
+
+    Args:
+        cls: The class to decorate (when used as ``@zdc.enum`` without arguments).
+        width: Optional explicit bit width for the enum type.
+
+    Returns:
+        The decorated class (with ``_zdc_enum`` markers and IR node attached).
+    """
+    import math
+    from .ir.data_type import DataTypeEnum
+
+    def _apply(cls):
+        members = {
+            k: v for k, v in cls.__dict__.items()
+            if not k.startswith('_') and isinstance(v, int)
+        }
+        inferred_width = width if width is not None else max(
+            1, math.ceil(math.log2(max(len(members), 1) + 1))
+        )
+        cls._zdc_enum = True
+        cls._zdc_enum_members = members
+        cls._zdc_enum_width = inferred_width
+        cls._zdc_data_type = DataTypeEnum(
+            name=cls.__name__,
+            items=dict(members),
+            width=inferred_width,
+            py_type=cls,
+        )
+        return cls
+
+    return _apply(cls) if cls is not None else _apply
+
 
 def invariant(func):
     """Decorator to mark a method as a structural invariant.

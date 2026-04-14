@@ -19,6 +19,12 @@ considered to be a post-initialization constant.
         data_out : zdc.u32 = zdc.output()
         mem : zdc.Memory[zdc.u32] = zdc.field(size=1024)
 
+Synthesis or tool attributes can be attached to individual field
+declarations using :doc:`pragma comments <pragmas>`.  For example, to
+prevent a signal from being optimised away during synthesis::
+
+    dbg_instr : zdc.u64 = zdc.output(reset=0)  # zdc: keep
+
 ***********
 Decorators
 ***********

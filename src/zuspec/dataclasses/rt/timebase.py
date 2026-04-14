@@ -113,6 +113,31 @@ class Timebase(TimebaseP):
         """Stop the simulation loop."""
         self._running = False
 
+    async def wait_cycles(self, n: int, domain=None) -> None:
+        """Wait *n* clock cycles using the domain's period.
+
+        Falls back to 1 ns per cycle when the domain has no period set,
+        and warns once.
+
+        Args:
+            n:      Number of cycles to wait.
+            domain: Optional :class:`~zuspec.dataclasses.domain.ClockDomain`
+                    instance; its ``period`` is used as the cycle time.
+        """
+        from ..domain import ClockDomain
+        period = None
+        if domain is not None and isinstance(domain, ClockDomain):
+            period = getattr(domain, 'period', None)
+        if period is None:
+            import warnings
+            warnings.warn(
+                "Pipeline clock domain has no period; defaulting to 1 ns/cycle.",
+                stacklevel=3,
+            )
+            period = Time(TimeUnit.NS, 1)
+        for _ in range(n):
+            await self.wait(period)
+
     @property
     def current_time(self) -> int:
         """Current simulation time in femtoseconds."""

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import dataclasses as dc
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from .base import Base
 from .expr import Expr, AugOp
 
@@ -26,7 +26,7 @@ class Arguments(Base):
 
 @dc.dataclass(kw_only=True)
 class Stmt(Base):
-    pass
+    comment: Optional[str] = dc.field(default=None)
 
 @dc.dataclass(kw_only=True)
 class StmtExpr(Stmt):
@@ -36,12 +36,14 @@ class StmtExpr(Stmt):
 class StmtAssign(Stmt):
     targets: List[Expr] = dc.field(default_factory=list)
     value: Expr = dc.field()
+    pragmas: Dict[str, Any] = dc.field(default_factory=dict)
 
 @dc.dataclass(kw_only=True)
 class StmtAnnAssign(Stmt):
     target: Expr = dc.field()
     annotation: Expr = dc.field()
     value: Optional[Expr] = dc.field(default=None)
+    ir_type: Optional[Any] = dc.field(default=None)  # DataType for typed locals (e.g. DataTypeAction)
 
 @dc.dataclass(kw_only=True)
 class StmtAugAssign(Stmt):
@@ -58,6 +60,7 @@ class StmtIf(Stmt):
     test: Expr = dc.field()
     body: List[Stmt] = dc.field(default_factory=list)
     orelse: List[Stmt] = dc.field(default_factory=list)
+    pragmas: Dict[str, Any] = dc.field(default_factory=dict)
 
 @dc.dataclass(kw_only=True)
 class StmtFor(Stmt):
@@ -150,6 +153,7 @@ class Module(Base):
 class StmtMatch(Stmt):
     subject: Expr = dc.field()
     cases: List['StmtMatchCase'] = dc.field(default_factory=list)
+    pragmas: Dict[str, Any] = dc.field(default_factory=dict)
 
 @dc.dataclass(kw_only=True)
 class StmtMatchCase(Base):

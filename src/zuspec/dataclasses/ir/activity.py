@@ -28,7 +28,7 @@ Node hierarchy::
 from __future__ import annotations
 
 import dataclasses as dc
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from .base import Base
 
@@ -65,7 +65,17 @@ class JoinSpec(Base):
 
 @dc.dataclass(kw_only=True)
 class ActivityStmt(Base):
-    """Base class for all activity IR nodes."""
+    """Base class for all activity IR nodes.
+
+    Attributes:
+        pragmas: Key/value map from ``# zdc: key=value, flag`` comments on the
+                 corresponding source line.  Flag tokens (no ``=``) are stored
+                 as ``{token: True}``.  Backends query this dict to emit
+                 tool-specific directives (e.g. ``(* parallel_case *)`` in SV).
+                 Labels (``# zdc: label=my_fsm``) can be used to identify
+                 specific IR nodes from outside the parse.
+    """
+    pragmas: Dict[str, Any] = dc.field(default_factory=dict)
 
     def accept(self, v: 'Visitor') -> None:
         v.visitActivityStmt(self)

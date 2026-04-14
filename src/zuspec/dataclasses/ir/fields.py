@@ -2,16 +2,20 @@
 from __future__ import annotations
 import dataclasses as dc
 import enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from .base import Base
 from .data_type import DataType
 from .expr import Expr
 
 class FieldKind(enum.Enum):
     """Kind of field in a component/class"""
-    Field = enum.auto()    # Regular field
-    Port = enum.auto()     # Port (API consumer)
-    Export = enum.auto()   # Export (API provider)
+    Field = enum.auto()          # Regular field
+    Port = enum.auto()           # Port: Bundle subclass (API consumer)
+    Export = enum.auto()         # Export: Bundle subclass (API provider)
+    CallablePort = enum.auto()   # Port: Callable[[...], Awaitable[...]]
+    ProtocolPort = enum.auto()   # Port: Protocol subclass (bundle of callables)
+    CallableExport = enum.auto() # Export: Callable[[...], Awaitable[...]]
+    ProtocolExport = enum.auto() # Export: Protocol subclass (bundle of callables)
 
 class SignalDirection(enum.Enum):
     """Direction of hardware signals"""
@@ -47,6 +51,8 @@ class Field(Base):
     size : Optional[int] = dc.field(default=None)  # Array size (for fixed-size arrays)
     max_size : Optional[int] = dc.field(default=None)  # Maximum size for variable-size arrays
     is_variable_size : bool = dc.field(default=False)  # True if array has variable size
+    pragmas : Dict[str, Any] = dc.field(default_factory=dict)  # From ``# zdc: key=value, flag`` comments
+    reset_value : Optional[Any] = dc.field(default=None)  # Reset value from output(reset=N) or reg(reset=N)
     
     @property
     def is_array(self) -> bool:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 import dataclasses as dc
-from typing import List, cast
+from typing import List, Optional, Any, Callable, cast
 from ..types import ClaimPool, Claim
 
 @dc.dataclass
@@ -38,7 +38,10 @@ class ListClaimPool[T](ClaimPool[T]):
         def t(self, v: T):
             self._p.resources[self._id] = v
 
-    async def lock(
+        def drop(self):
+            self._p.drop(self)
+
+    async def _lock_coro(
             self,
             claim_id: Optional[Any] = None,
             filter: Optional[Callable[[T, int], bool]] = None) -> Claim[T]:
@@ -55,7 +58,7 @@ class ListClaimPool[T](ClaimPool[T]):
             if self._waiters == 0:
                 self._ev.clear()
 
-    async def share(
+    async def _share_coro(
             self,
             claim_id: Optional[Any] = None,
             filter: Optional[Callable[[T, int], bool]] = None) -> Claim[T]:

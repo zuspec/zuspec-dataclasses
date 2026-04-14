@@ -26,6 +26,19 @@ if TYPE_CHECKING:
 # Context variable to track the current thread
 _current_thread: contextvars.ContextVar[Optional['Thread']] = contextvars.ContextVar('_current_thread', default=None)
 
+
+def _is_list_of_pairs(x) -> bool:
+    """Return True if *x* is a non-empty sequence where every element is a 2-element sequence.
+
+    Used to distinguish a list of ``(lhs, rhs)`` bind pairs from a single
+    ``(lhs, rhs)`` pair accidentally wrapped in an outer sequence.
+    """
+    if not isinstance(x, (tuple, list)):
+        return False
+    if len(x) == 0:
+        return False
+    return all(isinstance(item, (tuple, list)) and len(item) == 2 for item in x)
+
 class SignalDescriptor:
     """Property descriptor that intercepts signal access and routes to eval infrastructure."""
     def __init__(self, name: str, field_type: type, is_input: bool, default_value: int = 0, width: int = 32):
@@ -295,6 +308,10 @@ class ObjFactory(ObjFactoryP):
                         )
                     else:
                         fields.append((f.name, object, dc.field(default=None, metadata=metadata)))
+
+                # Handle port/export fields: Callable or Protocol annotation — bound later
+                elif field_kind in ('port', 'export'):
+                    fields.append((f.name, object, dc.field(default=None, metadata=f.metadata)))
 
                 # Handle fixed-size tuple fields
                 elif field_kind == 'tuple':
@@ -807,7 +824,8 @@ class ObjFactory(ObjFactoryP):
 
     @staticmethod
     def __comp_build__(comp, parent, name, timebase: Timebase, port_bindings: Dict[str, Any] = None):
-        factory = ObjFactory.inst()
+        from ..config import Config
+        factory = Config.inst().factory
         tracer = factory.tracer
         enable_signal_tracing = factory.enable_signal_tracing
         comp._impl = CompImplRT(
@@ -832,13 +850,16 @@ class ObjFactory(ObjFactoryP):
         if parent is None:
             comp._impl.set_timebase(timebase)
 
-        # Discover @process decorated methods
+        # Discover @process and @zdc.pipeline decorated methods
         # Note: @sync and @comb methods are discovered through datamodel, not here
         has_eval = False
         for attr_name in dir(type(comp)):
             attr = getattr(type(comp), attr_name, None)
             if isinstance(attr, ExecProc):
                 comp._impl.add_process(attr_name, attr)
+            elif callable(attr) and getattr(attr, '_zdc_async_pipeline', False):
+                # Wrap the bare async pipeline method in ExecProc for uniform handling
+                comp._impl.add_process(attr_name, ExecProc(attr))
             elif isinstance(attr, (ExecSync, ExecComb)):
                 has_eval = True
         
@@ -899,13 +920,17 @@ class ObjFactory(ObjFactoryP):
                 bindmap = bind_method()
 
             if bindmap is not None:
-                # Allow returning either a dict or an iterable of (lhs,rhs) pairs
+                # Allow returning either a dict or an iterable of (lhs,rhs) pairs.
+                # Use _is_list_of_pairs() to distinguish a list of 2-pair bindings
+                # from a single pair, handling the 2-element edge case correctly.
                 if not isinstance(bindmap, dict):
-                    if isinstance(bindmap, (tuple, list)) and len(bindmap) == 2 and not (
-                        isinstance(bindmap[0], (tuple, list)) and len(bindmap[0]) == 2
-                    ):
-                        bindmap = (bindmap,)
-                    bindmap = dict(bindmap)
+                    if _is_list_of_pairs(bindmap):
+                        bindmap = dict(bindmap)
+                    elif isinstance(bindmap, (tuple, list)) and len(bindmap) == 2:
+                        # Single pair returned as (lhs, rhs)
+                        bindmap = {bindmap[0]: bindmap[1]}
+                    else:
+                        bindmap = dict(bindmap)
                 ObjFactory.__apply_bindmap__(comp, bindmap)
 
     @staticmethod
