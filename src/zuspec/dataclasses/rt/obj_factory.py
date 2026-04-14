@@ -13,7 +13,7 @@ from .comp_impl_rt import CompImplRT
 from .timebase import Timebase
 from .memory_rt import MemoryRT
 from .address_space_rt import AddressSpaceRT
-from .regfile_rt import RegFileRT, RegRT
+from .regfile_rt import RegFileRT, RegRT, RegFileMirrorRT, MirrorRegRT
 from .channel_rt import ChannelRT, GetIFRT, PutIFRT
 from .lock_rt import LockRT
 from .event_rt import EventRT
@@ -397,12 +397,20 @@ class ObjFactory(ObjFactoryP):
                             default=None,
                             metadata=metadata)))
                     elif issubclass(field_type, RegFile):
-                        # RegFile fields will be initialized in __comp_build__
                         metadata = dict(f.metadata) if f.metadata else {}
-                        metadata['__regfile_type__'] = field_type
-                        fields.append((f.name, object, dc.field(
-                            default=None,
-                            metadata=metadata)))
+                        if field_kind == 'mirror':
+                            # Mirror RegFile — defer to __init_bundle_fields__; keep type
+                            # annotation intact so get_type_hints() can find DmaRegFile.
+                            # Do NOT add __regfile_type__ so __init_regfile_fields__ skips it.
+                            fields.append((f.name, field_type, dc.field(
+                                default=None,
+                                metadata=metadata)))
+                        else:
+                            # Physical RegFile — initialized by __init_regfile_fields__
+                            metadata['__regfile_type__'] = field_type
+                            fields.append((f.name, object, dc.field(
+                                default=None,
+                                metadata=metadata)))
                     elif not f.init:
                         fields.append((f.name, field_type, dc.field(
                             default=None,
@@ -481,11 +489,9 @@ class ObjFactory(ObjFactoryP):
                 try:
                     if is_top_level:
                         # Top-level call - we need to drive simulation
-                        # Start any registered processes (idempotent - won't restart if already started)
                         root = self
                         while root._impl.parent is not None:
                             root = root._impl.parent
-                        root._impl.start_all_processes(root)
                         timebase._running = True
                         
                         # Set up tracing context for top-level call
@@ -510,8 +516,13 @@ class ObjFactory(ObjFactoryP):
                             tracer.enter(_method_name, thread, enter_time_ns, args_dict)
                             token = _current_thread.set(thread)
                         
-                        # Create task for the actual method
+                        # Create the method task BEFORE starting background processes so
+                        # that setup methods (e.g. configure_channel) execute their body
+                        # before process coroutines (e.g. driver) first run.
                         method_task = asyncio.create_task(_original(self, *args, **kwargs))
+                        
+                        # Start any registered processes (idempotent - won't restart if already started)
+                        root._impl.start_all_processes(root)
                         
                         exc = None
                         ret = None
@@ -601,49 +612,169 @@ class ObjFactory(ObjFactoryP):
         event_rt = EventRT()
         return cast('Event', event_rt)
 
+    @staticmethod
+    def _build_regfile_rt(cls: Type[RegFile], base_offset: int = 0) -> "RegFileRT":
+        """Recursively build a RegFileRT from a RegFile class.
+
+        Handles three kinds of field declared inside a RegFile subclass:
+        - ``Reg[T]``            – individual register
+        - ``SomeRegFile``       – single nested RegFile sub-field
+        - ``List[SomeRegFile]`` with ``size=N`` metadata – array of sub-RegFiles
+
+        Returns a fully wired ``RegFileRT`` with attributes set so that
+        ``regfile_rt.field_name`` (and ``.field_name[i]`` for lists) works.
+        """
+        import typing as _typing
+        regfile_rt = RegFileRT()
+        offset = 0
+
+        # Resolve string annotations (from __future__ annotations) to real types.
+        try:
+            hints = _typing.get_type_hints(cls)
+        except Exception:
+            hints = {}
+
+        for reg_field in dc.fields(cls):
+            # Prefer the resolved type from get_type_hints; fall back to the
+            # raw field type (which may be a string under PEP 563).
+            reg_field_type = hints.get(reg_field.name, reg_field.type)
+            reg_origin = get_origin(reg_field_type)
+            reg_args   = get_args(reg_field_type)
+
+            # ── Case 1: Reg[T] ──────────────────────────────────────────────
+            if reg_origin is not None and reg_origin is Reg:
+                element_type = reg_args[0] if reg_args else int
+                width = 32
+                if hasattr(element_type, '__metadata__'):
+                    for item in element_type.__metadata__:
+                        if isinstance(item, Uptr):
+                            width = Uptr.get_platform_width()
+                            break
+                        if isinstance(item, (U, S)):
+                            width = item.width
+                            break
+                reg_rt = RegRT(_value=0, _width=width, _element_type=element_type)
+                regfile_rt.add_register(reg_field.name, reg_rt, offset)
+                setattr(regfile_rt, reg_field.name, reg_rt)
+                offset += 4
+                continue
+
+            # ── Case 2: List[SomeRegFile] with size=N metadata ──────────────
+            is_list = reg_origin in (list,) or (
+                reg_origin is not None and
+                getattr(reg_origin, '__origin__', None) is list
+            )
+            if not is_list:
+                # Python 3.9+: list[T] has origin == list; typing.List[T] also
+                try:
+                    is_list = (reg_origin is _typing.List or
+                               str(reg_origin) in ("<class 'list'>", "typing.List"))
+                except Exception:
+                    pass
+
+            if is_list and reg_args:
+                elem_cls = reg_args[0]
+                if inspect.isclass(elem_cls) and issubclass(elem_cls, RegFile):
+                    count = (reg_field.metadata or {}).get('size', 1)
+                    children = []
+                    for i in range(count):
+                        child_rt = ObjFactory._build_regfile_rt(elem_cls)
+                        regfile_rt.add_child(offset, child_rt)
+                        children.append(child_rt)
+                        offset += child_rt.size
+                    setattr(regfile_rt, reg_field.name, children)
+                    continue
+
+            # ── Case 3: Single nested RegFile sub-field ──────────────────────
+            if inspect.isclass(reg_field_type) and issubclass(reg_field_type, RegFile):
+                child_rt = ObjFactory._build_regfile_rt(reg_field_type)
+                regfile_rt.add_child(offset, child_rt)
+                setattr(regfile_rt, reg_field.name, child_rt)
+                offset += child_rt.size
+                continue
+
+        return regfile_rt
+
+    @staticmethod
+    def _build_regfile_mirror_rt(cls: Type[RegFile], base_offset: int = 0) -> "RegFileMirrorRT":
+        """Recursively build a RegFileMirrorRT that mirrors the structure of *cls*.
+
+        Walks the same field layout as ``_build_regfile_rt``.  Leaf registers
+        become ``MirrorRegRT`` nodes that route reads/writes through a
+        ``zdc.MemIF`` bus (injected later via ``RegFileMirrorRT.bind_bus()``).
+        Attribute names and list structure are set identically to the physical
+        ``RegFileRT`` so callers see the same access path.
+        """
+        import typing as _typing
+
+        mirror_rt = RegFileMirrorRT()
+        offset = base_offset
+
+        try:
+            hints = _typing.get_type_hints(cls)
+        except Exception:
+            hints = {}
+
+        for reg_field in dc.fields(cls):
+            reg_field_type = hints.get(reg_field.name, reg_field.type)
+            reg_origin = get_origin(reg_field_type)
+            reg_args   = get_args(reg_field_type)
+
+            # ── Case 1: Reg[T] ───────────────────────────────────────────────
+            if reg_origin is not None and reg_origin is Reg:
+                element_type = reg_args[0] if reg_args else int
+                width = 32
+                if hasattr(element_type, '__metadata__'):
+                    for item in element_type.__metadata__:
+                        if isinstance(item, Uptr):
+                            width = Uptr.get_platform_width()
+                            break
+                        if isinstance(item, (U, S)):
+                            width = item.width
+                            break
+                leaf = MirrorRegRT(_offset=offset, _width=width, _element_type=element_type)
+                mirror_rt._add_leaf(leaf)
+                setattr(mirror_rt, reg_field.name, leaf)
+                offset += 4
+                continue
+
+            # ── Case 2: List[SomeRegFile] ────────────────────────────────────
+            is_list = reg_origin in (list,)
+            if not is_list:
+                try:
+                    is_list = (reg_origin is _typing.List or
+                               str(reg_origin) in ("<class 'list'>", "typing.List"))
+                except Exception:
+                    pass
+
+            if is_list and reg_args:
+                elem_cls = reg_args[0]
+                if inspect.isclass(elem_cls) and issubclass(elem_cls, RegFile):
+                    count = (reg_field.metadata or {}).get('size', 1)
+                    children = []
+                    for _ in range(count):
+                        child_mirror = ObjFactory._build_regfile_mirror_rt(elem_cls, offset)
+                        mirror_rt._leaves.extend(child_mirror._leaves)
+                        children.append(child_mirror)
+                        offset += child_mirror.size
+                    setattr(mirror_rt, reg_field.name, children)
+                    mirror_rt._size = max(mirror_rt._size, offset - base_offset)
+                    continue
+
+            # ── Case 3: Single nested RegFile ────────────────────────────────
+            if inspect.isclass(reg_field_type) and issubclass(reg_field_type, RegFile):
+                child_mirror = ObjFactory._build_regfile_mirror_rt(reg_field_type, offset)
+                mirror_rt._leaves.extend(child_mirror._leaves)
+                setattr(mirror_rt, reg_field.name, child_mirror)
+                offset += child_mirror.size
+                mirror_rt._size = max(mirror_rt._size, offset - base_offset)
+                continue
+
+        return mirror_rt
+
     def mkRegFile(self, cls : Type[RegFile], **kwargs) -> RegFile:
         """Create a standalone RegFile instance."""
-        # Create the runtime regfile instance
-        regfile_rt = RegFileRT()
-        
-        # Iterate through the RegFile's fields to create individual registers
-        offset = 0
-        for reg_field in dc.fields(cls):
-            reg_field_type = reg_field.type
-            reg_origin = get_origin(reg_field_type)
-            
-            # Check if this is a Reg field
-            if reg_origin is not None and reg_origin is Reg:
-                # Get the element type from the generic parameter
-                args = get_args(reg_field_type)
-                element_type = args[0] if args else int
-                
-                # Extract width from the element type
-                width = 32  # default
-                if hasattr(element_type, '__metadata__'):
-                    metadata = element_type.__metadata__
-                    if metadata:
-                        for item in metadata:
-                            if isinstance(item, Uptr):
-                                width = Uptr.get_platform_width()
-                                break
-                            if isinstance(item, (U, S)):
-                                width = item.width
-                                break
-                
-                # Create the runtime register instance
-                reg_rt = RegRT(_value=0, _width=width, _element_type=element_type)
-                
-                # Add register to regfile
-                regfile_rt.add_register(reg_field.name, reg_rt, offset)
-                
-                # Create a property-like object that allows access to the register
-                setattr(regfile_rt, reg_field.name, reg_rt)
-                
-                # Advance offset (assuming 32-bit registers aligned on 4-byte boundaries)
-                offset += 4
-        
-        return cast(RegFile, regfile_rt)
+        return cast(RegFile, ObjFactory._build_regfile_rt(cls))
 
     @staticmethod 
     def __comp_init__(comp, *args, **kwargs):
@@ -871,47 +1002,7 @@ class ObjFactory(ObjFactoryP):
             # Check if this field has RegFile type info stored in metadata
             if f.metadata and '__regfile_type__' in f.metadata:
                 field_type = f.metadata['__regfile_type__']
-                
-                # Create the runtime regfile instance
-                regfile_rt = RegFileRT()
-                
-                # Iterate through the RegFile's fields to create individual registers
-                offset = 0
-                for reg_field in dc.fields(field_type):
-                    reg_field_type = reg_field.type
-                    reg_origin = get_origin(reg_field_type)
-                    
-                    # Check if this is a Reg field
-                    if reg_origin is not None and reg_origin is Reg:
-                        # Get the element type from the generic parameter
-                        args = get_args(reg_field_type)
-                        element_type = args[0] if args else int
-                        
-                        # Extract width from the element type
-                        width = 32  # default
-                        if hasattr(element_type, '__metadata__'):
-                            metadata = element_type.__metadata__
-                            if metadata:
-                                for item in metadata:
-                                    if isinstance(item, Uptr):
-                                        width = Uptr.get_platform_width()
-                                        break
-                                    if isinstance(item, (U, S)):
-                                        width = item.width
-                                        break
-                        
-                        # Create the runtime register instance
-                        reg_rt = RegRT(_value=0, _width=width, _element_type=element_type)
-                        
-                        # Add register to regfile
-                        regfile_rt.add_register(reg_field.name, reg_rt, offset)
-                        
-                        # Create a property-like object that allows access to the register
-                        setattr(regfile_rt, reg_field.name, reg_rt)
-                        
-                        # Advance offset (assuming 32-bit registers aligned on 4-byte boundaries)
-                        offset += 4
-                
+                regfile_rt = ObjFactory._build_regfile_rt(field_type)
                 # Set the field value to the runtime instance
                 setattr(comp, f.name, regfile_rt)
 
@@ -963,13 +1054,34 @@ class ObjFactory(ObjFactoryP):
 
     @staticmethod
     def __init_bundle_fields__(comp):
-        """Initialize bundle/mirror/monitor fields by creating BundleProxy objects."""
+        """Initialize bundle/mirror/monitor fields by creating BundleProxy objects.
+
+        Special case: if the field type is a RegFile subclass and kind is
+        'mirror', build a RegFileMirrorRT instead of a BundleProxy.  The mirror
+        will be connected to a zdc.MemIF bus later via __apply_bindmap__.
+        """
+        import typing as _typing
+        # Resolve string annotations (PEP 563 / from __future__ import annotations)
+        try:
+            _hints = _typing.get_type_hints(type(comp))
+        except Exception:
+            _hints = {}
+
         for f in dc.fields(comp):
             kind = f.metadata.get('kind') if f.metadata else None
             if kind not in ('bundle', 'mirror', 'monitor'):
                 continue
 
-            bundle_t = f.type
+            # Prefer the resolved type; fall back to the raw field type.
+            bundle_t = _hints.get(f.name, f.type)
+
+            # ── RegFile mirror ────────────────────────────────────────────────
+            if kind == 'mirror' and inspect.isclass(bundle_t) and issubclass(bundle_t, RegFile):
+                mirror_rt = ObjFactory._build_regfile_mirror_rt(bundle_t)
+                setattr(comp, f.name, mirror_rt)
+                continue
+
+            # ── Bundle / mirror / monitor (original path) ─────────────────────
             is_mirror = (kind == 'mirror')
 
             const_fields = {}
@@ -1091,6 +1203,16 @@ class ObjFactory(ObjFactoryP):
         for target, source in ordered_entries:
             # Get source value by traversing from comp
             source_value = ObjFactory.__resolve_bind_path__(comp, source)
+
+            # RegFileMirrorRT binding: inject the MemIF bus into the mirror
+            if isinstance(target, BindPath):
+                try:
+                    target_value = ObjFactory.__resolve_bind_path__(comp, target)
+                except AttributeError:
+                    target_value = None
+                if isinstance(target_value, RegFileMirrorRT):
+                    target_value.bind_bus(source_value)
+                    continue
 
             # Bundle-to-bundle binding: connect signals based on direction
             if isinstance(target, BindPath) and isinstance(source, BindPath):
@@ -1317,7 +1439,12 @@ class ObjFactory(ObjFactoryP):
         
         If path_obj is already a value (not a BindPath), return it.
         Otherwise, traverse the path from comp to find the value.
+        A BindProxy used as a source (e.g. ``{self.exp: self}``) resolves to
+        the underlying component it wraps.
         """
+        if isinstance(path_obj, BindProxy):
+            # "self" used as a bind source — refers to the component itself
+            return object.__getattribute__(path_obj, '_comp')
         if isinstance(path_obj, BindPath):
             obj = comp
             for attr_name in path_obj._path:

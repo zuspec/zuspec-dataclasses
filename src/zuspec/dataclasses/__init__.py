@@ -43,6 +43,7 @@ from . import ir
 from . import profiles
 from .data_model_factory import DataModelFactory
 from .rt.edge import posedge, negedge, edge
+from .rt.gather import gather
 from .rt.scenario_runner import ScenarioRunner, run_action, run_action_sync, DeadlockError
 from .rt.resource_rt import get_resource_fields, acquire_resources, release_resources, make_resource
 from .rt.binding_solver import BindingSolver

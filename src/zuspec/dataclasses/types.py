@@ -279,6 +279,11 @@ class AnnotationFileSet(object):
 
 class PackedStruct(TypeBase,SupportsInt):
 
+    def __new__(cls, **kwargs):
+        """Create a PackedStruct instance directly (bypasses TypeBase.__new__)."""
+        instance = object.__new__(cls)
+        return instance
+
     def __int__(self) -> int:
         return -1
 
@@ -286,6 +291,10 @@ class PackedStruct(TypeBase,SupportsInt):
 
 
 class Struct(TypeBase):
+
+    def __new__(cls, **kwargs):
+        """Create a Struct instance directly (bypasses TypeBase.__new__)."""
+        return object.__new__(cls)
 
     def pre_solve(self):
         pass
@@ -700,9 +709,31 @@ bv = Annotated[int, U(-1)]
 class RegFile(TypeBase):
     regwidth : Optional[int] = None
 
-    async def when(self, regs : List[Reg], cond: Callable[[List],bool]):
-        """Performs a multi-register conditioned wait. A list of register 
-        values is passed to the callable
+    async def wait(self, regs : List[Reg], cond: Callable[[List],bool]) -> list:
+        """Suspend until *cond(values)* is true for the given list of registers.
+
+        Returns the list of values that satisfied the condition so the caller
+        can use them directly without a second ``read_all`` call.
+        """
+        ...
+
+    async def find(self, regs : List[Reg], cond: Callable) -> int:
+        """Return the index of the first register in *regs* satisfying *cond*.
+
+        Reads each register in order; returns the 0-based index of the first
+        one for which ``cond(value)`` is true, or -1 if none match.
+        """
+        ...
+
+    async def read_all(self, regs : List[Reg]) -> list:
+        """Read all registers in *regs* and return their values as a list.
+
+        Enables bulk-read followed by standard Python processing::
+
+            ctrls = await self.regs.read_all(
+                [self.regs.ch[i].ctrl for i in range(N_CHAN)]
+            )
+            active_idx = next((i for i, v in enumerate(ctrls) if v.en), -1)
         """
         ...
 

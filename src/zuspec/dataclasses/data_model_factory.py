@@ -1582,9 +1582,69 @@ class DataModelFactory(object):
             return ExprTuple(
                 elts=[self._convert_ast_expr(elt, scope) for elt in node.elts]
             )
-        
+        elif isinstance(node, ast.ListComp):
+            from .ir.expr_phase2 import ExprListComp
+            return ExprListComp(
+                elt=self._convert_ast_expr(node.elt, scope),
+                generators=[self._convert_comprehension(g, scope) for g in node.generators]
+            )
+        elif isinstance(node, ast.GeneratorExp):
+            from .ir.expr_phase2 import ExprGeneratorExp
+            return ExprGeneratorExp(
+                elt=self._convert_ast_expr(node.elt, scope),
+                generators=[self._convert_comprehension(g, scope) for g in node.generators]
+            )
+        elif isinstance(node, ast.Lambda):
+            from .ir.expr_phase2 import ExprLambda as ExprLambdaPhase2
+            arg_names = [a.arg for a in node.args.args]
+            # Extend scope with lambda parameters so the body can reference them
+            lambda_scope = scope
+            if scope is not None:
+                lambda_scope = ConversionScope(
+                    component=scope.component,
+                    field_indices=scope.field_indices,
+                    method_params=scope.method_params,
+                    local_vars=scope.local_vars | set(arg_names),
+                )
+            return ExprLambdaPhase2(
+                arg_names=arg_names,
+                body=self._convert_ast_expr(node.body, lambda_scope)
+            )
+
         # Fallback: store as constant with the AST node type
         return ExprConstant(value=f"<{type(node).__name__}>")
+
+    def _convert_comprehension(self, node: ast.comprehension, scope):
+        """Convert an ``ast.comprehension`` node to a ``Comprehension`` IR node.
+
+        The comprehension's target variable(s) are added to the scope so that
+        the iterator expression and filter conditions can reference them.
+        """
+        from .ir.expr_phase2 import Comprehension
+        # Collect names introduced by this comprehension's target so they are
+        # visible inside ``ifs`` and in subsequent generators.
+        target_names: list[str] = []
+        if isinstance(node.target, ast.Name):
+            target_names = [node.target.id]
+        elif isinstance(node.target, ast.Tuple):
+            target_names = [
+                elt.id for elt in node.target.elts if isinstance(elt, ast.Name)
+            ]
+
+        inner_scope = scope
+        if scope is not None and target_names:
+            inner_scope = ConversionScope(
+                component=scope.component,
+                field_indices=scope.field_indices,
+                method_params=scope.method_params,
+                local_vars=scope.local_vars | set(target_names),
+            )
+        return Comprehension(
+            target=self._convert_ast_expr(node.target, inner_scope),
+            iter=self._convert_ast_expr(node.iter, scope),
+            ifs=[self._convert_ast_expr(f, inner_scope) for f in node.ifs],
+            is_async=bool(node.is_async),
+        )
 
     def _convert_ast_pattern(self, node: ast.pattern, scope: ConversionScope = None):
         """Convert AST match pattern to data model Pattern."""

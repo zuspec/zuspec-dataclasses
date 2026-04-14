@@ -59,7 +59,13 @@ class ExprIfExp(Expr):
 
 @dc.dataclass(kw_only=True)
 class ExprLambda(Expr):
-    args: 'Arguments' = dc.field()
+    """Lambda expression captured for synthesis.
+
+    ``arg_names`` holds the positional parameter names as plain strings.
+    ``body`` holds the fully converted IR expression for the lambda body,
+    allowing downstream synthesis passes to inspect and lower it.
+    """
+    arg_names: list = dc.field(default_factory=list)
     body: Expr = dc.field()
 
 @dc.dataclass(kw_only=True)
