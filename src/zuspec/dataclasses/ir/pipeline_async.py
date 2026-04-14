@@ -17,6 +17,11 @@ class IrPipeline:
     clock_lambda: Any            # AST node of the clock lambda, or None
     reset_lambda: Any            # AST node of the reset lambda, or None
     stages: List["IrStage"] = dc.field(default_factory=list)
+    clock_field: Optional[str] = None         # clock port name (legacy clock= form)
+    reset_field: Optional[str] = None         # reset port name
+    clock_domain_field: Optional[str] = None  # ClockDomain field name (new form)
+    ingress_ops: List["IrIngressOp"] = dc.field(default_factory=list)
+    egress_ops: List["IrEgressOp"] = dc.field(default_factory=list)
 
 
 @dc.dataclass
@@ -35,6 +40,46 @@ class IrHazardOp:
     resource_expr: Any           # AST expression for ``resource[addr]``
     mode: str = "write"          # "read" or "write"
     value_expr: Any = None       # only for ``op == "write"``
+    result_var: Optional[str] = None   # variable receiving the result (for block/acquire)
+    result_width: int = 32             # bit-width of result_var
+
+
+@dc.dataclass
+class IrIngressOp:
+    """``tok = await self.PORT.get()`` — pipeline ingress via :class:`InPort`.
+
+    Produced when the frontend pass detects ``await self.FIELD.get()`` where
+    ``FIELD`` is an :class:`~zuspec.dataclasses.method_port.InPort`.
+
+    Attributes:
+        port_name:  Field name of the ``InPort`` on the component class.
+        result_var: Local variable name that receives the token value.
+        stage_name: Name of the enclosing stage (or empty if before first stage).
+        width:      Bit-width of the ingress datum (for RTL port sizing).
+    """
+    port_name: str
+    result_var: Optional[str] = None
+    stage_name: str = ""
+    width: int = 32
+
+
+@dc.dataclass
+class IrEgressOp:
+    """``await self.PORT.put(val)`` — pipeline egress via :class:`OutPort`.
+
+    Produced when the frontend pass detects ``await self.FIELD.put(expr)``
+    where ``FIELD`` is an :class:`~zuspec.dataclasses.method_port.OutPort`.
+
+    Attributes:
+        port_name:  Field name of the ``OutPort`` on the component class.
+        value_expr: AST expression for the value being emitted.
+        stage_name: Name of the enclosing stage.
+        width:      Bit-width of the egress datum (for RTL port sizing).
+    """
+    port_name: str
+    value_expr: Any = None
+    stage_name: str = ""
+    width: int = 32
 
 
 @dc.dataclass

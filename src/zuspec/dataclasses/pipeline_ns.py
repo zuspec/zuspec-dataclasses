@@ -176,25 +176,32 @@ class _PipelineNamespace:
         self,
         func=None,
         *,
-        clock=None,   # lambda s: s.clk_domain — ClockDomain
-        reset=None,   # lambda s: s.rst_domain — ResetDomain
+        clock=None,         # lambda s: s.clk — bit field (legacy form)
+        reset=None,         # lambda s: s.rst_n — ResetDomain (legacy form)
+        clock_domain=None,  # lambda s: s.cd — ClockDomain field (new form)
     ):
         """Decorate an async pipeline method.
 
         Supports both ``@zdc.pipeline`` (bare) and
-        ``@zdc.pipeline(clock=..., reset=...)`` (parametric) forms.
+        ``@zdc.pipeline(clock=..., reset=...)`` / ``@zdc.pipeline(clock_domain=...)``
+        (parametric) forms.
 
         Args:
-            func:   The async method being decorated (bare form).
-            clock:  Lambda ``lambda self: self.clk`` returning a
-                    ``ClockDomain`` instance.
-            reset:  Lambda ``lambda self: self.rst_n`` returning a
-                    ``ResetDomain`` instance (optional).
+            func:         The async method being decorated (bare form).
+            clock:        Lambda ``lambda self: self.clk`` returning a clock
+                          bit field.  Legacy form; prefer ``clock_domain``.
+            reset:        Lambda ``lambda self: self.rst_n`` returning a
+                          ``ResetDomain`` instance (optional).
+            clock_domain: Lambda ``lambda self: self.cd`` returning a
+                          :class:`~zuspec.dataclasses.domain.ClockDomain`
+                          field instance.  Takes precedence over ``clock=``
+                          when both are provided.
         """
         def decorator(method):
             method._zdc_async_pipeline = True
             method._zdc_pipeline_clock = clock
             method._zdc_pipeline_reset = reset
+            method._zdc_pipeline_clock_domain = clock_domain
             return method
 
         if func is not None:

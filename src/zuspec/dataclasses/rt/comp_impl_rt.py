@@ -624,10 +624,21 @@ class CompImplRT(object):
         """Start all registered processes for this component."""
         for name, proc in self._processes:
             if getattr(proc.method, '_zdc_async_pipeline', False):
-                # Async pipeline — wrap in the pipeline runtime loop
+                # Async pipeline — wrap in the pipeline runtime loop.
+                # Resolve clock domain: prefer new clock_domain= form, fall back to clock=.
+                cd_lambda = getattr(proc.method, '_zdc_pipeline_clock_domain', None)
                 domain_lambda = getattr(proc.method, '_zdc_pipeline_clock', None)
-                domain = domain_lambda(comp) if domain_lambda else None
                 tb = self.timebase()
+                if cd_lambda is not None:
+                    # New style: clock_domain= gives us a ClockDomain field object.
+                    cd = cd_lambda(comp)
+                    # Wire the timebase into the ClockDomain so wait_cycle() works.
+                    cd._timebase = tb
+                    cd._rt_domain = domain_lambda(comp) if domain_lambda else None
+                    domain = cd._rt_domain
+                else:
+                    cd = None
+                    domain = domain_lambda(comp) if domain_lambda else None
                 from .pipeline_rt import PipelineRuntime
                 rt = PipelineRuntime(comp, domain, tb)
                 # Expose trace on comp as <method_name>_trace

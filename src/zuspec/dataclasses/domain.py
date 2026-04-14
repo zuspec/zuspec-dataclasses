@@ -27,6 +27,7 @@ Typical usage::
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses as dc
 from typing import Any, Callable, Optional
 
@@ -47,6 +48,37 @@ class ClockDomain:
     """
     period: Optional[Any] = None   # Time | None; Any avoids circular import with types.py
     name:   Optional[str] = None
+
+    # Runtime hook — set by the pipeline runtime to delegate wait_cycle()
+    # to the actual timebase.  None at Level 0 (functional simulation).
+    _timebase: Any = dc.field(default=None, init=False, repr=False, compare=False)
+    _rt_domain: Any = dc.field(default=None, init=False, repr=False, compare=False)
+
+    async def wait_cycle(self, n: int = 1) -> None:
+        """Wait *n* clock cycles.
+
+        At Level 0 (functional/NOP): returns immediately.
+        At Level 1 (behavioral timing): delegates to the runtime timebase so
+        actual simulated time passes.
+
+        Args:
+            n: Number of cycles.  Must be >= 1.
+        """
+        if self._timebase is not None and self._rt_domain is not None:
+            await self._timebase.wait_cycles(n, self._rt_domain)
+
+    async def wait_cycles(self, n: int) -> None:
+        """Alias for :meth:`wait_cycle` with explicit count."""
+        await self.wait_cycle(n)
+
+    @property
+    def period_ns(self) -> Optional[float]:
+        """Clock period in nanoseconds, or ``None`` if no period is set."""
+        if self.period is None:
+            return None
+        if hasattr(self.period, "as_ns"):
+            return float(self.period.as_ns())
+        return float(self.period)
 
     @staticmethod
     def from_port(port_lambda: Callable) -> "ClockDomain":
@@ -248,3 +280,91 @@ def reset_bind(domain: ResetDomain, port: Any, *, active_low: bool = True) -> Re
         level differs from the domain declaration.
     """
     return ResetBind(domain=domain, port=port, active_low=active_low)
+
+
+# ---------------------------------------------------------------------------
+# clock_domain() — field-level factory for pipeline-attached clock domains
+# ---------------------------------------------------------------------------
+
+class _ClockDomainField:
+    """Descriptor returned by :func:`clock_domain`.
+
+    Lazily creates a :class:`ClockDomain` instance per component instance,
+    storing the clock/reset lambdas for use by the pipeline runtime.
+
+    Markers:
+        _zdc_clock_domain_field: True — recognised by the pipeline runtime
+            and the synthesis pass.
+    """
+
+    _zdc_clock_domain_field: bool = True
+
+    def __init__(
+        self,
+        clock: Optional[Callable] = None,
+        reset: Optional[Callable] = None,
+        period: Optional[Any] = None,
+    ) -> None:
+        self._clock = clock
+        self._reset = reset
+        self._period = period
+        self._attr_name: str = ""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._attr_name = name
+
+    def __get__(self, obj, objtype=None) -> "ClockDomain | _ClockDomainField":
+        if obj is None:
+            return self
+        inst_key = f"_cdf_inst_{self._attr_name}"
+        cd = obj.__dict__.get(inst_key)
+        if cd is None or not isinstance(cd, ClockDomain):
+            cd = ClockDomain(period=self._period)
+            obj.__dict__[inst_key] = cd
+        return cd
+
+    def __set__(self, obj, value: "ClockDomain") -> None:
+        # When @zdc.dataclass __init__ sets the field to its default (the
+        # descriptor itself), ignore — __get__ creates the real ClockDomain lazily.
+        if isinstance(value, _ClockDomainField):
+            return
+        inst_key = f"_cdf_inst_{self._attr_name}"
+        obj.__dict__[inst_key] = value
+
+    @property
+    def clock_lambda(self) -> Optional[Callable]:
+        return self._clock
+
+    @property
+    def reset_lambda(self) -> Optional[Callable]:
+        return self._reset
+
+
+def clock_domain(
+    *,
+    clock: Optional[Callable] = None,
+    reset: Optional[Callable] = None,
+    period: Optional[Any] = None,
+) -> "_ClockDomainField":
+    """Declare a :class:`ClockDomain` field on a component for use by
+    ``@zdc.pipeline(clock_domain=...)``.
+
+    Analogous to ``zdc.input()`` / ``zdc.output()`` for clock domains.
+
+    Args:
+        clock: Lambda ``lambda self: self.clk`` returning the clock bit field.
+        reset: Lambda ``lambda self: self.rst_n`` returning the reset field
+               (optional).
+        period: Optional clock period hint for future timing analysis.
+
+    Example::
+
+        @zdc.dataclass
+        class Cpu(zdc.Component):
+            clk: zdc.bit = zdc.input()
+            cd:  zdc.ClockDomain = zdc.clock_domain(clock=lambda s: s.clk)
+
+            @zdc.pipeline(clock_domain=lambda s: s.cd)
+            async def _fetch(self): ...
+    """
+    return _ClockDomainField(clock=clock, reset=reset, period=period)

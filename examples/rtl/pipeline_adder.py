@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """3-stage integer adder pipeline behavioral model.
 
-Demonstrates the basic ``@zdc.pipeline`` API with no hazards:
+Demonstrates the new ``@zdc.pipeline`` API with explicit ingress/egress ports:
 
-  FETCH   — read operands from input ports
+  FETCH   — read operands via ``in_data.get()``
   COMPUTE — add them together
-  WRITEBACK — post result to output port
+  WRITEBACK — post result via ``out_data.put()``
 
-Run::
+Run (behavioral simulation)::
 
     python3 pipeline_adder.py
 
-Expected output: a Gantt-style pipeline trace showing each token's stage
-enter/exit cycles and the computed results.
+Run (RTL synthesis to Verilog)::
+
+    python3 -c "
+    from pipeline_adder import Adder
+    from zuspec.synth import synthesize_pipeline
+    print(synthesize_pipeline(Adder))
+    "
 """
 
 import asyncio
@@ -22,46 +27,49 @@ from zuspec.dataclasses.types import Time, TimeUnit
 
 @zdc.dataclass
 class Adder(zdc.Component):
-    """3-stage pipelined integer adder."""
+    """3-stage pipelined integer adder with explicit InPort/OutPort."""
 
-    clock: zdc.bit = zdc.input()
-    reset: zdc.bit = zdc.input()
+    clk: zdc.ClockDomain = zdc.clock_domain()
 
-    a_in:    zdc.u32 = zdc.input()
-    b_in:    zdc.u32 = zdc.input()
-    sum_out: zdc.u32 = zdc.output()
+    a_in:    zdc.InPort[zdc.u32]  = zdc.in_port()
+    b_in:    zdc.InPort[zdc.u32]  = zdc.in_port()
+    sum_out: zdc.OutPort[zdc.u32] = zdc.out_port()
 
-    @zdc.pipeline(clock=lambda s: s.clock, reset=lambda s: s.reset)
+    @zdc.pipeline(clock_domain=lambda s: s.clk)
     async def _pipeline(self):
+        a, b = await self.a_in.get(), await self.b_in.get()
+
         async with zdc.pipeline.stage() as FETCH:
-            a = self.a_in
-            b = self.b_in
+            pass  # operands already captured
 
         async with zdc.pipeline.stage() as COMPUTE:
             result = a + b
 
         async with zdc.pipeline.stage() as WRITEBACK:
-            self.sum_out = result
+            await self.sum_out.put(result)
 
 
 if __name__ == "__main__":
-    print("3-Stage Adder Pipeline")
+    print("3-Stage Adder Pipeline (InPort/OutPort API)")
     print("=" * 50)
 
-    p = Adder()
+    adder = Adder()
 
-    def on_event(tok, ev, **kw):
-        if ev == "stage_enter":
-            stage = kw.get("stage", "?")
-            print(f"  tok={tok.token_id}  stage={stage}  enter_cycle={tok.enter_cycles.get(stage, '?')}")
+    async def driver():
+        for i in range(10):
+            await adder.a_in.drive(i)
+            await adder.b_in.drive(i * 2)
+
+    async def collector():
+        for _ in range(10):
+            val = await adder.sum_out.collect()
+            print(f"  sum_out = {val}")
 
     async def run():
-        task = asyncio.create_task(p.wait(Time(TimeUnit.NS, 30)))
-        await asyncio.sleep(0)
-        p._pipeline_trace.add_observer(on_event)
-        await task
+        await asyncio.gather(
+            adder.wait(Time(TimeUnit.NS, 50)),
+            driver(),
+            collector(),
+        )
 
     asyncio.run(run())
-    print()
-    print("Pipeline trace:")
-    p._pipeline_trace.print_trace()

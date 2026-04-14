@@ -46,6 +46,19 @@ class TestPipelineDecorator:
         assert run._zdc_pipeline_clock is None
         assert run._zdc_pipeline_reset is None
 
+    def test_pipeline_decorator_with_clock_domain(self):
+        """@zdc.pipeline(clock_domain=...) stores the lambda on the method."""
+        cd = lambda s: s.clk
+        @zdc.pipeline(clock_domain=cd)
+        async def run(self): ...
+        assert run._zdc_pipeline_clock_domain is cd
+
+    def test_pipeline_decorator_clock_domain_default_none(self):
+        """When no clock_domain given, _zdc_pipeline_clock_domain is None."""
+        @zdc.pipeline
+        async def run(self): ...
+        assert getattr(run, '_zdc_pipeline_clock_domain', None) is None
+
 
 class TestStageHandle:
     def test_stage_returns_handle(self):

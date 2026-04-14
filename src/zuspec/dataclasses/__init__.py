@@ -134,11 +134,13 @@ from .domain import (
     ResetDomain, SoftwareResetDomain, HardwareResetDomain,
     ClockPort, ClockBind, ResetBind,
     clock_port, clock_bind, reset_bind,
+    clock_domain,
 )
 from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
 from .pipeline_ns import pipeline, _StageHandle, _Snap
 from .pipeline_locks import HazardLock, QueueLock, BypassLock, RenameLock
 from .pipeline_resource import PipelineResource
+from .method_port import InPort, OutPort, in_port, out_port
 from typing import Type
 
 __all__ = [
@@ -156,6 +158,10 @@ __all__ = [
     'pipeline', '_StageHandle', '_Snap',
     'HazardLock', 'QueueLock', 'BypassLock', 'RenameLock',
     'PipelineResource',
+    # Method ports
+    'InPort', 'OutPort', 'in_port', 'out_port',
+    # Clock domain field factory
+    'clock_domain',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
     # From errors
