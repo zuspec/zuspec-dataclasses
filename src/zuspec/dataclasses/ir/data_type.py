@@ -98,6 +98,9 @@ class DataTypeComponent(DataTypeClass):
     pipeline_root_ir: Optional[Any] = dc.field(default=None)   # PipelineRootIR | None
     stage_method_irs: List[Any]     = dc.field(default_factory=list)  # List[StageMethodIR]
     sync_method_irs:  List[Any]     = dc.field(default_factory=list)  # List[SyncMethodIR]
+    # Clock/reset domain (None → inherit from parent at elaboration time)
+    clock_domain:     Optional[Any] = dc.field(default=None)   # ClockDomain | None
+    reset_domain:     Optional[Any] = dc.field(default=None)   # ResetDomain | None
 
 
 @dc.dataclass(kw_only=True)

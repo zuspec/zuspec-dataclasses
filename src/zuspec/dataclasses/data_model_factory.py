@@ -78,6 +78,9 @@ class ConversionScope:
     comment_map: Optional[dict] = None
     # Leading comment for the current method (set by _extract_method_body)
     method_comment: Optional[str] = None
+    # Source location info for loc propagation onto IR Stmt* nodes
+    src_file: Optional[str] = None      # absolute path of the Python source file
+    src_start_lineno: int = 0           # 1-indexed line of the class start in the file
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -749,7 +752,11 @@ class DataModelFactory(object):
         # Build pipeline IRs for new-style @zdc.pipeline / @zdc.stage components
         pipeline_root_ir, stage_method_irs, sync_method_irs = \
             self._build_pipeline_irs(t)
-        
+
+        # Extract class-level ClockDomain / ResetDomain declarations.
+        # These are non-field class attributes (not annotated dataclass fields).
+        clock_domain, reset_domain = self._extract_component_domains(t)
+
         dm = DataTypeComponent(
             super=super_dt,
             fields=fields,
@@ -761,8 +768,47 @@ class DataModelFactory(object):
             pipeline_root_ir=pipeline_root_ir,
             stage_method_irs=stage_method_irs,
             sync_method_irs=sync_method_irs,
+            clock_domain=clock_domain,
+            reset_domain=reset_domain,
         )
         return dm
+
+    def _extract_component_domains(self, t: Type):
+        """Scan *t*'s MRO for class-level ClockDomain / ResetDomain attributes.
+
+        Returns ``(clock_domain, reset_domain)`` where each is the first
+        concrete domain object found walking up the MRO (most-derived wins),
+        or ``None`` if no domain is declared on this component or any ancestor
+        up to (but not including) :class:`~zuspec.dataclasses.types.Component`.
+
+        The search deliberately stops at ``Component`` so that framework-level
+        base classes do not accidentally inject domains into user types.
+        """
+        from .domain import ClockDomain, ResetDomain
+
+        clock_domain = None
+        reset_domain = None
+
+        for klass in t.__mro__:
+            if klass is Component:
+                break
+            for attr_name, attr_val in klass.__dict__.items():
+                # Skip annotated dataclass fields — those are signal-level ports
+                # and are not domain declarations.
+                if dc.is_dataclass(klass):
+                    dc_field_names = {f.name for f in dc.fields(klass)}
+                    if attr_name in dc_field_names:
+                        continue
+
+                if clock_domain is None and isinstance(attr_val, ClockDomain):
+                    clock_domain = attr_val
+                if reset_domain is None and isinstance(attr_val, ResetDomain):
+                    reset_domain = attr_val
+
+            if clock_domain is not None and reset_domain is not None:
+                break
+
+        return clock_domain, reset_domain
 
     def _extract_fields(self, t : Type) -> list:
         """Extract fields from a dataclass type."""
@@ -1033,6 +1079,7 @@ class DataModelFactory(object):
                     size=array_size,
                     max_size=max_array_size,
                     is_variable_size=is_variable_size,
+                    reset_value=field_metadata.get("reset"),
                     loc=field_loc,
                     pragmas=field_pragmas.get(f.name, {}),
                 )
@@ -1049,6 +1096,7 @@ class DataModelFactory(object):
                     size=array_size,
                     max_size=max_array_size,
                     is_variable_size=is_variable_size,
+                    reset_value=field_metadata.get("reset"),
                     loc=field_loc,
                     pragmas=field_pragmas.get(f.name, {}),
                 )
@@ -1744,7 +1792,7 @@ class DataModelFactory(object):
         
         # Extract method body as AST
         scope = ConversionScope(
-            component=None,
+            component=cls,
             field_indices=field_indices,
             method_params=set(),
             local_vars=set()
@@ -1768,7 +1816,8 @@ class DataModelFactory(object):
                 "reset": reset_expr,
                 "reset_async": exec_sync.reset_async,
                 "reset_active_low": exec_sync.reset_active_low,
-                "method": exec_sync.method
+                "method": exec_sync.method,
+                "domain": exec_sync.domain,
             }
         )
         
@@ -1782,7 +1831,7 @@ class DataModelFactory(object):
         
         # Extract method body
         scope = ConversionScope(
-            component=None,
+            component=cls,
             field_indices=field_indices,
             method_params=set(),
             local_vars=set()
@@ -1981,6 +2030,15 @@ class DataModelFactory(object):
                 from .pragma import scan_pragmas as _scan_pragmas, scan_line_comments as _scan_line_comments
                 scope.pragma_map = _scan_pragmas(source)
                 scope.comment_map = _scan_line_comments(source)
+
+            # Populate source location info on scope once (for loc propagation onto Stmt* nodes).
+            if scope is not None and scope.src_file is None:
+                try:
+                    _, _start = inspect.getsourcelines(cls)
+                    scope.src_file = inspect.getsourcefile(cls)
+                    scope.src_start_lineno = _start
+                except (OSError, TypeError):
+                    pass
             
             # Find the class definition - need to handle nested classes in functions
             # Use ast.walk() but filter to the right class name
@@ -2043,11 +2101,29 @@ class DataModelFactory(object):
 
     def _convert_ast_body(self, body : list, scope: ConversionScope = None) -> list:
         """Convert AST statement list to data model statements."""
+        from .ir.base import Loc, Base
         stmts = []
         for node in body:
             stmt = self._convert_ast_stmt(node, scope)
             if stmt is None:
                 continue
+            # Propagate source location onto each produced IR Stmt node.
+            if (scope is not None and scope.src_file is not None
+                    and scope.src_start_lineno > 0):
+                _node_line = getattr(node, 'lineno', 0)
+                _node_col  = getattr(node, 'col_offset', 0)
+                if _node_line > 0:
+                    _loc = Loc(
+                        file=scope.src_file,
+                        line=scope.src_start_lineno + _node_line - 1,
+                        pos=_node_col,
+                    )
+                    if isinstance(stmt, list):
+                        for s in stmt:
+                            if isinstance(s, Base) and s.loc is None:
+                                s.loc = _loc
+                    elif isinstance(stmt, Base) and stmt.loc is None:
+                        stmt.loc = _loc
             if isinstance(stmt, list):
                 stmts.extend(stmt)
             else:
@@ -2079,6 +2155,8 @@ class DataModelFactory(object):
             pool_claims=scope.pool_claims.copy() if scope else {},
             action_cls=scope.action_cls if scope else None,
             is_constraint_mode=scope.is_constraint_mode if scope else False,
+            src_file=scope.src_file if scope else None,
+            src_start_lineno=scope.src_start_lineno if scope else 0,
         )
 
         for item in node.items:
@@ -2961,6 +3039,19 @@ class DataModelFactory(object):
                     inlined = self._try_inline_instance_method_as_expr(method, scope)
                     if inlined is not None:
                         return inlined
+
+            # Try to constant-fold simple builtin calls like int(SomeEnum.MEMBER)
+            if isinstance(node.func, ast.Name) and node.func.id in ('int', 'float', 'bool'):
+                py_globals = self._get_scope_globals(scope)
+                if py_globals:
+                    try:
+                        val = eval(ast.unparse(node), py_globals)
+                        if isinstance(val, (int, float)) and not isinstance(val, bool):
+                            return ExprConstant(value=val)
+                        if isinstance(val, bool):
+                            return ExprConstant(value=int(val))
+                    except Exception:
+                        pass
 
             return ExprCall(
                 func=self._convert_ast_expr(node.func, scope),

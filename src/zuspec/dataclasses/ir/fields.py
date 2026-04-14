@@ -52,6 +52,7 @@ class Field(Base):
     max_size : Optional[int] = dc.field(default=None)  # Maximum size for variable-size arrays
     is_variable_size : bool = dc.field(default=False)  # True if array has variable size
     pragmas : Dict[str, Any] = dc.field(default_factory=dict)  # From ``# zdc: key=value, flag`` comments
+    reset_value : Optional[Any] = dc.field(default=None)  # Reset value from output(reset=N) or reg(reset=N)
     
     @property
     def is_array(self) -> bool:

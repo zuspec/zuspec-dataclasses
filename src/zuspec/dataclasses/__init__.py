@@ -61,6 +61,7 @@ from .rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
 from .rt.indexed_pool_rt import IndexedPoolRT
 from .rt.memory_rt import MemoryRT
 from .rt.simulate import simulate
+from .rt.sim_domain import SimDomain
 from .solver.api import randomize, randomize_with, RandomizationError
 from .errors import (
     ZuspeccError, ZuspeccCDCError, ZuspeccWidthError,
@@ -70,6 +71,13 @@ from .coverage import (
     Covergroup, coverpoint, cross,
     binsof, cross_bins, cross_ignore, cross_illegal
 )
+from .domain import (
+    ClockDomain, DerivedClockDomain, InheritedDomain,
+    ResetDomain, SoftwareResetDomain, HardwareResetDomain,
+    ClockPort, ClockBind, ResetBind,
+    clock_port, clock_bind, reset_bind,
+)
+from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
 from typing import Type
 
 __all__ = [
@@ -148,6 +156,15 @@ __all__ = [
     'MemoryRT',
     # From rt.simulate
     'simulate',
+    # From rt.sim_domain
+    'SimDomain',
+    # From domain
+    'ClockDomain', 'DerivedClockDomain', 'InheritedDomain',
+    'ResetDomain', 'SoftwareResetDomain', 'HardwareResetDomain',
+    'ClockPort', 'ClockBind', 'ResetBind',
+    'clock_port', 'clock_bind', 'reset_bind',
+    # From cdc
+    'TwoFFSync', 'AsyncFIFO', 'cdc_unchecked',
     # Submodules
     'ir', 'profiles',
     # Other exports

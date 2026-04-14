@@ -771,9 +771,21 @@ class ExecProc(Exec): pass
 
 @dc.dataclass
 class ExecSync(Exec):
-    """Synchronous process"""
-    clock : Optional[str] = dc.field(default=None)
-    reset : Optional[str] = dc.field(default=None)
+    """Synchronous process.
+
+    New-style: ``domain=`` points to a :class:`~zuspec.dataclasses.domain.ClockDomain`
+    class-level attribute.  When ``None``, the process uses the component's
+    default clock/reset domain (set via ``clock_domain`` / ``reset_domain``
+    class attributes, or inherited from the parent).
+
+    Legacy fields ``clock``/``reset``/``reset_async``/``reset_active_low`` are
+    kept for backward compatibility and will be removed after Phase 7.
+    """
+    # New-style domain reference (lambda or None → use component default)
+    domain: Optional[Any] = dc.field(default=None)
+    # Legacy fields (deprecated; will be removed in Phase 7)
+    clock : Optional[Any] = dc.field(default=None)
+    reset : Optional[Any] = dc.field(default=None)
     reset_async : bool = dc.field(default=False)
     reset_active_low : bool = dc.field(default=True)
 
@@ -794,25 +806,24 @@ def process(T):
     # Datamodel Mapping
     return ExecProc(T)
 
-def sync(clock: str = None, reset: str = None,
+def sync(_method=None, *,
+         domain=None,
+         clock: str = None, reset: str = None,
          reset_async: bool = False, reset_active_low: bool = True):
-    """
-    Decorator for synchronous processes.
-    
-    The process is evaluated on positive edge of clock or reset.
-    Assignments in sync processes are deferred - they take effect
-    after the method completes but before next evaluation.
-    
-    Args:
-        clock: Clock field name or lambda (e.g. ``"clk"`` or ``lambda s: s.clk``).
-        reset: Reset field name or lambda (e.g. ``"rst_n"``).
-        reset_async: If ``True``, generate ``always_ff @(posedge clk or [neg/pos]edge rst)``
-            sensitivity list (asynchronous reset). Default: ``False`` (synchronous reset).
-        reset_active_low: If ``True`` (default), reset asserts low (active-low, e.g. ``rst_n``).
-            Controls the edge polarity in the async sensitivity list: ``negedge rst_n``.
-            If ``False``, reset asserts high: ``posedge rst``.
-        
-    Example:
+    """Decorator for synchronous (clocked) processes.
+
+    **New-style** — bind to the component's default domain (or a named domain)::
+
+        @zdc.sync
+        def _count(self):
+            self.count = self.count + 1
+
+        @zdc.sync(domain=lambda s: s.fast_clk)
+        def _fast(self):
+            ...
+
+    **Legacy** — explicit clock/reset field references (deprecated, removed in Phase 7)::
+
         @zdc.sync(clock="clk", reset="rst_n")
         def _count(self):
             if self.reset:
@@ -820,16 +831,29 @@ def sync(clock: str = None, reset: str = None,
             else:
                 self.count += 1
 
-        # Asynchronous active-low reset:
-        @zdc.sync(clock="clk", reset="rst_n", reset_async=True, reset_active_low=True)
-        def _ff(self):
-            if self.rst_n == 0:
-                self.q = 0
-            else:
-                self.q = self.d
+    The process is evaluated on the positive edge of the clock.  Assignments
+    inside a sync process are deferred — they take effect after the method
+    completes, before the next evaluation.
+
+    Args:
+        domain: Lambda ``lambda s: s.<domain_attr>`` resolving to a
+            :class:`~zuspec.dataclasses.domain.ClockDomain` attribute on the
+            component class.  ``None`` (default) means "use the component's
+            default ``clock_domain``".
+        clock: *Deprecated.* Clock field name or lambda.
+        reset: *Deprecated.* Reset field name or lambda.
+        reset_async: *Deprecated.* Generate async-reset sensitivity list.
+        reset_active_low: *Deprecated.* Reset polarity.
     """
+    if _method is not None:
+        # Used as bare @zdc.sync (no call)
+        return ExecSync(method=_method, domain=None,
+                        clock=None, reset=None,
+                        reset_async=False, reset_active_low=True)
+
     def decorator(method):
-        return ExecSync(method=method, clock=clock, reset=reset,
+        return ExecSync(method=method, domain=domain,
+                        clock=clock, reset=reset,
                         reset_async=reset_async, reset_active_low=reset_active_low)
     return decorator
 

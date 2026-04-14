@@ -101,7 +101,38 @@ class SimulateContext:
             # captured into CompImplRT._tracer at __comp_build__ time.
             config.pop_factory()
 
+        # Attach SimDomain when the component declares class-level domains
+        self._attach_sim_domains(self._component)
+
         return self._component  # type: ignore[return-value]
+
+    def _attach_sim_domains(self, comp: T) -> None:
+        """Attach SimDomain instance(s) to *comp* after construction.
+
+        * If the class declares a single ``clock_domain`` attribute, exposes
+          ``comp.domain`` as a convenience shortcut.
+        * Named ``ClockDomain`` class attributes are also exposed individually
+          (e.g. ``comp.rx_domain``).
+        """
+        from .sim_domain import SimDomain
+        try:
+            from ..domain import ClockDomain
+        except ImportError:
+            return
+
+        cls = type(comp)
+        default_domain = getattr(cls, 'clock_domain', None)
+        if default_domain is not None and isinstance(default_domain, ClockDomain):
+            object.__setattr__(comp, 'domain', SimDomain(comp, default_domain))
+
+        # Expose any additionally named ClockDomain class attributes
+        for attr in vars(cls):
+            if attr.startswith('_') or attr == 'clock_domain':
+                continue
+            val = getattr(cls, attr, None)
+            if isinstance(val, ClockDomain):
+                object.__setattr__(comp, f"{attr}_sim", SimDomain(comp, val))
+
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         if self._component is not None:

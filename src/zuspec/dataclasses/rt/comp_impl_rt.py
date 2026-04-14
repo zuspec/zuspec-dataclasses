@@ -552,7 +552,7 @@ class CompImplRT(object):
         self._initialize_eval_state(comp)
         if not hasattr(self, '_eval_state') or not hasattr(self, '_datamodel'):
             return
-        
+
         # Execute all sync processes for this clock
         for sync_func in self._datamodel.sync_processes:
             clock_expr = sync_func.metadata.get('clock')
@@ -560,16 +560,57 @@ class CompImplRT(object):
                 clock_path = self._get_field_path_from_expr(clock_expr, comp)
                 if clock_path == clock_field:
                     self._sync_executor.execute_stmts(sync_func.body)
-        
+
         # Commit deferred writes
         self._eval_state.commit()
-        
+
         # Update component fields from evaluation state
         for field in dc.fields(comp):
             if not field.name.startswith('_'):
                 value = self._eval_state.read(field.name)
                 object.__setattr__(comp, field.name, value)
-    
+
+    def domain_clock_edge(self, comp: Component):
+        """Process a domain clock tick — triggers domain-bound sync methods.
+
+        Domain-bound sync methods are those whose ``metadata['clock']`` is
+        ``None`` (bare ``@zdc.sync`` or ``@zdc.sync(domain=...)``).  Legacy
+        clock-expression-based methods are intentionally skipped.
+
+        Uses the same deferred-write execution path as ``_schedule_sync_eval``
+        so that testbench writes (``c.enable = 1``) are visible to the sync body.
+        """
+        self._init_eval(comp)
+
+        for sync_func in self._sync_processes:
+            if sync_func.metadata.get('clock') is None:
+                self._eval_mode = EvalMode.SYNC_EVAL
+                self._execute_function(comp, sync_func)
+                self._eval_mode = EvalMode.IDLE
+
+                for sig_name, val in self._deferred_writes.items():
+                    old_value = self._signal_values.get(sig_name)
+                    self._signal_values[sig_name] = val
+
+                    if old_value != val:
+                        width = self._signal_widths.get(sig_name, 32)
+                        self._notify_signal_tracer(comp, sig_name, old_value, val, width)
+
+                    if old_value != val and sig_name in self._signal_bindings:
+                        width = self._signal_widths.get(sig_name, 32)
+                        for t_comp, t_sig in self._signal_bindings[sig_name]:
+                            t_comp._impl.signal_write(t_comp, t_sig, val, width)
+
+                self._deferred_writes.clear()
+
+        # Flush committed values back to the component's Python attributes
+        for sig_name, val in self._signal_values.items():
+            if not sig_name.startswith('_'):
+                try:
+                    object.__setattr__(comp, sig_name, val)
+                except Exception:
+                    pass
+
     def eval_comb(self, comp: Component):
         """Evaluate all combinational processes."""
         self._initialize_eval_state(comp)
