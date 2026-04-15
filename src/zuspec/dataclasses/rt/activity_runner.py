@@ -377,7 +377,10 @@ class ActivityRunner:
             unbound = _collect_unbound_flow_inputs(action_type, ctx.flow_bindings)
             if unbound:
                 effective_ctx = await self._apply_inferred_actions(
-                    ctx.structural_solver.solve(action_type, unbound, ctx),
+                    ctx.structural_solver.solve(
+                        action_type, unbound, ctx,
+                        inline_constraints=node.inline_constraints,
+                    ),
                     ctx,
                 )
 
@@ -415,35 +418,83 @@ class ActivityRunner:
                     "supported; use an explicit activity with parallel scheduling."
                 )
 
-            # Create the buffer object for this inferred producer→consumer pair
+            # Create the buffer object for this inferred producer->consumer pair
             from .resource_rt import make_resource
             buf_obj = make_resource(ia.flow_obj_type)
-            try:
-                from ..solver.api import randomize as _rand
-                _rand(buf_obj)
-            except Exception:
-                pass
-            buf_inst = BufferInstance(obj=buf_obj)
 
-            # Build a context for the inferred producer
-            prod_bindings = dict(augmented_bindings)
-            prod_bindings[ia.output_field] = (buf_inst, "output")
-            inferred_ctx = ActionContext(
-                action=ctx.action,
-                comp=ctx.comp,
-                pool_resolver=ctx.pool_resolver,
-                parent=ctx,
-                seed=ctx.seed ^ id(ia.action_type),
-                inline_constraints=[],
-                flow_bindings=prod_bindings,
-                structural_solver=ctx.structural_solver,
-                forward_propagator=ctx.forward_propagator,
-                tracer=ctx.tracer,
-            )
-            await self._traverse(ia.action_type, [], inferred_ctx)
+            # State-chain: if src_state/dst_state are known from BFS, create
+            # concrete state objects for the flow-input and flow-output fields
+            # so the transition action's cross-flow constraints reduce to
+            # single-variable problems.
+            if ia.src_state is not None and ia.dst_state is not None:
+                from .state_graph_factory import _fields_from_state_type
+                field_descs = _fields_from_state_type(ia.flow_obj_type)
 
-            # Wire the produced buffer as input for the consumer
-            augmented_bindings[ia.input_field] = (buf_inst, "input")
+                prev_obj = make_resource(ia.flow_obj_type)
+                next_obj = make_resource(ia.flow_obj_type)
+                for fd, sv in zip(field_descs, ia.src_state):
+                    object.__setattr__(prev_obj, fd.name, sv)
+                for fd, dv in zip(field_descs, ia.dst_state):
+                    object.__setattr__(next_obj, fd.name, dv)
+
+                prev_inst = BufferInstance(obj=prev_obj)
+                next_inst = BufferInstance(obj=next_obj)
+
+                # Find flow-input and flow-output field names on the action
+                from .structural_solver import _find_flow_field
+                in_field = _find_flow_field(ia.action_type, ia.flow_obj_type, "input")
+                out_field = _find_flow_field(ia.action_type, ia.flow_obj_type, "output")
+
+                prod_bindings = dict(augmented_bindings)
+                prod_bindings[in_field] = (prev_inst, "output")
+                prod_bindings[out_field] = (next_inst, "output")
+                # Mark both as ready immediately since values are pre-set
+                prev_inst.set_ready()
+                next_inst.set_ready()
+
+                inferred_ctx = ActionContext(
+                    action=ctx.action,
+                    comp=ctx.comp,
+                    pool_resolver=ctx.pool_resolver,
+                    parent=ctx,
+                    seed=ctx.seed ^ id(ia.action_type),
+                    inline_constraints=[],
+                    flow_bindings=prod_bindings,
+                    structural_solver=ctx.structural_solver,
+                    forward_propagator=ctx.forward_propagator,
+                    tracer=ctx.tracer,
+                )
+                await self._traverse(ia.action_type, [], inferred_ctx)
+
+                # Wire the destination state as input for the consumer
+                augmented_bindings[ia.input_field] = (next_inst, "input")
+            else:
+                try:
+                    from ..solver.api import randomize as _rand
+                    _rand(buf_obj)
+                except Exception:
+                    pass
+                buf_inst = BufferInstance(obj=buf_obj)
+
+                # Build a context for the inferred producer
+                prod_bindings = dict(augmented_bindings)
+                prod_bindings[ia.output_field] = (buf_inst, "output")
+                inferred_ctx = ActionContext(
+                    action=ctx.action,
+                    comp=ctx.comp,
+                    pool_resolver=ctx.pool_resolver,
+                    parent=ctx,
+                    seed=ctx.seed ^ id(ia.action_type),
+                    inline_constraints=[],
+                    flow_bindings=prod_bindings,
+                    structural_solver=ctx.structural_solver,
+                    forward_propagator=ctx.forward_propagator,
+                    tracer=ctx.tracer,
+                )
+                await self._traverse(ia.action_type, [], inferred_ctx)
+
+                # Wire the produced buffer as input for the consumer
+                augmented_bindings[ia.input_field] = (buf_inst, "input")
 
         return ActionContext(
             action=ctx.action,
