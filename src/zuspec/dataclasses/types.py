@@ -528,19 +528,34 @@ def _find_comp_instances(comp: 'Component', comp_type: type) -> list:
 class Action[T]:
     comp: T = field()
 
-    async def __call__(self, comp: Optional['Component'] = None) -> Self:
+    async def __call__(self, comp: Optional['Component'] = None,
+                       seed: Optional[int] = None) -> Self:
+        """Traverse this action against *comp* with full inference support.
+
+        Equivalent to ``ScenarioRunner(comp, seed).run(type(self))`` but
+        copies the result back onto *self*.
+        """
         from .rt.activity_runner import ActivityRunner
         from .rt.action_context import ActionContext
         from .rt.pool_resolver import PoolResolver
+        from .rt.action_registry import ActionRegistry
+        from .rt.icl_table import ICLTable
+        from .rt.structural_solver import StructuralSolver
         import dataclasses as dc
         import random
 
+        seed_val = seed if seed is not None else random.randrange(2**32)
         resolver = PoolResolver.build(comp)
+        registry = ActionRegistry.build(comp)
+        icl_table = ICLTable.build(registry)
+        structural_solver = StructuralSolver(icl_table, seed=seed_val, registry=registry)
+
         ctx = ActionContext(
             action=None,
             comp=comp,
             pool_resolver=resolver,
-            seed=random.randrange(2**32),
+            seed=seed_val,
+            structural_solver=structural_solver,
         )
         traversed = await ActivityRunner()._traverse(type(self), [], ctx)
         # Copy fields from the traversed instance back onto self

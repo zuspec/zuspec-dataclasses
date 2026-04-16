@@ -24,6 +24,10 @@ from ..propagators.arithmetic import (
 from ..propagators.implication import ImplicationPropagator, BoolNotPropagator, BoolOrPropagator
 from ..propagators.reification import ComparisonReifier
 from ..propagators.reification import DisjunctiveComparisonPropagator
+from ..propagators.bitwise import (
+    BitAndPropagator, BitOrPropagator, BitXorPropagator,
+    LShiftPropagator, RShiftPropagator, FloorDivPropagator
+)
 from ..propagators.uniqueness import UniquePropagator, PairwiseUniquePropagator
 
 
@@ -205,6 +209,18 @@ class ConstraintCompiler:
             prop = ModPropagator(result_var, left_var, right_var)
         elif constraint.op == BinOp.Div:
             prop = DivPropagator(result_var, left_var, right_var)
+        elif constraint.op == BinOp.FloorDiv:
+            prop = FloorDivPropagator(result_var, left_var, right_var)
+        elif constraint.op == BinOp.BitAnd:
+            prop = BitAndPropagator(result_var, left_var, right_var)
+        elif constraint.op == BinOp.BitOr:
+            prop = BitOrPropagator(result_var, left_var, right_var)
+        elif constraint.op == BinOp.BitXor:
+            prop = BitXorPropagator(result_var, left_var, right_var)
+        elif constraint.op == BinOp.LShift:
+            prop = LShiftPropagator(result_var, left_var, right_var)
+        elif constraint.op == BinOp.RShift:
+            prop = RShiftPropagator(result_var, left_var, right_var)
         else:
             raise CompilationError(f"Unsupported binary operator: {constraint.op}")
         

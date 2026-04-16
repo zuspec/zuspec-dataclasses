@@ -48,7 +48,7 @@ class ScenarioRunner:
         # Build ICL table once for structural inference
         self._registry = ActionRegistry.build(comp)
         self._icl_table = ICLTable.build(self._registry)
-        self._structural_solver = StructuralSolver(self._icl_table, seed=self._seed)
+        self._structural_solver = StructuralSolver(self._icl_table, seed=self._seed, registry=self._registry)
 
     async def run(
         self, action_type: Type, timeout_s: float = 30.0, **kwargs

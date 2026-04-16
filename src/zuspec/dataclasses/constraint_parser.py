@@ -100,8 +100,12 @@ class ConstraintParser:
             # Parse if statements: `if cond: body` → implication (cond → consequents)
             if isinstance(stmt, ast.If):
                 condition = self.parse_expr(stmt.test)
-                consequents = [self.parse_expr(s.value)
-                               for s in stmt.body if isinstance(s, ast.Expr)]
+                consequents = []
+                for s in stmt.body:
+                    if isinstance(s, ast.Expr):
+                        consequents.append(self.parse_expr(s.value))
+                    elif isinstance(s, ast.Assert):
+                        consequents.append(self.parse_expr(s.test))
                 exprs.append({
                     'type': 'implies',
                     'antecedent': condition,
