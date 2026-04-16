@@ -32,6 +32,7 @@ Version: 2026.1 (January 2026)
    pragmas
    runtime
    checker
+   pipeline-api
 
 .. toctree::
    :maxdepth: 2

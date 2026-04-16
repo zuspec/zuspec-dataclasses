@@ -14,6 +14,8 @@
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Data Model (Developer)" href="datamodel.html" />
+    <link rel="prev" title="Zuspec IR Checker" href="checker.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
   
@@ -470,7 +472,7 @@ a stage to insert an explicit pipeline bubble.</p></li>
 </search>
 <script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
 <p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
 <li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
@@ -480,6 +482,14 @@ a stage to insert an explicit pipeline bubble.</p></li>
 <li class="toctree-l1"><a class="reference internal" href="pragmas.html">Pragma Comments</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Pipeline API</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#zdc-pipeline-pipeline-root"><code class="docutils literal notranslate"><span class="pre">&#64;zdc.pipeline</span></code> — Pipeline Root</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#zdc-stage-stage-methods"><code class="docutils literal notranslate"><span class="pre">&#64;zdc.stage</span></code> — Stage Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#zdc-sync-synchronous-fsms"><code class="docutils literal notranslate"><span class="pre">&#64;zdc.sync</span></code> — Synchronous FSMs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#migration-guide-old-sentinel-api-new-method-api">Migration Guide — Old Sentinel API → New Method API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#explicit-ports-and-clock-domain-recommended">Explicit Ports and Clock Domain (Recommended)</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
 <ul>
@@ -490,6 +500,8 @@ a stage to insert an explicit pipeline bubble.</p></li>
 <h3>Related Topics</h3>
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="checker.html" title="previous chapter">Zuspec IR Checker</a></li>
+      <li>Next: <a href="datamodel.html" title="next chapter">Data Model (Developer)</a></li>
   </ul></li>
 </ul>
 </div>
