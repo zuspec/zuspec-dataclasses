@@ -324,8 +324,35 @@ def extend(cls=None):
     - ``__extends__``: the base class being extended
     - ``__is_extension__``: ``True``
 
+    Body override (ECO pattern)
+    ---------------------------
+    An extension may define ``body()`` to **fully replace** the base class body.
+    This is a non-composable, replacement-only operation intended for ECO patches::
+
+        @zdc.dataclass
+        class DecodeRV32I(zdc.Action[RVCore]):
+            async def body(self):
+                ...  # original, possibly buggy body
+
+        # In a separate ECO file — original source is never modified:
+        @zdc.extend
+        class DecodeRV32I_ECO(DecodeRV32I):
+            \"\"\"ECO: fix SLTI sign-extension (bug #4721).\"\"\"
+            async def body(self):
+                ...  # corrected body
+
+    Only one extension of a given base may define ``body()``.  Defining ``body()``
+    in an extension that also defines ``activity()`` raises ``TypeError``.
+
+    When ``body()`` is present the decorator sets:
+    - ``__body_override__``: the raw body method
+    - ``__is_body_override__``: ``True``
+
     Raises:
         TypeError: If the class has no valid zuspec base class to extend.
+        TypeError: If the extension defines both ``body()`` and ``activity()``.
+        TypeError: If the extension defines ``body()`` when the base class is a
+            compound action (defines ``activity()``, not ``body()``).
 
     Example::
 
@@ -350,10 +377,34 @@ def extend(cls=None):
             )
         cls.__extends__ = bases[0]
         cls.__is_extension__ = True
+
+        # Guard: activity() and body() are mutually exclusive — check first,
+        # before any parsing attempt, so the error is clear.
+        if 'activity' in cls.__dict__ and 'body' in cls.__dict__:
+            raise TypeError(
+                f"@zdc.extend: '{cls.__name__}' defines both activity() and body(). "
+                "An extension must define at most one."
+            )
+
         # Parse the extension's own activity() method if it defines one
         if 'activity' in cls.__dict__:
             from .activity_parser import ActivityParser
             cls.__activity__ = ActivityParser().parse(cls.__dict__['activity'])
+
+        # --- Body override (ECO pattern) ------------------------------------
+        if 'body' in cls.__dict__:
+            # (mutual exclusion already checked above)
+            # Guard: cannot override body() of a compound (activity-only) base
+            base = bases[0]
+            if hasattr(base, '__activity__') and 'body' not in base.__dict__:
+                raise TypeError(
+                    f"@zdc.extend: '{cls.__name__}' defines body() but "
+                    f"'{base.__name__}' is a compound action (defines activity(), "
+                    "not body()).  Cannot override body() on a compound action."
+                )
+            cls.__body_override__ = cls.__dict__['body']
+            cls.__is_body_override__ = True
+
         return cls
 
     if cls is None:
@@ -796,7 +847,7 @@ class ExecComb(Exec):
 
 
 
-def process(T):
+def proc(T):
     """
     Marks an always-running process. The specified
     method must be `async` and take no arguments. The

@@ -15,7 +15,7 @@
 #****************************************************************************
 from __future__ import annotations
 import asyncio
-from typing import TypeVar, Generic, Dict, Type, Optional, get_args
+from typing import TypeVar, Generic, Dict, Type, Optional, Any, get_args
 import dataclasses as dc
 
 T = TypeVar('T')
@@ -159,6 +159,39 @@ class RegRT(Generic[T]):
         else:
             self._value = val
         self._write_event.set()
+
+@dc.dataclass
+class RegProcRT(Generic[T]):
+    """Runtime register for standalone Reg[T] fields on @proc Components.
+
+    read() is synchronous (unlike RegRT which is async).
+    write() commits the value and ticks the component's internal cycle clock,
+    advancing simulation time by one cycle per call.
+    """
+    _value: int = dc.field(default=0)
+    _width: int = dc.field(default=32)
+    _comp_impl: Any = dc.field(default=None)  # CompImplRT, injected after construction
+
+    def read(self) -> T:
+        """Synchronous register read — returns current committed value."""
+        return self._value
+
+    async def write(self, val: T) -> None:
+        """Write value and advance one internal cycle.
+
+        Applies width masking, then ticks the component's cycle counter so
+        that external observers waiting via wait_cycles() are unblocked.
+        """
+        if self._width < 64:
+            mask = (1 << self._width) - 1
+            self._value = int(val) & mask
+        else:
+            self._value = int(val)
+        if self._comp_impl is not None:
+            await self._comp_impl.tick_cycle()
+        else:
+            await asyncio.sleep(0)  # yield even without comp_impl
+
 
 @dc.dataclass
 class RegFileRT:

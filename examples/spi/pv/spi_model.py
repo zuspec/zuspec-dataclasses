@@ -185,7 +185,7 @@ class SpiMaster(zdc.Component):
         ctrl = await self.regs.ctrl.read()
         return ctrl.go_bsy == 1
     
-    @zdc.process
+    @zdc.proc
     async def _transfer_engine(self):
         """Simulates the SPI transfer engine.
         

@@ -82,7 +82,7 @@ After ``asyncio.run(comp.wait(...))``, access ``comp.<method>_trace`` for a
 from asyncio import Event as aEvent
 from typing import Callable
 from .decorators import (
-    dataclass, field, process, input, output, reg, array,
+    dataclass, field, proc, input, output, reg, array,
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
@@ -117,6 +117,7 @@ from .rt.binding_solver import BindingSolver
 from .rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
 from .rt.activity_runner import ScheduleGraph
 from .rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
+from .rt.regfile_rt import RegProcRT
 from .rt.indexed_pool_rt import IndexedPoolRT
 from .rt.memory_rt import MemoryRT
 from .rt.simulate import simulate
@@ -148,7 +149,7 @@ __all__ = [
     # From asyncio
     'aEvent',
     # From decorators
-    'dataclass', 'field', 'process', 'input', 'output', 'reg', 'array',
+    'dataclass', 'field', 'proc', 'input', 'output', 'reg', 'array',
     'const', 'bundle', 'mirror', 'monitor',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
     'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
@@ -222,6 +223,8 @@ __all__ = [
     'ScheduleGraph',
     # From rt.indexed_regfile_rt
     'IndexedRegFileRT', 'IndexedRegFileClaim',
+    # From rt.regfile_rt
+    'RegProcRT',
     # From rt.memory_rt
     'MemoryRT',
     # From rt.simulate

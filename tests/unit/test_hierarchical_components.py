@@ -94,7 +94,7 @@ def test_hierarchical_construction_with_ports():
     class Producer(zdc.Component):
         prod: DataIF = zdc.port()
         
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             result = await self.prod.call(42)
             assert result == 44  # 42 + 2

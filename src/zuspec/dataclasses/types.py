@@ -1306,7 +1306,7 @@ class Reg[T](TypeBase):
     # - Use non-blocking access within the device
     # - Use blocking access from an address space
 
-    async def read(self) -> T: ...
+    def read(self) -> T: ...
 
     async def write(self, val : Union[T,dict,int]): 
         """Register write accepts:

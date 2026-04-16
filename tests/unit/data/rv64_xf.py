@@ -362,7 +362,7 @@ class Rv64XF(zdc.Component):
         self.running = False
         return count
     
-    @zdc.process
+    @zdc.proc
     async def _run(self):
         """Process entry point - wait indefinitely.
         

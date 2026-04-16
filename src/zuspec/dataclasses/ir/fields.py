@@ -44,6 +44,7 @@ class Field(Base):
     width_expr : Optional[Expr] = dc.field(default=None)  # Width expression (e.g., lambda s:s.WIDTH)
     kwargs_expr : Optional[Expr] = dc.field(default=None)  # Kwargs for instantiation (e.g., lambda s:dict(W=s.WIDTH))
     is_const : bool = dc.field(default=False)  # True for const fields (structural type parameters)
+    is_reg : bool = dc.field(default=False)    # True for Reg[T] register fields
     
     # Constraint solver metadata
     rand_kind : Optional[str] = dc.field(default=None)  # "rand", "randc", or None

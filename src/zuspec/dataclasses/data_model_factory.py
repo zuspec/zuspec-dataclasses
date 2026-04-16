@@ -704,16 +704,16 @@ class DataModelFactory(object):
         
         # Process functions (methods and processes)
         functions = []
-        processes = []
+        proc_processes = []
         sync_processes = []
         comb_processes = []
         
-        # First, find @process, @sync, @comb decorated methods from class __dict__
+        # First, find @proc, @sync, @comb decorated methods from class __dict__
         for name, member in t.__dict__.items():
             if isinstance(member, ExecProc):
-                proc = self._extract_process(t, name, member, field_indices)
-                if proc is not None:
-                    processes.append(proc)
+                proc_node = self._extract_process(t, name, member, field_indices)
+                if proc_node is not None:
+                    proc_processes.append(proc_node)
             elif isinstance(member, ExecSync):
                 func = self._process_sync_method(t, name, member, field_indices, field_types)
                 if func is not None:
@@ -760,7 +760,8 @@ class DataModelFactory(object):
         dm = DataTypeComponent(
             super=super_dt,
             fields=fields,
-            functions=functions + processes,
+            functions=functions,
+            proc_processes=proc_processes,
             bind_map=bind_map,
             sync_processes=sync_processes,
             comb_processes=comb_processes,
@@ -904,6 +905,7 @@ class DataModelFactory(object):
             # Check if this is an input or output port
             is_input_port = False
             is_output_port = False
+            is_reg_field = False
             if f.default_factory is not dc.MISSING:
                 if f.default_factory is Input:
                     is_input_port = True
@@ -930,6 +932,11 @@ class DataModelFactory(object):
             
             # Get field type
             origin = get_origin(field_type)
+            # Detect Reg[T] fields (hardware registers)
+            from .types import Reg as _Reg
+            if origin is _Reg:
+                is_reg_field = True
+                is_output_port = True
             if origin is tuple:
                 args = get_args(field_type)
                 elem_py_t = args[0] if args else None
@@ -1066,6 +1073,9 @@ class DataModelFactory(object):
             
             # Create FieldInOut for input/output ports, otherwise regular Field
             if is_input_port or is_output_port:
+                reset_val = field_metadata.get("reset")
+                if reset_val is None and is_reg_field:
+                    reset_val = 0
                 field_dm = FieldInOut(
                     name=f.name,
                     datatype=datatype,
@@ -1074,12 +1084,13 @@ class DataModelFactory(object):
                     width_expr=width_expr,
                     kwargs_expr=kwargs_expr,
                     is_const=is_const,
+                    is_reg=is_reg_field,
                     rand_kind=rand_kind,
                     domain=domain,
                     size=array_size,
                     max_size=max_array_size,
                     is_variable_size=is_variable_size,
-                    reset_value=field_metadata.get("reset"),
+                    reset_value=reset_val,
                     loc=field_loc,
                     pragmas=field_pragmas.get(f.name, {}),
                 )
@@ -1091,6 +1102,7 @@ class DataModelFactory(object):
                     width_expr=width_expr,
                     kwargs_expr=kwargs_expr,
                     is_const=is_const,
+                    is_reg=is_reg_field,
                     rand_kind=rand_kind,
                     domain=domain,
                     size=array_size,
@@ -1200,6 +1212,13 @@ class DataModelFactory(object):
             if width > 0:
                 return DataTypeInt(bits=width, signed=False)
         
+        # Reg[T] → resolve to the inner type (e.g. Reg[b32] → DataTypeInt(bits=32))
+        from .types import Reg as _Reg
+        if origin is _Reg:
+            args_inner = get_args(field_type)
+            elem_type = args_inner[0] if args_inner else None
+            return self._resolve_field_type(elem_type)
+
         # Check for generic types (Memory[T], Channel[T], GetIF[T], PutIF[T], Tuple[T])
         if origin is not None:
             args = get_args(field_type)
@@ -2230,9 +2249,37 @@ class DataModelFactory(object):
         - ``self.X`` where X is an action field  → ``ExprAttribute(ExprRefLocal(result_var), X)``
         - ``self.comp``                           → component self (TypeExprRefSelf / sentinel)
         - ``self.comp.X``                         → ``ExprRefField(TypeExprRefSelf(), idx_of_X)``
+
+        When a ``@zdc.extend`` subclass defines a ``body()`` override (marked with
+        ``__is_body_override__ = True``), that method is used instead of the base
+        class's own ``body()``.  Multiple conflicting overrides raise ``TypeError``.
+        Updates ``action_dt.body_override_source`` in the type map when an override
+        is active.
         """
-        # Only use a body if the class itself defines one (not just inherits the Action stub).
-        body_method = action_cls.__dict__.get('body', None)
+        # --- Check for body overrides from @zdc.extend extensions -----------
+        body_overrides = [
+            sub for sub in action_cls.__subclasses__()
+            if getattr(sub, '__is_body_override__', False)
+            and getattr(sub, '__extends__', None) is action_cls
+        ]
+        if len(body_overrides) > 1:
+            names = ", ".join(e.__name__ for e in body_overrides)
+            raise TypeError(
+                f"Multiple @zdc.extend classes provide a body() override for "
+                f"'{action_cls.__name__}': {names}.  Only one is permitted."
+            )
+
+        if body_overrides:
+            body_method = body_overrides[0].__body_override__
+            # Record the override source on the DataTypeAction if already in type map.
+            action_type_name = self._get_type_name(action_cls)
+            action_dt = self._context.type_m.get(action_type_name)
+            if action_dt is not None:
+                action_dt.body_override_source = body_overrides[0].__name__
+        else:
+            # Only use a body if the class itself defines one (not just inherits the Action stub).
+            body_method = action_cls.__dict__.get('body', None)
+
         if body_method is None:
             # No explicit body: try compiling @zdc.constraint methods as imperative logic
             return self._compile_constraint_methods_as_body(

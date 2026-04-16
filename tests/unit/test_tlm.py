@@ -16,7 +16,7 @@ def test_tlm_channel():
     class Cons(zdc.Component):
         c : zdc.GetIF[int] = zdc.port()
 
-        @zdc.process
+        @zdc.proc
         async def _recv(self):
             while True:
                 i = await self.c.get()
@@ -64,7 +64,7 @@ def test_tlm_channel_struct():
     class Consumer(zdc.Component):
         c : zdc.GetIF[Transaction] = zdc.port()
 
-        @zdc.process
+        @zdc.proc
         async def recv_transactions(self):
             while True:
                 txn = await self.c.get()

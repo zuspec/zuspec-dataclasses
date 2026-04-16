@@ -13,7 +13,7 @@ from .comp_impl_rt import CompImplRT
 from .timebase import Timebase
 from .memory_rt import MemoryRT
 from .address_space_rt import AddressSpaceRT
-from .regfile_rt import RegFileRT, RegRT, RegFileMirrorRT, MirrorRegRT
+from .regfile_rt import RegFileRT, RegRT, RegProcRT, RegFileMirrorRT, MirrorRegRT
 from .channel_rt import ChannelRT, GetIFRT, PutIFRT
 from .lock_rt import LockRT
 from .event_rt import EventRT
@@ -195,6 +195,8 @@ class ObjFactory(ObjFactoryP):
                 if cf.metadata and cf.metadata.get('kind') == 'const':
                     const_defaults[cf.name] = cf.default if cf.default is not dc.MISSING else 0
 
+            reg_proc_fields = []  # (fname, width, reset_val) for standalone Reg[T] fields
+
             for f in dc.fields(cls):
                 field_type = type_hints.get(f.name, f.type)
                 origin = get_origin(field_type)
@@ -204,6 +206,26 @@ class ObjFactory(ObjFactoryP):
                         f"Extern type '{field_type.__qualname__}' is not supported in rt"
                     )
                 
+                # Detect standalone Reg[T] fields (e.g., count: zdc.Reg[zdc.b32] = zdc.output())
+                # Must be handled BEFORE the is_signal check so they don't become SignalDescriptors.
+                if get_origin(field_type) is Reg:
+                    reg_args = get_args(field_type)
+                    elem_type = reg_args[0] if reg_args else None
+                    width = 32  # default
+                    if elem_type is not None:
+                        w = getattr(elem_type, '_width', None)
+                        if w is not None:
+                            width = int(w)
+                        elif hasattr(elem_type, '__metadata__'):
+                            for meta in elem_type.__metadata__:
+                                if isinstance(meta, (U, S)):
+                                    width = meta.width
+                                    break
+                    reset_val = f.metadata.get('reset', 0) if f.metadata else 0
+                    reg_proc_fields.append((f.name, width, reset_val))
+                    fields.append((f.name, object, dc.field(default=None, metadata=f.metadata or {})))
+                    continue
+
                 # Check if this is an Input or Output field (marker via default_factory)
                 is_signal = False
                 is_input = False
@@ -447,6 +469,9 @@ class ObjFactory(ObjFactoryP):
                 kw_only=True,
                 bases=(cls,))
             self.comp_type_m[cls] = cls_rt
+            
+            # Store reg_proc_fields so __comp_build__ can inject RegProcRT instances
+            cls_rt.__reg_proc_fields__ = list(reg_proc_fields)
             
             # Add signal properties after class creation
             for sig_name, sig_type, is_input, default_value, width in signal_fields:
@@ -856,10 +881,10 @@ class ObjFactory(ObjFactoryP):
         for attr_name in dir(type(comp)):
             attr = getattr(type(comp), attr_name, None)
             if isinstance(attr, ExecProc):
-                comp._impl.add_process(attr_name, attr)
+                comp._impl.add_proc(attr_name, attr)
             elif callable(attr) and getattr(attr, '_zdc_async_pipeline', False):
                 # Wrap the bare async pipeline method in ExecProc for uniform handling
-                comp._impl.add_process(attr_name, ExecProc(attr))
+                comp._impl.add_proc(attr_name, ExecProc(attr))
             elif isinstance(attr, (ExecSync, ExecComb)):
                 has_eval = True
         
@@ -898,6 +923,11 @@ class ObjFactory(ObjFactoryP):
 
         # Initialize Bundle fields
         ObjFactory.__init_bundle_fields__(comp)
+
+        # Initialize RegProcRT fields (standalone Reg[T] on @proc components)
+        for fname, width, reset_val in getattr(type(comp), '__reg_proc_fields__', []):
+            rp = RegProcRT(_value=reset_val, _width=width, _comp_impl=comp._impl)
+            object.__setattr__(comp, fname, rp)
         
         # Apply port bindings provided at construction (for top-level ports)
         if port_bindings:
@@ -1536,7 +1566,7 @@ class ObjFactory(ObjFactoryP):
                 ObjFactory.__start_processes__(fo)
         
         # Start processes for this component
-        comp._impl.start_processes(comp)
+        comp._impl.start_procs(comp)
 
     @staticmethod
     def __validate_top_level_ports__(comp):

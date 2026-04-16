@@ -53,7 +53,7 @@ class EventUser(zdc.Component):
     evt: zdc.Event = zdc.field(default_factory=zdc.Event)
     wait_completed: bool = zdc.field(default=False)
     
-    @zdc.process
+    @zdc.proc
     async def wait_for_event(self):
         """Process that waits for the event."""
         await self.evt.wait()

@@ -80,10 +80,17 @@ class DataTypeAction(DataTypeClass):
         IR statements from the ``body()`` method (populated by DataModelFactory).
         When the action call is inlined into a parent coroutine these stmts are
         inserted verbatim (after translation of ``self`` / ``self.comp`` refs).
+    body_override_source:
+        Name of the ``@zdc.extend`` class that provided a body() override for
+        this action, or ``None`` when the body comes from the base class itself.
+        Set by :class:`~zuspec.dataclasses.data_model_factory.DataModelFactory`
+        when an extension with ``__is_body_override__ = True`` is discovered.
+        Useful for tooling and ECO audit trails.
     """
     comp_type_name: Optional[str] = dc.field(default=None)
     body_stmts: List = dc.field(default_factory=list)  # List[Stmt]
     static_methods: List = dc.field(default_factory=list)  # List[Function]
+    body_override_source: Optional[str] = dc.field(default=None)
 
 
 @dc.dataclass(kw_only=True)
@@ -94,6 +101,7 @@ class DataTypeComponent(DataTypeClass):
     sync_processes : List[Function] = dc.field(default_factory=list)
     comb_processes : List[Function] = dc.field(default_factory=list)
     wire_processes : List[Function] = dc.field(default_factory=list)
+    proc_processes : List[Function] = dc.field(default_factory=list)
     # New-style pipeline IRs (populated when @zdc.pipeline + @zdc.stage are present)
     pipeline_root_ir: Optional[Any] = dc.field(default=None)   # PipelineRootIR | None
     stage_method_irs: List[Any]     = dc.field(default_factory=list)  # List[StageMethodIR]

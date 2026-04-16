@@ -11,7 +11,7 @@ def test_smoke():
     class MyProdC(zdc.Component):
         prod : DataIF = zdc.port()
 
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             for i in range(16):
                 rsp = await self.prod.call(i)
@@ -60,7 +60,7 @@ def test_method_call():
     class MyProdC(zdc.Component):
         prod : DataIF = zdc.port()
 
-#        @zdc.process
+#        @zdc.proc
 #        async def _run(self):
 #            for i in range(16):
 #                rsp = await self.prod.call(i)
@@ -116,7 +116,7 @@ def test_top_if():
     class MyC(zdc.Component):
         m0 : MemIF = zdc.port()
 
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             for i in range(16):
                 await self.m0.write(4*i, i+1)
@@ -157,7 +157,7 @@ def test_top_if_with_impl():
     class MyC(zdc.Component):
         m0 : MemIF = zdc.port()
 
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             for i in range(16):
                 await self.m0.write(4*i, i+1)
@@ -196,7 +196,7 @@ def test_component_datamodel():
     class MyC(zdc.Component):
         m0 : MemIF = zdc.port()
 
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             for i in range(16):
                 await self.m0.write(4*i, i+1)
@@ -258,7 +258,7 @@ def test_component_datamodel():
 
     # Verify MyC has a Process element named _run
     process_found = False
-    for func in myc_dm.functions:
+    for func in myc_dm.proc_processes:
         if isinstance(func, dm.Process) and func.name == '_run':
             process_found = True
             break
@@ -285,8 +285,8 @@ def test_component_datamodel():
             # Visit fields
             for field in o.fields:
                 field.accept(self)
-            # Visit functions/processes
-            for func in o.functions:
+            # Visit proc_processes
+            for func in o.proc_processes:
                 func.accept(self)
 
         def visitField(self, o: dm.Field):

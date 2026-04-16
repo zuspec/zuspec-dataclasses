@@ -13,7 +13,7 @@ class TestProcess:
         class SimpleC(zdc.Component):
             counter: int = 0
             
-            @zdc.process
+            @zdc.proc
             async def _run(self):
                 for i in range(3):
                     self.counter = i + 1
@@ -30,13 +30,13 @@ class TestProcess:
             counter_a: int = 0
             counter_b: int = 0
             
-            @zdc.process
+            @zdc.proc
             async def proc_a(self):
                 for i in range(3):
                     self.counter_a += 1
                     await self.wait(zdc.Time.ns(2))
 
-            @zdc.process
+            @zdc.proc
             async def proc_b(self):
                 for i in range(5):
                     self.counter_b += 1
@@ -53,7 +53,7 @@ class TestProcess:
         class ChildC(zdc.Component):
             value: int = 0
             
-            @zdc.process
+            @zdc.proc
             async def _run(self):
                 for i in range(4):
                     self.value = i + 1
@@ -64,7 +64,7 @@ class TestProcess:
             child: ChildC = zdc.field()
             parent_value: int = 0
             
-            @zdc.process
+            @zdc.proc
             async def _run(self):
                 for i in range(2):
                     self.parent_value = i + 1
@@ -82,13 +82,13 @@ class TestProcess:
             ns_count: int = 0
             us_count: int = 0
             
-            @zdc.process
+            @zdc.proc
             async def ns_proc(self):
                 for _ in range(10):
                     self.ns_count += 1
                     await self.wait(zdc.Time.ns(100))
 
-            @zdc.process
+            @zdc.proc
             async def us_proc(self):
                 self.us_count += 1
                 await self.wait(zdc.Time.us(1))
@@ -104,7 +104,7 @@ class TestProcess:
         class NoWaitC(zdc.Component):
             done: bool = False
             
-            @zdc.process
+            @zdc.proc
             async def _run(self):
                 self.done = True
 

@@ -27,7 +27,7 @@ class CompImplRT(object):
     _timebase_inst : Optional[Timebase] = dc.field(default=None)
     _tracer : Optional[Any] = dc.field(default=None)  # Tracer instance for this component
     _enable_signal_tracing : bool = dc.field(default=False)  # Whether to trace signal changes
-    _processes : List[Tuple[str, ExecProc]] = dc.field(default_factory=list)
+    _proc_processes : List[Tuple[str, ExecProc]] = dc.field(default_factory=list)
     _tasks : List[asyncio.Task] = dc.field(default_factory=list)
     _processes_started : bool = dc.field(default=False)
     
@@ -42,6 +42,8 @@ class CompImplRT(object):
     _eval_initialized : bool = dc.field(default=False)
     _pending_eval : Set = dc.field(default_factory=set)  # Comb processes to evaluate in next delta
     _signal_bindings : Dict[str, List] = dc.field(default_factory=dict)  # signal -> list of (comp, signal) bound to it
+    _proc_cycle_count: int = dc.field(default=0)
+    _proc_cycle_waiters: list = dc.field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -88,9 +90,9 @@ class CompImplRT(object):
         """Set the timebase for this component."""
         self._timebase_inst = tb
 
-    def add_process(self, name: str, proc: ExecProc):
+    def add_proc(self, name: str, proc: ExecProc):
         """Register a process to be started."""
-        self._processes.append((name, proc))
+        self._proc_processes.append((name, proc))
     
     def add_signal_binding(self, source_signal: str, target_comp: Component, target_signal: str):
         """Register a binding from source signal to target component's signal.
@@ -620,9 +622,9 @@ class CompImplRT(object):
         for comb_func in self._datamodel.comb_processes:
             self._comb_executor.execute_stmts(comb_func.body)
 
-    def start_processes(self, comp: Component):
+    def start_procs(self, comp: Component):
         """Start all registered processes for this component."""
-        for name, proc in self._processes:
+        for name, proc in self._proc_processes:
             if getattr(proc.method, '_zdc_async_pipeline', False):
                 # Async pipeline — wrap in the pipeline runtime loop.
                 # Resolve clock domain: prefer new clock_domain= form, fall back to clock=.
@@ -702,7 +704,7 @@ class CompImplRT(object):
                 fo._impl.start_all_processes(fo)
         
         # Start processes for this component
-        self.start_processes(comp)
+        self.start_procs(comp)
 
     def post_init(self, comp):
         from .obj_factory import ObjFactory
@@ -731,6 +733,31 @@ class CompImplRT(object):
             if not task.done():
                 task.cancel()
         self._tasks.clear()
+
+    async def tick_cycle(self) -> None:
+        """Advance the internal proc cycle clock by one tick.
+
+        Called by RegProcRT.write() each time a @proc body completes one iteration.
+        Notifies all pending wait_cycles() callers.
+        """
+        self._proc_cycle_count += 1
+        waiters = self._proc_cycle_waiters
+        self._proc_cycle_waiters = []
+        for fut in waiters:
+            if not fut.done():
+                fut.set_result(None)
+        await asyncio.sleep(0)  # yield so waiters can run
+
+    async def wait_cycles(self, n: int) -> None:
+        """Wait for n tick_cycle() calls (external observer API).
+
+        Blocks until n cycles have elapsed from the time of this call.
+        """
+        for _ in range(n):
+            loop = asyncio.get_event_loop()
+            fut = loop.create_future()
+            self._proc_cycle_waiters.append(fut)
+            await fut
 
     async def wait(self, comp: Component, amt = None):
         """

@@ -22,7 +22,7 @@ def test_mem_access():
     class Device(zdc.Component):
         mem : zdc.Memory[zdc.uint32_t] = zdc.field(size=1024) # Need a 'size' option here?
 
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             while True:
                 val = self.mem.read(0)
@@ -62,7 +62,7 @@ def test_memmap_reg_write():
     class Device(zdc.Component):
         regs : Regs = zdc.field()
 
-        @zdc.process
+        @zdc.proc
         async def _poll(self):
             while True:
                 av = await self.regs.a.read()
@@ -120,7 +120,7 @@ def test_memmap_structreg_write():
         expected_vals : list = zdc.field(default_factory=list)
         errors : list = zdc.field(default_factory=list)
 
-        @zdc.process
+        @zdc.proc
         async def _poll(self):
             while True:
                 av = await self.regs.a.read()

@@ -15,7 +15,7 @@ def test_json_converter_smoke():
     class MyC(zdc.Component):
         m0: MemIF = zdc.port()
 
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             for i in range(16):
                 await self.m0.write(4 * i, i + 1)
@@ -128,7 +128,7 @@ def test_json_converter_expressions():
 
     @zdc.dataclass
     class MyC(zdc.Component):
-        @zdc.process
+        @zdc.proc
         async def _run(self):
             x = 1 + 2
             y = x * 3
