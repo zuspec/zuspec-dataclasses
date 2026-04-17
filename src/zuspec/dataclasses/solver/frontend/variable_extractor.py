@@ -250,12 +250,32 @@ class VariableExtractor:
         """
         # Check if field has domain attribute (set by DataModelFactory)
         if field.domain is not None:
+            import math
             from ..core.domain import IntDomain
             min_val, max_val = field.domain
-            # Create a new domain with the interval
-            # Use the width and signedness from the existing domain
             if isinstance(domain, IntDomain):
-                domain_constraint = IntDomain([(min_val, max_val)], domain.width, domain.signed)
+                # Auto-widen the domain if the specified values exceed the current width.
+                # This handles cases like 40-bit address fields declared as plain rand()
+                # without an explicit width= parameter.
+                new_width = domain.width
+                if not domain.signed and max_val >= (1 << new_width):
+                    needed = math.ceil(math.log2(max_val + 1)) if max_val > 0 else 1
+                    new_width = min(64, max(new_width, needed))
+                elif domain.signed:
+                    if max_val >= (1 << (new_width - 1)) or min_val < -(1 << (new_width - 1)):
+                        needed = math.ceil(math.log2(max(abs(min_val), abs(max_val)) + 1)) + 1
+                        new_width = min(64, max(new_width, needed))
+
+                if new_width > domain.width:
+                    if domain.signed:
+                        cap = (1 << (new_width - 1)) - 1
+                        base_min = -(1 << (new_width - 1))
+                    else:
+                        cap = (1 << new_width) - 1
+                        base_min = 0
+                    domain = IntDomain([(base_min, cap)], new_width, domain.signed)
+
+                domain_constraint = IntDomain([(min_val, max_val)], new_width, domain.signed)
                 # Intersect with existing domain
                 domain = domain.intersect(domain_constraint)
         
