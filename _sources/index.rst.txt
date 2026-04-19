@@ -36,6 +36,14 @@ Version: 2026.1 (January 2026)
 
 .. toctree::
    :maxdepth: 2
+   :caption: Interface Protocols (NEW in 2026.1):
+
+   interface_protocols
+   split_transactions
+   migration_callable_to_protocol
+
+.. toctree::
+   :maxdepth: 2
    :caption: Advanced Topics:
 
    datamodel

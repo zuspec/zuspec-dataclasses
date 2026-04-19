@@ -86,6 +86,7 @@ hardware - from the transfer-function level down to RTL.</p>
 <li class="toctree-l2"><a class="reference internal" href="types.html#memory-types">Memory Types</a></li>
 <li class="toctree-l2"><a class="reference internal" href="types.html#synchronization">Synchronization</a></li>
 <li class="toctree-l2"><a class="reference internal" href="types.html#pool-types">Pool Types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="types.html#interface-protocols">Interface Protocols</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a><ul>
@@ -145,6 +146,38 @@ hardware - from the transfer-function level down to RTL.</p>
 <li class="toctree-l2"><a class="reference internal" href="pipeline-api.html#zdc-sync-synchronous-fsms"><code class="docutils literal notranslate"><span class="pre">&#64;zdc.sync</span></code> — Synchronous FSMs</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pipeline-api.html#migration-guide-old-sentinel-api-new-method-api">Migration Guide — Old Sentinel API → New Method API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pipeline-api.html#explicit-ports-and-clock-domain-recommended">Explicit Ports and Clock Domain (Recommended)</a></li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Interface Protocols (NEW in 2026.1):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="interface_protocols.html">Interface Protocols</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="interface_protocols.html#why-callable-is-insufficient">Why <code class="docutils literal notranslate"><span class="pre">Callable</span></code> Is Insufficient</a></li>
+<li class="toctree-l2"><a class="reference internal" href="interface_protocols.html#defining-a-protocol">Defining a Protocol</a></li>
+<li class="toctree-l2"><a class="reference internal" href="interface_protocols.html#protocol-properties">Protocol Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="interface_protocols.html#the-five-synthesis-scenarios">The Five Synthesis Scenarios</a></li>
+<li class="toctree-l2"><a class="reference internal" href="interface_protocols.html#form-a-vs-form-b">Form A vs Form B</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="split_transactions.html">Split Transactions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#the-blocking-vs-split-transaction-mismatch">The Blocking vs Split-Transaction Mismatch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#zdc-completion-t-one-shot-result-token"><code class="docutils literal notranslate"><span class="pre">zdc.Completion[T]</span></code> — One-Shot Result Token</a></li>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#zdc-queue-t-bounded-fifo"><code class="docutils literal notranslate"><span class="pre">zdc.Queue[T]</span></code> — Bounded FIFO</a></li>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#zdc-spawn-fire-and-forget"><code class="docutils literal notranslate"><span class="pre">zdc.spawn()</span></code> — Fire-and-Forget</a></li>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#zdc-select-first-non-empty-queue"><code class="docutils literal notranslate"><span class="pre">zdc.select()</span></code> — First Non-Empty Queue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#the-lsu-pattern-step-by-step">The LSU Pattern — Step by Step</a></li>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#deadlock-avoidance">Deadlock Avoidance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="split_transactions.html#spawn-semantics-across-abstraction-levels"><code class="docutils literal notranslate"><span class="pre">spawn()</span></code> Semantics Across Abstraction Levels</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="migration_callable_to_protocol.html">Migration: Callable → IfProtocol</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="migration_callable_to_protocol.html#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="migration_callable_to_protocol.html#step-by-step-migration">Step-by-Step Migration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="migration_callable_to_protocol.html#side-by-side-reference">Side-by-Side Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="migration_callable_to_protocol.html#simplecall-shorthand"><code class="docutils literal notranslate"><span class="pre">SimpleCall</span></code> Shorthand</a></li>
+<li class="toctree-l2"><a class="reference internal" href="migration_callable_to_protocol.html#backward-compatibility-notes">Backward Compatibility Notes</a></li>
 </ul>
 </li>
 </ul>
@@ -217,6 +250,12 @@ Use the new flake8-based IR checker instead (see <a class="reference internal" h
 <li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pipeline-api.html">Pipeline API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Interface Protocols (NEW in 2026.1):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="interface_protocols.html">Interface Protocols</a></li>
+<li class="toctree-l1"><a class="reference internal" href="split_transactions.html">Split Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="migration_callable_to_protocol.html">Migration: Callable → IfProtocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
 <ul>

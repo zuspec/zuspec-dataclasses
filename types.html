@@ -316,6 +316,197 @@ for accessing an address space.</p>
 </ul>
 </section>
 </section>
+<section id="interface-protocols">
+<h2>Interface Protocols<a class="headerlink" href="#interface-protocols" title="Link to this heading">¶</a></h2>
+<p>The following types implement the interface-protocol system introduced in
+version 2026.1.  See <a class="reference internal" href="interface_protocols.html"><span class="doc">Interface Protocols</span></a> and <a class="reference internal" href="split_transactions.html"><span class="doc">Split Transactions</span></a>
+for conceptual background.</p>
+<section id="ifprotocol">
+<h3>IfProtocol<a class="headerlink" href="#ifprotocol" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.IfProtocol</span></code> is the base class for typed interface definitions.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">MyIface</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">IfProtocol</span><span class="p">,</span>
+              <span class="n">max_outstanding</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+              <span class="n">in_order</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+              <span class="n">req_always_ready</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+              <span class="n">resp_has_backpressure</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">:</span> <span class="o">...</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>Class keyword arguments (protocol properties):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">req_always_ready</span></code> <em>(bool, default False)</em> — target always accepts
+requests; suppresses <code class="docutils literal notranslate"><span class="pre">req_ready</span></code> signal.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">req_registered</span></code> <em>(bool, default False)</em> — request path passes through a
+register (one-cycle delay).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resp_always_valid</span></code> <em>(bool, default False)</em> — response always valid;
+requires <code class="docutils literal notranslate"><span class="pre">fixed_latency</span></code> to be set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fixed_latency</span></code> <em>(int or None, default None)</em> — response arrives exactly
+<em>N</em> cycles after request; suppresses all handshake signals.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resp_has_backpressure</span></code> <em>(bool, default False)</em> — emits <code class="docutils literal notranslate"><span class="pre">resp_ready</span></code>
+signal; mutually exclusive with <code class="docutils literal notranslate"><span class="pre">fixed_latency</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_outstanding</span></code> <em>(int, default 1)</em> — maximum simultaneous in-flight
+requests.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">in_order</span></code> <em>(bool, default True)</em> — responses arrive in request order;
+emits a response FIFO when <code class="docutils literal notranslate"><span class="pre">max_outstanding</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">initiation_interval</span></code> <em>(int, default 1)</em> — minimum cycles between
+requests.</p></li>
+</ul>
+<p>Class methods:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">_get_properties()</span> <span class="pre">-&gt;</span> <span class="pre">dict</span></code> — returns the resolved properties dict.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_get_ir_properties()</span> <span class="pre">-&gt;</span> <span class="pre">IfProtocolProperties</span></code> — returns the IR dataclass
+instance used by the synthesizer.</p></li>
+</ul>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Core</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">imem</span><span class="p">:</span> <span class="n">MyIface</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">proc</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">imem</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mh">0x1000</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="zdc-call-decorator">
+<h4><code class="docutils literal notranslate"><span class="pre">&#64;zdc.call()</span></code> Decorator<a class="headerlink" href="#zdc-call-decorator" title="Link to this heading">¶</a></h4>
+<p>Overrides protocol properties on an individual method:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Iface</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">IfProtocol</span><span class="p">,</span> <span class="n">max_outstanding</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">max_outstanding</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="simplecall">
+<h3>SimpleCall<a class="headerlink" href="#simplecall" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.SimpleCall[ArgType,</span> <span class="pre">RetType]</span></code> is a convenience alias that creates a
+single-method <code class="docutils literal notranslate"><span class="pre">IfProtocol</span></code> subclass with a <code class="docutils literal notranslate"><span class="pre">__call__</span></code> method.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Single argument</span>
+<span class="n">dat</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">SimpleCall</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">,</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>
+<span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">dat</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>   <span class="c1"># invokes __call__</span>
+
+<span class="c1"># Multiple arguments: SimpleCall[Arg0, Arg1, ..., Ret]</span>
+<span class="n">op</span><span class="p">:</span>  <span class="n">zdc</span><span class="o">.</span><span class="n">SimpleCall</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">,</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">,</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u64</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">port</span><span class="p">()</span>
+<span class="n">out</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">SimpleCall</span></code> supports the same class-keyword protocol properties as
+<code class="docutils literal notranslate"><span class="pre">IfProtocol</span></code> via subclassing:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">FastDat</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SimpleCall</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">,</span> <span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">],</span>
+              <span class="n">fixed_latency</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+              <span class="n">req_always_ready</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+</section>
+<section id="completion-t">
+<h3>Completion[T]<a class="headerlink" href="#completion-t" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.Completion[T]</span></code> is a one-shot result synchronization token.  Create one
+per in-flight transaction; the producer calls <code class="docutils literal notranslate"><span class="pre">set()</span></code>; the consumer
+<a href="#id1"><span class="problematic" id="id2">``</span></a>await``s it.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">done</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Completion</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Completion</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">u32</span><span class="p">]()</span>
+
+<span class="c1"># Producer (may run in a spawned coroutine):</span>
+<span class="n">done</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>           <span class="c1"># non-blocking; must be called exactly once</span>
+
+<span class="c1"># Consumer:</span>
+<span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">done</span>    <span class="c1"># suspends until set() is called</span>
+<span class="k">assert</span> <span class="n">done</span><span class="o">.</span><span class="n">is_set</span>     <span class="c1"># True after set() returns</span>
+</pre></div>
+</div>
+<p>Methods and properties:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">set(value:</span> <span class="pre">T)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code> — delivers the result; non-blocking; call exactly
+once.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">__await__()</span></code> — suspend until <code class="docutils literal notranslate"><span class="pre">set()</span></code> has been called; returns the
+value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">is_set:</span> <span class="pre">bool</span></code> — <code class="docutils literal notranslate"><span class="pre">True</span></code> after <code class="docutils literal notranslate"><span class="pre">set()</span></code> has been called.</p></li>
+</ul>
+<p>At simulation time backed by <code class="docutils literal notranslate"><span class="pre">asyncio.Future</span></code>.
+At synthesis mapped to a response register / signal bundle.</p>
+</section>
+<section id="queue-t">
+<h3>Queue[T]<a class="headerlink" href="#queue-t" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.Queue[T]</span></code> is a bounded FIFO for intra-component inter-process
+communication.  Declare with <code class="docutils literal notranslate"><span class="pre">zdc.queue(depth=N)</span></code> as the initializer.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyComp</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">_req_q</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Queue</span><span class="p">[</span><span class="n">LoadReq</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">queue</span><span class="p">(</span><span class="n">depth</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.queue(depth=N)</span></code> factory parameters:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">depth</span></code> <em>(int, required)</em> — maximum number of items; must be ≥ 1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">element_type</span></code> <em>(type, optional)</em> — element type hint for the synthesizer.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">Queue</span></code> methods (all on the instance):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">put(item:</span> <span class="pre">T)</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code> — block until space is available, then
+enqueue <code class="docutils literal notranslate"><span class="pre">item</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">get()</span> <span class="pre">-&gt;</span> <span class="pre">T</span></code> — block until an item is available, then dequeue and
+return it.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">qsize()</span> <span class="pre">-&gt;</span> <span class="pre">int</span></code> — current number of items in the queue.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">full()</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code> — <code class="docutils literal notranslate"><span class="pre">True</span></code> when occupancy equals depth.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">empty()</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code> — <code class="docutils literal notranslate"><span class="pre">True</span></code> when the queue contains no items.</p></li>
+</ul>
+<p>At simulation time backed by <code class="docutils literal notranslate"><span class="pre">asyncio.Queue(maxsize=depth)</span></code>.
+At synthesis lowered to a synchronous RTL FIFO with depth parameter.</p>
+</section>
+<section id="zdc-spawn">
+<h3>zdc.spawn()<a class="headerlink" href="#zdc-spawn" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.spawn(coro)</span></code> starts a coroutine concurrently without suspending the
+caller.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">handle</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">spawn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_do_read</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">done</span><span class="p">))</span>
+<span class="c1"># caller continues immediately</span>
+<span class="k">await</span> <span class="n">handle</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>   <span class="c1"># wait for completion (optional)</span>
+</pre></div>
+</div>
+<p>Parameters:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">coro</span></code> <em>(Coroutine)</em> — the coroutine to run concurrently.</p></li>
+</ul>
+<p>Returns a <code class="docutils literal notranslate"><span class="pre">SpawnHandle</span></code>.</p>
+<p>At simulation time wraps <code class="docutils literal notranslate"><span class="pre">asyncio.create_task()</span></code>.
+At synthesis lowers to a slot-array FSM bounded by the <code class="docutils literal notranslate"><span class="pre">max_outstanding</span></code>
+of the <code class="docutils literal notranslate"><span class="pre">IfProtocol</span></code> port called inside the coroutine.</p>
+<section id="spawnhandle">
+<h4>SpawnHandle<a class="headerlink" href="#spawnhandle" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">join()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code> — suspend the caller until the spawned coroutine
+completes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">cancel()</span> <span class="pre">-&gt;</span> <span class="pre">None</span></code> — request cancellation and wait for the
+coroutine to stop.  RTL cancellation is not yet supported.</p></li>
+</ul>
+</section>
+</section>
+<section id="zdc-select">
+<h3>zdc.select()<a class="headerlink" href="#zdc-select" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.select(*queues_with_tags)</span></code> blocks until any of the supplied queues has
+an item ready.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">item</span><span class="p">,</span> <span class="n">tag</span> <span class="o">=</span> <span class="k">await</span> <span class="n">zdc</span><span class="o">.</span><span class="n">select</span><span class="p">(</span>
+    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_load_q</span><span class="p">,</span>  <span class="s2">&quot;load&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_store_q</span><span class="p">,</span> <span class="s2">&quot;store&quot;</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Parameters:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">*queues_with_tags</span></code> — one or more <code class="docutils literal notranslate"><span class="pre">(queue,</span> <span class="pre">tag)</span></code> pairs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">priority</span></code> <em>(str, keyword, default ``’left_to_right’``)</em> — arbitration
+policy:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">'left_to_right'</span></code> — leftmost non-empty queue wins.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">'round_robin'</span></code> — priority rotates after each selection.</p></li>
+</ul>
+</li>
+</ul>
+<p>Returns <code class="docutils literal notranslate"><span class="pre">(item,</span> <span class="pre">tag)</span></code> where <code class="docutils literal notranslate"><span class="pre">tag</span></code> identifies which queue yielded.</p>
+<p>At simulation time uses <code class="docutils literal notranslate"><span class="pre">asyncio.wait(...,</span> <span class="pre">return_when=FIRST_COMPLETED)</span></code>.
+At synthesis lowers to a priority arbiter or round-robin arbiter.</p>
+</section>
+</section>
 </section>
 
 
@@ -358,6 +549,7 @@ for accessing an address space.</p>
 <li class="toctree-l2"><a class="reference internal" href="#memory-types">Memory Types</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#synchronization">Synchronization</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#pool-types">Pool Types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#interface-protocols">Interface Protocols</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
@@ -365,6 +557,12 @@ for accessing an address space.</p>
 <li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pipeline-api.html">Pipeline API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Interface Protocols (NEW in 2026.1):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="interface_protocols.html">Interface Protocols</a></li>
+<li class="toctree-l1"><a class="reference internal" href="split_transactions.html">Split Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="migration_callable_to_protocol.html">Migration: Callable → IfProtocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
 <ul>
