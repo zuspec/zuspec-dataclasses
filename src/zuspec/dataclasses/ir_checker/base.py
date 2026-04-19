@@ -12,8 +12,8 @@ else:
     TYPE_CHECKING = False
 
 if TYPE_CHECKING:
-    from ..ir import Context, DataType, Field, Function, Process, Stmt, Expr
-    from ..ir.base import Loc
+    from zuspec.ir.core import Context, DataType, Field, Function, Process, Stmt, Expr
+    from zuspec.ir.core.base import Loc
 else:
     # Runtime imports
     Context = Any
@@ -165,7 +165,7 @@ class BaseIRChecker(ABC):
         
         Subclasses can override for cross-type checks.
         """
-        from ..ir import Context as IRContext
+        from zuspec.ir.core import Context as IRContext
         
         self.errors = []
         check_ctx.clear()
@@ -251,7 +251,7 @@ class BaseIRChecker(ABC):
         
         Subclasses override to add statement-specific checks.
         """
-        from ..ir.stmt import (StmtExpr, StmtAssign, StmtIf, StmtFor, StmtWhile,
+        from zuspec.ir.core.stmt import (StmtExpr, StmtAssign, StmtIf, StmtFor, StmtWhile,
                                 StmtReturn, StmtWith)
         
         errors = []
@@ -294,7 +294,7 @@ class BaseIRChecker(ABC):
         
         Subclasses should override to add expression-specific checks.
         """
-        from ..ir.expr import ExprBin, ExprCall, ExprAttribute
+        from zuspec.ir.core.expr import ExprBin, ExprCall, ExprAttribute
         
         errors = []
         
@@ -339,7 +339,7 @@ class BaseIRChecker(ABC):
         
         This is best-effort - not all annotations can be resolved to DataType.
         """
-        from ..ir.expr import ExprConstant
+        from zuspec.ir.core.expr import ExprConstant
         
         # If the expression is a constant, it might hold a type reference
         if isinstance(expr, ExprConstant) and hasattr(expr, 'value'):
@@ -352,7 +352,7 @@ class BaseIRChecker(ABC):
     
     def is_zuspec_type(self, datatype: 'DataType') -> bool:
         """Check if a type is a Zuspec type (not pure Python)."""
-        from ..ir.data_type import (DataTypeInt, DataTypeStruct, DataTypeClass,
+        from zuspec.ir.core.data_type import (DataTypeInt, DataTypeStruct, DataTypeClass,
                                      DataTypeComponent, DataTypeString, DataTypeExtern)
         
         if datatype is None:

@@ -314,3 +314,212 @@ ClaimPool[T,Tc]
 * ``share(i)`` - Acquire item for read-only access
 * ``drop(i)`` - Release item
 
+********************
+Interface Protocols
+********************
+
+The following types implement the interface-protocol system introduced in
+version 2026.1.  See :doc:`interface_protocols` and :doc:`split_transactions`
+for conceptual background.
+
+IfProtocol
+==========
+
+``zdc.IfProtocol`` is the base class for typed interface definitions.
+
+.. code-block:: python3
+
+    class MyIface(zdc.IfProtocol,
+                  max_outstanding=4,
+                  in_order=True,
+                  req_always_ready=False,
+                  resp_has_backpressure=False):
+        async def read(self, addr: zdc.u32) -> zdc.u32: ...
+        async def write(self, addr: zdc.u32, data: zdc.u32) -> None: ...
+
+Class keyword arguments (protocol properties):
+
+* ``req_always_ready`` *(bool, default False)* — target always accepts
+  requests; suppresses ``req_ready`` signal.
+* ``req_registered`` *(bool, default False)* — request path passes through a
+  register (one-cycle delay).
+* ``resp_always_valid`` *(bool, default False)* — response always valid;
+  requires ``fixed_latency`` to be set.
+* ``fixed_latency`` *(int or None, default None)* — response arrives exactly
+  *N* cycles after request; suppresses all handshake signals.
+* ``resp_has_backpressure`` *(bool, default False)* — emits ``resp_ready``
+  signal; mutually exclusive with ``fixed_latency``.
+* ``max_outstanding`` *(int, default 1)* — maximum simultaneous in-flight
+  requests.
+* ``in_order`` *(bool, default True)* — responses arrive in request order;
+  emits a response FIFO when ``max_outstanding > 1``.
+* ``initiation_interval`` *(int, default 1)* — minimum cycles between
+  requests.
+
+Class methods:
+
+* ``_get_properties() -> dict`` — returns the resolved properties dict.
+* ``_get_ir_properties() -> IfProtocolProperties`` — returns the IR dataclass
+  instance used by the synthesizer.
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class Core(zdc.Component):
+        imem: MyIface = zdc.port()
+
+        @zdc.proc
+        async def _run(self):
+            data = await self.imem.read(0x1000)
+
+``@zdc.call()`` Decorator
+--------------------------
+
+Overrides protocol properties on an individual method::
+
+    class Iface(zdc.IfProtocol, max_outstanding=4):
+        async def load(self, addr: zdc.u32) -> zdc.u32: ...
+
+        @zdc.call(max_outstanding=1)
+        async def flush(self) -> None: ...
+
+SimpleCall
+==========
+
+``zdc.SimpleCall[ArgType, RetType]`` is a convenience alias that creates a
+single-method ``IfProtocol`` subclass with a ``__call__`` method.
+
+.. code-block:: python3
+
+    # Single argument
+    dat: zdc.SimpleCall[zdc.u32, zdc.u32] = zdc.port()
+    result = await self.dat(value)   # invokes __call__
+
+    # Multiple arguments: SimpleCall[Arg0, Arg1, ..., Ret]
+    op:  zdc.SimpleCall[zdc.u32, zdc.u32, zdc.u64] = zdc.port()
+    out = await self.op(a, b)
+
+``SimpleCall`` supports the same class-keyword protocol properties as
+``IfProtocol`` via subclassing::
+
+    class FastDat(zdc.SimpleCall[zdc.u32, zdc.u32],
+                  fixed_latency=2,
+                  req_always_ready=True):
+        pass
+
+Completion[T]
+=============
+
+``zdc.Completion[T]`` is a one-shot result synchronization token.  Create one
+per in-flight transaction; the producer calls ``set()``; the consumer
+``await``s it.
+
+.. code-block:: python3
+
+    done: zdc.Completion[zdc.u32] = zdc.Completion[zdc.u32]()
+
+    # Producer (may run in a spawned coroutine):
+    done.set(42)           # non-blocking; must be called exactly once
+
+    # Consumer:
+    result = await done    # suspends until set() is called
+    assert done.is_set     # True after set() returns
+
+Methods and properties:
+
+* ``set(value: T) -> None`` — delivers the result; non-blocking; call exactly
+  once.
+* ``__await__()`` — suspend until ``set()`` has been called; returns the
+  value.
+* ``is_set: bool`` — ``True`` after ``set()`` has been called.
+
+At simulation time backed by ``asyncio.Future``.
+At synthesis mapped to a response register / signal bundle.
+
+Queue[T]
+========
+
+``zdc.Queue[T]`` is a bounded FIFO for intra-component inter-process
+communication.  Declare with ``zdc.queue(depth=N)`` as the initializer.
+
+.. code-block:: python3
+
+    @zdc.dataclass
+    class MyComp(zdc.Component):
+        _req_q: zdc.Queue[LoadReq] = zdc.queue(depth=4)
+
+``zdc.queue(depth=N)`` factory parameters:
+
+* ``depth`` *(int, required)* — maximum number of items; must be ≥ 1.
+* ``element_type`` *(type, optional)* — element type hint for the synthesizer.
+
+``Queue`` methods (all on the instance):
+
+* ``await put(item: T) -> None`` — block until space is available, then
+  enqueue ``item``.
+* ``await get() -> T`` — block until an item is available, then dequeue and
+  return it.
+* ``qsize() -> int`` — current number of items in the queue.
+* ``full() -> bool`` — ``True`` when occupancy equals depth.
+* ``empty() -> bool`` — ``True`` when the queue contains no items.
+
+At simulation time backed by ``asyncio.Queue(maxsize=depth)``.
+At synthesis lowered to a synchronous RTL FIFO with depth parameter.
+
+zdc.spawn()
+===========
+
+``zdc.spawn(coro)`` starts a coroutine concurrently without suspending the
+caller.
+
+.. code-block:: python3
+
+    handle = zdc.spawn(self._do_read(addr, done))
+    # caller continues immediately
+    await handle.join()   # wait for completion (optional)
+
+Parameters:
+
+* ``coro`` *(Coroutine)* — the coroutine to run concurrently.
+
+Returns a ``SpawnHandle``.
+
+At simulation time wraps ``asyncio.create_task()``.
+At synthesis lowers to a slot-array FSM bounded by the ``max_outstanding``
+of the ``IfProtocol`` port called inside the coroutine.
+
+SpawnHandle
+-----------
+
+* ``await join() -> None`` — suspend the caller until the spawned coroutine
+  completes.
+* ``await cancel() -> None`` — request cancellation and wait for the
+  coroutine to stop.  RTL cancellation is not yet supported.
+
+zdc.select()
+============
+
+``zdc.select(*queues_with_tags)`` blocks until any of the supplied queues has
+an item ready.
+
+.. code-block:: python3
+
+    item, tag = await zdc.select(
+        (self._load_q,  "load"),
+        (self._store_q, "store"),
+    )
+
+Parameters:
+
+* ``*queues_with_tags`` — one or more ``(queue, tag)`` pairs.
+* ``priority`` *(str, keyword, default ``'left_to_right'``)* — arbitration
+  policy:
+
+  * ``'left_to_right'`` — leftmost non-empty queue wins.
+  * ``'round_robin'`` — priority rotates after each selection.
+
+Returns ``(item, tag)`` where ``tag`` identifies which queue yielded.
+
+At simulation time uses ``asyncio.wait(..., return_when=FIRST_COMPLETED)``.
+At synthesis lowers to a priority arbiter or round-robin arbiter.
+

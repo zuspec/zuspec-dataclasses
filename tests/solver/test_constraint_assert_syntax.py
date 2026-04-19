@@ -107,7 +107,7 @@ def test_mixed_syntax():
 def test_ir_extraction_assert():
     """Test that IR correctly extracts assert statements"""
     from zuspec.dataclasses.data_model_factory import DataModelFactory
-    from zuspec.dataclasses.ir.stmt import StmtAssert
+    from zuspec.ir.core.stmt import StmtAssert
     
     factory = DataModelFactory()
     ctx = factory.build([PacketWithAssert])
@@ -135,7 +135,7 @@ def test_ir_extraction_assert():
 def test_ir_extraction_expr():
     """Test that IR correctly extracts plain expressions"""
     from zuspec.dataclasses.data_model_factory import DataModelFactory
-    from zuspec.dataclasses.ir.stmt import StmtExpr
+    from zuspec.ir.core.stmt import StmtExpr
     
     factory = DataModelFactory()
     ctx = factory.build([PacketWithExpr])

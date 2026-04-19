@@ -79,3 +79,44 @@ def test_action_call_nested_component():
     _run(action(top))
     # comp should be one of the nested MyCpu instances
     assert action.comp in (top.cpu1, top.cpu2)
+
+
+# ---------------------------------------------------------------------------
+# Caching tests (Phase 1 — ActionInfra)
+# ---------------------------------------------------------------------------
+
+def test_action_call_caches_infra_on_component():
+    """After first call, _impl._action_infra should be populated."""
+    cpu = MyCpu()
+    assert cpu._impl._action_infra is None
+    action = MyAction()
+    _run(action(cpu))
+    assert cpu._impl._action_infra is not None
+
+
+def test_action_call_reuses_cached_infra():
+    """Second call should reuse the exact same ActionInfra instance."""
+    cpu = MyCpu()
+    _run(MyAction()(cpu))
+    infra_first = cpu._impl._action_infra
+    _run(MyAction()(cpu))
+    infra_second = cpu._impl._action_infra
+    assert infra_first is infra_second
+
+
+def test_action_call_infra_isolated_per_component():
+    """Each component gets its own ActionInfra cache, not shared."""
+    cpu_a = MyCpu()
+    cpu_b = MyCpu()
+    _run(MyAction()(cpu_a))
+    _run(MyAction()(cpu_b))
+    assert cpu_a._impl._action_infra is not cpu_b._impl._action_infra
+
+
+def test_action_call_fresh_seed_each_call():
+    """Consecutive calls without a fixed seed should produce different seeds."""
+    cpu = MyCpu()
+    results = [_run(MyAction()(cpu)).x for _ in range(10)]
+    # With a domain of (1, 63), 10 random picks should not all be identical
+    assert len(set(results)) > 1
+

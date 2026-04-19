@@ -37,7 +37,7 @@ PSS DSL equivalent::
 import dataclasses
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.ir.activity import (
+from zuspec.ir.core.activity import (
     ActivitySequenceBlock,
     ActivityTraversal,
 )
@@ -216,7 +216,7 @@ class StressTest(zdc.Action[TopComponent]):
                     await zdc.do(ReadData)
 
 
-from zuspec.dataclasses.ir.activity import (
+from zuspec.ir.core.activity import (
     ActivityAnonTraversal,
     ActivityParallel,
     ActivityRepeat,

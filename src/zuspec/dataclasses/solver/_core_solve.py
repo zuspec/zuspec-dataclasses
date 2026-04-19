@@ -10,7 +10,7 @@ from __future__ import annotations
 import warnings
 from typing import Any, Dict, Optional
 
-from ..ir.data_type import DataTypeStruct, DataTypeClass
+from zuspec.ir.core.data_type import DataTypeStruct, DataTypeClass
 from .core.constraint_system import ConstraintSystem
 from .frontend.constraint_system_builder import ConstraintSystemBuilder, BuildError
 from .engine.search import BacktrackingSearch

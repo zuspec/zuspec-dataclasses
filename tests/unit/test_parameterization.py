@@ -2,8 +2,8 @@
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.data_model_factory import DataModelFactory
-from zuspec.dataclasses.ir.data_type import DataTypeComponent, DataTypeInt
-from zuspec.dataclasses.ir.fields import Field, FieldKind
+from zuspec.ir.core.data_type import DataTypeComponent, DataTypeInt
+from zuspec.ir.core.fields import Field, FieldKind
 
 
 def test_const_field_declaration():
@@ -276,7 +276,7 @@ def test_wishbone_initiator_pattern():
 
 def test_ir_captures_width_expressions():
     """Test that IR captures width expressions as ExprLambda"""
-    from zuspec.dataclasses.ir.expr import ExprLambda
+    from zuspec.ir.core.expr import ExprLambda
     
     @zdc.dataclass
     class ParamBundle(zdc.Bundle):
@@ -304,7 +304,7 @@ def test_ir_captures_width_expressions():
 
 def test_ir_captures_kwargs_expressions():
     """Test that IR captures kwargs expressions as ExprLambda"""
-    from zuspec.dataclasses.ir.expr import ExprLambda
+    from zuspec.ir.core.expr import ExprLambda
     
     @zdc.dataclass
     class Inner(zdc.Bundle):

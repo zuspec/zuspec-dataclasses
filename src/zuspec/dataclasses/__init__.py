@@ -90,9 +90,9 @@ from .decorators import (
     lock, share, extend, pool, flow_output, flow_input,
     indexed_regfile,
     indexed_pool,
-
+    ContractViolation, requires, ensures,
 )
-from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order
+from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order, valid, internal
 from .constraint_parser import ConstraintParser, extract_rand_fields
 from .activity_parser import ActivityParser, ActivityParseError
 from .pragma import scan_pragmas, parse_pragma_str, scan_line_comments
@@ -105,7 +105,7 @@ from .tlm import *
 # Re-import after `from .types import *` to ensure our decorator wins over
 # the stdlib `enum` module that `types.py` imports into its namespace.
 from .decorators import enum
-from . import ir
+import zuspec.ir.core as ir
 from . import profiles
 from . import transform
 from .data_model_factory import DataModelFactory
@@ -122,6 +122,13 @@ from .rt.indexed_pool_rt import IndexedPoolRT
 from .rt.memory_rt import MemoryRT
 from .rt.simulate import simulate
 from .rt.sim_domain import SimDomain
+# Interface protocol primitives (Phase 1/2)
+from .if_protocol import IfProtocol, call
+from .completion import Completion
+from .queue_type import Queue, queue
+from .spawn import spawn, SpawnHandle
+from .select import select as iface_select
+from .simple_call import SimpleCall
 from .solver.api import randomize, randomize_with, RandomizationError
 from .errors import (
     ZuspeccError, ZuspeccCDCError, ZuspeccWidthError,
@@ -142,8 +149,30 @@ from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
 from .pipeline_ns import pipeline, _StageHandle, _Snap
 from .pipeline_locks import HazardLock, QueueLock, BypassLock, RenameLock
 from .pipeline_resource import PipelineResource
+from .stage_decorator import stage
+from .decorators import _LegacyForwardingDecl, PipelineError
 from .method_port import InPort, OutPort, in_port, out_port
 from typing import Type
+
+
+def forward(signal: str, from_stage: str = "", to_stage: str = "") -> _LegacyForwardingDecl:
+    """Create a forwarding declaration for the old sentinel ``@zdc.pipeline`` API.
+
+    Usage::
+
+        @zdc.pipeline(
+            clock="clk", reset="rst_n",
+            stages=["IF", "EX", "WB"],
+            forward=[zdc.forward(signal="result", from_stage="EX", to_stage="IF")],
+        )
+        def execute(self): ...
+
+    Args:
+        signal:     Name of the forwarded variable.
+        from_stage: Stage that produces (writes) the variable.
+        to_stage:   Stage that consumes (reads) the variable.
+    """
+    return _LegacyForwardingDecl(signal=signal, from_stage=from_stage, to_stage=to_stage)
 
 __all__ = [
     # From asyncio
@@ -156,10 +185,14 @@ __all__ = [
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
     'enum',
+    # Contract decorators / context managers / exceptions
+    'ContractViolation', 'requires', 'ensures',
     # Pipeline process API — new async API
     'pipeline', '_StageHandle', '_Snap',
     'HazardLock', 'QueueLock', 'BypassLock', 'RenameLock',
     'PipelineResource',
+    # Old sync pipeline API
+    'stage', 'forward', 'PipelineError',
     # Method ports
     'InPort', 'OutPort', 'in_port', 'out_port',
     # Clock domain field factory
@@ -231,6 +264,13 @@ __all__ = [
     'simulate',
     # From rt.sim_domain
     'SimDomain',
+    # Interface protocol primitives (Phase 1/2)
+    'IfProtocol', 'call',
+    'Completion',
+    'Queue', 'queue',
+    'spawn', 'SpawnHandle',
+    'iface_select',
+    'SimpleCall',
     # From domain
     'ClockDomain', 'DerivedClockDomain', 'InheritedDomain',
     'ResetDomain', 'SoftwareResetDomain', 'HardwareResetDomain',
@@ -273,8 +313,18 @@ class _CyclesAwaitable:
         self.n = n
     
     def __await__(self):
-        # This is a placeholder for synthesis - actual runtime would need
-        # an event loop integration. For now, just yield control.
+        # At simulation time: find the active @proc component via ContextVar
+        # and delegate to its CompImplRT.wait_cycles(), which is driven by
+        # domain_clock_edge() / tick_cycle().
+        try:
+            from .pipeline_ns import _CURRENT_PROC_COMP
+            comp = _CURRENT_PROC_COMP.get()
+            if comp is not None and hasattr(comp, '_impl'):
+                yield from comp._impl.wait_cycles(self.n).__await__()
+                return
+        except Exception:
+            pass
+        # Fallback: synthesis marker / Level-0 sim — yield once to event loop.
         yield self
         return None
     

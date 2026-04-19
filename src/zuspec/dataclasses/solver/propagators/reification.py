@@ -18,7 +18,7 @@ from typing import Dict, Set
 from ..core.variable import Variable
 from ..core.domain import IntDomain
 from .base import Propagator, PropagationResult
-from zuspec.dataclasses.ir.expr import CmpOp
+from zuspec.ir.core.expr import CmpOp
 
 
 class ComparisonReifier(Propagator):

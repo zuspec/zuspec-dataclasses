@@ -50,6 +50,12 @@ _CURRENT_TOKEN: ContextVar = ContextVar('_CURRENT_TOKEN', default=None)
 _CURRENT_STAGE_IDX: ContextVar = ContextVar('_CURRENT_STAGE_IDX', default=0)
 _CURRENT_STAGE: ContextVar = ContextVar('_CURRENT_STAGE', default=None)
 
+# Holds the Component instance running in the current @proc coroutine.
+# Set by start_procs() before create_task(); inherited by the task via
+# asyncio's copy-on-create context semantics.  Used by zdc.cycles() to
+# locate the active clock domain at simulation time.
+_CURRENT_PROC_COMP: ContextVar = ContextVar('_CURRENT_PROC_COMP', default=None)
+
 
 class _Snap:
     """Attribute-access view of a frozen token local-variable snapshot.
@@ -179,29 +185,45 @@ class _PipelineNamespace:
         clock=None,         # lambda s: s.clk — bit field (legacy form)
         reset=None,         # lambda s: s.rst_n — ResetDomain (legacy form)
         clock_domain=None,  # lambda s: s.cd — ClockDomain field (new form)
+        # ---- old sync / sentinel-style kwargs (accepted for backward compat) ----
+        stages=None,        # list[str] | int | True | None — stage names / count hint
+        forward=None,       # bool | list[_LegacyForwardingDecl] | None
     ):
-        """Decorate an async pipeline method.
+        """Decorate a pipeline method (sync or async).
 
-        Supports both ``@zdc.pipeline`` (bare) and
-        ``@zdc.pipeline(clock=..., reset=...)`` / ``@zdc.pipeline(clock_domain=...)``
-        (parametric) forms.
+        Supports both ``@zdc.pipeline`` (bare) and parametric forms.
 
         Args:
-            func:         The async method being decorated (bare form).
-            clock:        Lambda ``lambda self: self.clk`` returning a clock
-                          bit field.  Legacy form; prefer ``clock_domain``.
-            reset:        Lambda ``lambda self: self.rst_n`` returning a
-                          ``ResetDomain`` instance (optional).
+            func:         The method being decorated (bare form).
+            clock:        String field name or lambda ``lambda self: self.clk``
+                          returning a clock bit field.
+            reset:        String field name or lambda ``lambda self: self.rst_n``
+                          returning a ``ResetDomain`` instance (optional).
             clock_domain: Lambda ``lambda self: self.cd`` returning a
                           :class:`~zuspec.dataclasses.domain.ClockDomain`
                           field instance.  Takes precedence over ``clock=``
                           when both are provided.
+            stages:       Stage count / name hint for the old sentinel API
+                          (``stages=["IF","EX","WB"]``, ``stages=2``,
+                          ``stages=True``).  Consumed by
+                          :class:`~zuspec.synth.passes.PipelineAnnotationPass`.
+            forward:      Forwarding declaration for the old sentinel API
+                          (``bool`` or list of
+                          :class:`~zuspec.dataclasses.decorators._LegacyForwardingDecl`).
         """
         def decorator(method):
-            method._zdc_async_pipeline = True
+            import inspect as _inspect
+            is_async = _inspect.iscoroutinefunction(method)
+            if is_async:
+                method._zdc_async_pipeline = True
+            # Always set the generic marker so PipelineAnnotationPass can find it
+            method._zdc_pipeline = True
             method._zdc_pipeline_clock = clock
             method._zdc_pipeline_reset = reset
             method._zdc_pipeline_clock_domain = clock_domain
+            # Old sentinel-API attributes consumed by PipelineAnnotationPass
+            method._zdc_pipeline_stages = stages
+            method._zdc_pipeline_forward = forward
             return method
 
         if func is not None:

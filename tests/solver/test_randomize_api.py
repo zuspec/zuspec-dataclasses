@@ -6,8 +6,8 @@ from zuspec.dataclasses import (
 )
 from zuspec.dataclasses.solver.core.variable import Variable, VarKind
 from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.ir.data_type import DataTypeStruct, DataTypeInt
-from zuspec.dataclasses.ir.fields import Field
+from zuspec.ir.core.data_type import DataTypeStruct, DataTypeInt
+from zuspec.ir.core.fields import Field
 
 
 class TestRandomizeAPI:

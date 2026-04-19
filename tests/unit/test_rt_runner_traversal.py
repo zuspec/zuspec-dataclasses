@@ -95,7 +95,7 @@ def test_handle_traversal_resolves_type():
 
 
 def test_handle_traversal_missing_handle_raises():
-    from zuspec.dataclasses.ir.activity import ActivityTraversal
+    from zuspec.ir.core.activity import ActivityTraversal
     cpu = MyCpu()
     pr = PoolResolver.build(cpu)
 

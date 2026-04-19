@@ -1,8 +1,8 @@
 """Tests for Variable Extractor"""
 
 import pytest
-from zuspec.dataclasses.ir.data_type import DataTypeInt, DataTypeStruct, DataTypeEnum
-from zuspec.dataclasses.ir.fields import Field
+from zuspec.ir.core.data_type import DataTypeInt, DataTypeStruct, DataTypeEnum
+from zuspec.ir.core.fields import Field
 from zuspec.dataclasses.solver.frontend import VariableExtractor
 from zuspec.dataclasses.solver.core import Variable, VarKind, IntDomain
 

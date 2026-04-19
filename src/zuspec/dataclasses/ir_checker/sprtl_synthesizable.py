@@ -9,12 +9,12 @@ import ast as _ast
 from typing import List, Dict, Set, Optional, Any
 from .base import BaseIRChecker, CheckError, CheckContext
 from .retargetable import RetargetableIRChecker
-from ..ir.data_type import DataTypeInt, DataTypeStruct, DataTypeComponent, Function
-from ..ir.expr import (
+from zuspec.ir.core.data_type import DataTypeInt, DataTypeStruct, DataTypeComponent, Function
+from zuspec.ir.core.expr import (
     ExprCall, ExprRef, ExprRefPy, ExprAttribute, ExprAwait,
     ExprRefField, ExprRefLocal, ExprRefUnresolved
 )
-from ..ir.stmt import (
+from zuspec.ir.core.stmt import (
     StmtAssign, StmtAugAssign, StmtIf, StmtWhile, StmtFor,
     StmtExpr, StmtReturn, StmtRaise, StmtTry
 )

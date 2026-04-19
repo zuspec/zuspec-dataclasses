@@ -54,3 +54,6 @@ class ActionContext:
 
     tracer: Optional["Tracer"] = None
     """Optional tracer receiving action lifecycle events."""
+
+    check_contracts: bool = False
+    """When True, evaluate @constraint.requires before body() and @constraint.ensures after."""

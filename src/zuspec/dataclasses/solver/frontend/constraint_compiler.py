@@ -1,7 +1,7 @@
 """Compile constraint AST into propagators for the solver engine"""
 
 from typing import Dict, List, Optional, Tuple
-from zuspec.dataclasses.ir.expr import BinOp, UnaryOp, BoolOp, CmpOp
+from zuspec.ir.core.expr import BinOp, UnaryOp, BoolOp, CmpOp
 
 from ..core.constraint import Constraint
 from ..core.constraints import (

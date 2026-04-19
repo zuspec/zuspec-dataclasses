@@ -6,12 +6,12 @@ constraints in randomize_with) to IR expression nodes for the solver.
 
 import ast
 from typing import Any, Optional
-from zuspec.dataclasses.ir.expr import (
+from zuspec.ir.core.expr import (
     Expr, ExprConstant, ExprBin, ExprUnary, ExprCompare,
     ExprRefLocal, ExprAttribute, ExprCall, ExprSubscript,
     BinOp, UnaryOp, CmpOp
 )
-from zuspec.dataclasses.ir.data_type import DataTypeStruct
+from zuspec.ir.core.data_type import DataTypeStruct
 
 
 class ConversionError(Exception):

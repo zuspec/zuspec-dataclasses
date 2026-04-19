@@ -51,11 +51,21 @@ class PythonSolverBackend:
             cached = _class_cache.get(cls)
             if cached is not None:
                 struct_type, template_system = cached
+                # If the cached system was built without bound values and this
+                # object has non-rand fields that might be referenced in
+                # constraints, rebuild with the object so constants are folded.
+                if _has_bound_object_fields(obj, struct_type):
+                    builder = ConstraintSystemBuilder()
+                    template_system = builder.build_from_struct(struct_type, obj=obj)
             else:
                 struct_type = _extract_struct_type(obj)
                 builder = ConstraintSystemBuilder()
-                template_system = builder.build_from_struct(struct_type)
-                _class_cache[cls] = (struct_type, template_system)
+                if _has_bound_object_fields(obj, struct_type):
+                    # Build instance-specific (not cacheable) constraint system
+                    template_system = builder.build_from_struct(struct_type, obj=obj)
+                else:
+                    template_system = builder.build_from_struct(struct_type)
+                    _class_cache[cls] = (struct_type, template_system)
 
             # Deep-copy the constraint system so each solve gets fresh domains
             constraint_system = template_system.copy()
@@ -88,3 +98,26 @@ class PythonSolverBackend:
             "randomize_with on PythonSolverBackend is not yet wired; "
             "use the randomize_with() context manager from zuspec.dataclasses"
         )
+
+
+def _has_bound_object_fields(obj: Any, struct_type) -> bool:
+    """Return True if *obj* has non-rand fields that are composite objects.
+
+    When such fields exist, constraints can reference their sub-attributes
+    (e.g. ``self.next_.domain_A``), so the constraint system must be rebuilt
+    per-instance rather than reused from the class-level cache.
+    """
+    try:
+        rand_names: set = set()
+        for field in struct_type.fields:
+            if getattr(field, 'rand_kind', None) is not None:
+                rand_names.add(field.name)
+        for field in struct_type.fields:
+            if field.name in rand_names:
+                continue
+            val = getattr(obj, field.name, None)
+            if val is not None and not isinstance(val, (int, float, bool, str)):
+                return True
+    except Exception:
+        pass
+    return False

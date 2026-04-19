@@ -3,7 +3,7 @@ import textwrap
 import unittest.mock as mock
 import pytest
 from zuspec.dataclasses.activity_parser import ActivityParser, ActivityParseError
-from zuspec.dataclasses.ir.activity import (
+from zuspec.ir.core.activity import (
     ActivityAnonTraversal,
     ActivityBind,
     ActivityConstraint,

@@ -537,25 +537,19 @@ class Action[T]:
         """
         from .rt.activity_runner import ActivityRunner
         from .rt.action_context import ActionContext
-        from .rt.pool_resolver import PoolResolver
-        from .rt.action_registry import ActionRegistry
-        from .rt.icl_table import ICLTable
-        from .rt.structural_solver import StructuralSolver
+        from .rt.action_infra import get_or_build_infra
         import dataclasses as dc
         import random
 
         seed_val = seed if seed is not None else random.randrange(2**32)
-        resolver = PoolResolver.build(comp)
-        registry = ActionRegistry.build(comp)
-        icl_table = ICLTable.build(registry)
-        structural_solver = StructuralSolver(icl_table, seed=seed_val, registry=registry)
+        infra = get_or_build_infra(comp)
 
         ctx = ActionContext(
             action=None,
             comp=comp,
-            pool_resolver=resolver,
+            pool_resolver=infra.resolver,
             seed=seed_val,
-            structural_solver=structural_solver,
+            structural_solver=infra.structural_solver,
         )
         traversed = await ActivityRunner()._traverse(type(self), [], ctx)
         # Copy fields from the traversed instance back onto self

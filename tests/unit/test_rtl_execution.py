@@ -195,7 +195,7 @@ def test_sync_and_comb_together():
 
 def test_bitwise_not_unary():
     """ExprUnary Invert (~) produces bitwise complement masked to 64 bits."""
-    from zuspec.dataclasses.ir.expr import ExprUnary, ExprConstant, UnaryOp
+    from zuspec.ir.core.expr import ExprUnary, ExprConstant, UnaryOp
     from zuspec.dataclasses.rt.executor import Executor
 
     class _FakeBackend:
@@ -220,7 +220,7 @@ def test_bitwise_not_unary():
 
 def test_bit_slice_extraction():
     """ExprSubscript with ExprSlice extracts correct bit range."""
-    from zuspec.dataclasses.ir.expr import ExprSubscript, ExprSlice, ExprConstant
+    from zuspec.ir.core.expr import ExprSubscript, ExprSlice, ExprConstant
     from zuspec.dataclasses.rt.executor import Executor
 
     class _FakeBackend:
@@ -251,8 +251,8 @@ def test_bit_slice_extraction():
 
 def test_stmt_repeat_executes_n_times():
     """StmtRepeat executes its body exactly N times."""
-    from zuspec.dataclasses.ir.stmt import StmtRepeat, StmtAugAssign
-    from zuspec.dataclasses.ir.expr import ExprConstant, ExprRefLocal, AugOp
+    from zuspec.ir.core.stmt import StmtRepeat, StmtAugAssign
+    from zuspec.ir.core.expr import ExprConstant, ExprRefLocal, AugOp
     from zuspec.dataclasses.rt.executor import Executor
 
     class _FakeBackend:
@@ -278,8 +278,8 @@ def test_stmt_repeat_executes_n_times():
 def test_stmt_assert_raises_on_false():
     """StmtAssert raises AssertionError when condition is False."""
     import pytest
-    from zuspec.dataclasses.ir.stmt import StmtAssert
-    from zuspec.dataclasses.ir.expr import ExprConstant
+    from zuspec.ir.core.stmt import StmtAssert
+    from zuspec.ir.core.expr import ExprConstant
     from zuspec.dataclasses.rt.executor import Executor
 
     class _FakeBackend:
@@ -307,7 +307,7 @@ if __name__ == "__main__":
 
 def test_enum_decorator_creates_ir_node():
     """@zdc.enum marks class and creates DataTypeEnum IR node."""
-    from zuspec.dataclasses.ir.data_type import DataTypeEnum
+    from zuspec.ir.core.data_type import DataTypeEnum
 
     @zdc.enum
     class State:

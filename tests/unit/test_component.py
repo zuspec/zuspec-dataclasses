@@ -185,7 +185,7 @@ def test_top_if_with_impl():
 
 def test_component_datamodel():
     """Test that top-level ports can be bound via constructor argument."""
-    import zuspec.dataclasses.ir as dm
+    import zuspec.ir.core as dm
 
     class MemIF(Protocol):
         async def read(self, addr : int) -> int: ...

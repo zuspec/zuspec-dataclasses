@@ -10,6 +10,7 @@ from ..decorators import ExecProc, ExecSync, ExecComb, Input, Output
 if TYPE_CHECKING:
     from .obj_factory import ObjFactory, SignalDescriptor
     from .timebase import Timebase
+    from .action_infra import ActionInfra
 
 
 class EvalMode(Enum):
@@ -44,6 +45,7 @@ class CompImplRT(object):
     _signal_bindings : Dict[str, List] = dc.field(default_factory=dict)  # signal -> list of (comp, signal) bound to it
     _proc_cycle_count: int = dc.field(default=0)
     _proc_cycle_waiters: list = dc.field(default_factory=list)
+    _action_infra: Optional["ActionInfra"] = dc.field(default=None)
 
     @property
     def name(self) -> str:
@@ -183,7 +185,7 @@ class CompImplRT(object):
         Uses datamodel field ordering to map ExprRefField indices, since the
         runtime dataclass may not contain signal fields as dataclass fields.
         """
-        from ..ir.expr import ExprRefField, ExprAttribute, TypeExprRefSelf
+        from zuspec.ir.core.expr import ExprRefField, ExprAttribute, TypeExprRefSelf
 
         def _fields_for_obj(o):
             try:
@@ -525,7 +527,7 @@ class CompImplRT(object):
     
     def _get_field_path_from_expr(self, expr, comp):
         """Extract field path from expression."""
-        from ..ir.expr import ExprRefField
+        from zuspec.ir.core.expr import ExprRefField
         
         if isinstance(expr, ExprRefField):
             fields = [f for f in dc.fields(comp) if not f.name.startswith('_')]
@@ -584,6 +586,10 @@ class CompImplRT(object):
         """
         self._init_eval(comp)
 
+        # Start @proc tasks on the first clock edge if not already running.
+        if not self._processes_started:
+            self.start_all_processes(comp)
+
         for sync_func in self._sync_processes:
             if sync_func.metadata.get('clock') is None:
                 self._eval_mode = EvalMode.SYNC_EVAL
@@ -612,6 +618,27 @@ class CompImplRT(object):
                     object.__setattr__(comp, sig_name, val)
                 except Exception:
                     pass
+
+        # Advance proc-cycle waiters — each domain tick = one @proc cycle.
+        # Futures are resolved here synchronously; the event loop will wake
+        # the waiting coroutines when the caller next yields (e.g. sleep(0)).
+        self._tick_cycle_sync()
+
+    def _tick_cycle_sync(self) -> None:
+        """Synchronously advance the proc-cycle counter and resolve waiters.
+
+        Called from :meth:`domain_clock_edge` so that ``await zdc.cycles(n)``
+        in a ``@proc`` body blocks for exactly *n* clock-edge ticks.  Unlike
+        the async :meth:`tick_cycle`, this method does **not** yield to the
+        event loop; the caller is expected to do so (e.g. ``await
+        asyncio.sleep(0)``) to let the unblocked coroutines resume.
+        """
+        self._proc_cycle_count += 1
+        waiters = self._proc_cycle_waiters
+        self._proc_cycle_waiters = []
+        for fut in waiters:
+            if not fut.done():
+                fut.set_result(None)
 
     def eval_comb(self, comp: Component):
         """Evaluate all combinational processes."""
@@ -648,7 +675,14 @@ class CompImplRT(object):
                 object.__setattr__(comp, trace_attr, rt.trace)
                 task = asyncio.create_task(self._run_pipeline(comp, proc.method, rt))
             else:
+                # Plain @proc — publish the component via ContextVar so that
+                # zdc.cycles() can find CompImplRT.wait_cycles() at sim time.
+                # asyncio.create_task copies the current context, so the task
+                # inherits the ContextVar value set here.
+                from ..pipeline_ns import _CURRENT_PROC_COMP
+                tok = _CURRENT_PROC_COMP.set(comp)
                 task = asyncio.create_task(proc.method(comp))
+                _CURRENT_PROC_COMP.reset(tok)
             self._tasks.append(task)
 
     @staticmethod

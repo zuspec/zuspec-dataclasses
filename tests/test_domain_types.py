@@ -7,7 +7,7 @@ from zuspec.dataclasses.domain import (
     ResetDomain, SoftwareResetDomain, HardwareResetDomain,
     ClockPort, ClockBind, ResetBind, clock_port, clock_bind, reset_bind,
 )
-from zuspec.dataclasses.ir.data_type import DataTypeComponent
+from zuspec.ir.core.data_type import DataTypeComponent
 
 
 # ---------------------------------------------------------------------------

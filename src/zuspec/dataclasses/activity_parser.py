@@ -1,7 +1,7 @@
 """AST parser for PSS activity methods.
 
 Parses ``async def activity(self)`` methods from Python AST and produces
-activity IR nodes (``zuspec.dataclasses.ir.activity``).
+activity IR nodes (``zuspec.ir.core.activity``).
 
 The parser is intentionally stateless between calls.  Each call to
 ``ActivityParser.parse()`` returns a fresh ``ActivitySequenceBlock`` rooted
@@ -22,7 +22,7 @@ import textwrap
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .pragma import scan_pragmas
-from .ir.activity import (
+from zuspec.ir.core.activity import (
     ActivityAnonTraversal,
     ActivityAtomic,
     ActivityBind,
@@ -578,7 +578,7 @@ class ActivityParser:
 
     def _loc(self, ast_node: ast.AST) -> "Loc":
         """Convert an AST node's lineno to an IR Loc instance."""
-        from .ir.base import Loc
+        from zuspec.ir.core.base import Loc
         line = getattr(ast_node, "lineno", 1)
         pos = getattr(ast_node, "col_offset", 0)
         return Loc(

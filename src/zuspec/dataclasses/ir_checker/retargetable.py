@@ -2,9 +2,9 @@
 
 from typing import List, Dict, Set, Optional, Any
 from .base import BaseIRChecker, CheckError, CheckContext
-from ..ir.data_type import DataTypeInt, DataTypeString, DataTypeStruct, DataTypeClass, DataTypeComponent
-from ..ir.expr import ExprCall, ExprRef, ExprRefPy, ExprAttribute
-from ..ir.stmt import StmtAssign
+from zuspec.ir.core.data_type import DataTypeInt, DataTypeString, DataTypeStruct, DataTypeClass, DataTypeComponent
+from zuspec.ir.core.expr import ExprCall, ExprRef, ExprRefPy, ExprAttribute
+from zuspec.ir.core.stmt import StmtAssign
 import logging
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ class RetargetableIRChecker(BaseIRChecker):
         1. All variable assignments must be type-annotated
         2. No forbidden expressions
         """
-        from ..ir.stmt import StmtAssign
+        from zuspec.ir.core.stmt import StmtAssign
 
         errors = []
 
@@ -291,7 +291,7 @@ class RetargetableIRChecker(BaseIRChecker):
             return False
         
         # Check if it's any DataType - all DataTypes are Zuspec types
-        from ..ir.data_type import DataType, DataTypeRef
+        from zuspec.ir.core.data_type import DataType, DataTypeRef
         
         # Base DataType and all subclasses are Zuspec types, EXCEPT...
         if isinstance(dtype, DataType):
@@ -317,7 +317,7 @@ class RetargetableIRChecker(BaseIRChecker):
     
     def _is_zuspec_ref(self, dtype_ref: 'DataTypeRef') -> bool:
         """Check if a DataTypeRef references a Zuspec type."""
-        from ..ir.data_type import DataTypeRef, DataTypeComponent, DataTypeStruct, DataTypeClass, DataTypeExtern
+        from zuspec.ir.core.data_type import DataTypeRef, DataTypeComponent, DataTypeStruct, DataTypeClass, DataTypeExtern
         
         # Check the referenced type name
         ref_name = getattr(dtype_ref, 'ref_name', None)
@@ -380,4 +380,4 @@ class RetargetableIRChecker(BaseIRChecker):
 # Type hints
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..ir import Context, DataType, Field, Function, Process, Stmt, Expr
+    from zuspec.ir.core import Context, DataType, Field, Function, Process, Stmt, Expr

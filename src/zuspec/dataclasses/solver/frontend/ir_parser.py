@@ -1,7 +1,7 @@
 """IR Expression Parser - converts IR expressions to solver constraints"""
 
 from typing import Dict, Optional, List, Tuple, Union
-from zuspec.dataclasses.ir.expr import (
+from zuspec.ir.core.expr import (
     Expr, ExprConstant, ExprBin, ExprUnary, ExprBool, ExprCompare,
     ExprRef, ExprRefField, ExprRefParam, ExprRefLocal, ExprRefBottomUp, ExprRefUnresolved,
     ExprSlice, ExprSubscript, ExprIfExp, ExprIn, ExprCall, ExprAttribute,
@@ -10,8 +10,8 @@ from zuspec.dataclasses.ir.expr import (
     TypeExprRefSelf
 )
 import warnings
-from zuspec.dataclasses.ir.stmt import Stmt, StmtFor, StmtAssert, StmtExpr, StmtIf, StmtReturn, StmtUnique, StmtForeach
-from zuspec.dataclasses.ir.data_type import DataType
+from zuspec.ir.core.stmt import Stmt, StmtFor, StmtAssert, StmtExpr, StmtIf, StmtReturn, StmtUnique, StmtForeach
+from zuspec.ir.core.data_type import DataType
 from ..core.variable import Variable
 from ..core.constraint import Constraint, SourceLocation
 from ..core.constraints import (
@@ -45,6 +45,11 @@ class IRExpressionParser:
         # Used during for-loop expansion
         self.loop_variables: Dict[str, int] = {}
         
+        # Bound (non-rand) field values: dotted path -> int constant
+        # e.g. {'next_.domain_A': 3, 'prev.domain_A': 2}
+        # Used to constant-fold bound field references in constraints.
+        self.bound_values: Dict[str, int] = {}
+        
         # Source location for error reporting
         self.current_source: Optional[SourceLocation] = None
     
@@ -59,6 +64,17 @@ class IRExpressionParser:
     def register_array_fields(self, array_metadata: Dict[str, dict]):
         """Register array field metadata for array indexing support"""
         self.array_fields = array_metadata
+    
+    def register_bound_value(self, path: str, value: int):
+        """Register a concrete value for a bound (non-rand) field path.
+        
+        The path is a dotted name relative to self, e.g. 'next_.domain_A'.
+        During constraint parsing, references to this path are folded to the
+        given integer constant, enabling constraints like
+        ``self.next_.domain_A == self.prev.domain_A + self.step`` to be
+        evaluated by the solver when the flow-object fields are already known.
+        """
+        self.bound_values[path] = value
     
     def parse(self, expr: Expr, source_location: Optional[SourceLocation] = None) -> Constraint:
         """
@@ -257,6 +273,13 @@ class IRExpressionParser:
                 )
 
         if var_name not in self.variable_map:
+            # Try bound values: non-rand fields whose concrete value is known at
+            # randomization time (e.g. flow-object fields like self.next_.domain_A).
+            if var_name in self.bound_values:
+                return ConstantConstraint(
+                    value=self.bound_values[var_name],
+                    source_location=self.current_source
+                )
             raise ParseError(
                 f"Unknown variable: {var_name}. "
                 f"Available variables: {list(self.variable_map.keys())}"

@@ -26,6 +26,18 @@ class _ConstraintMarker:
     pass
 
 
+class _ValidityMarker(_ConstraintMarker):
+    """Marker for a validity (observability) declaration: zdc.valid(field)."""
+    def __init__(self, field: Any):
+        self.field = field
+
+
+class _InternalMarker(_ConstraintMarker):
+    """Marker for an internal-field declaration: zdc.internal(field)."""
+    def __init__(self, field: Any):
+        self.field = field
+
+
 class _ImpliesExpr(_ConstraintMarker):
     """Marker for implication constraint: antecedent -> consequent."""
     def __init__(self, antecedent: Any, consequent: Any):
@@ -214,22 +226,76 @@ def descending(arr: Any) -> bool:
     return True
 
 
-def solve_order(*vars) -> _SolveOrderExpr:
+def valid(field: Any) -> "_ValidityMarker":
+    """Declare that *field* has a meaningful (observable) value under the
+    enclosing ``if`` guard (or always, if called at top level).
+
+    The constraint compiler collects all ``zdc.valid()`` declarations for a
+    field and forms its *observability ON-set*.  Any input encoding outside
+    that ON-set is an Observability Don't-Care (ODC) for that field; the
+    GROW minimiser is free to expand product terms into the ODC region.
+
+    **Closed-world rule:** once any ``zdc.valid()`` appears for a field,
+    the observability set is the union of all declared guards.  A field with
+    *no* ``valid()`` declarations is treated as always observable (conservative
+    default — no ODC exploitation).
+
+    Example::
+
+        @constraint
+        def odc_hints(self):
+            if self.is_alu:
+                zdc.valid(self.alu_op)
+            if self.is_load or self.is_store:
+                zdc.valid(self.mem_width)
+                zdc.valid(self.mem_signed)
+
+    Args:
+        field: The output field whose observability is being declared.
+               (Parsed from AST — never actually executed.)
+
+    Returns:
+        _ValidityMarker sentinel (never actually used at runtime).
+    """
+    return _ValidityMarker(field)
+
+
+def internal(field: Any) -> "_InternalMarker":
+    """Declare that *field* is purely internal to the decoder and must not
+    appear on the output port list, even if it is referenced as a guard in
+    another field's ``zdc.valid()`` call.
+
+    Example::
+
+        @constraint
+        def port_hints(self):
+            zdc.internal(self.is_mem_access)  # derived convenience signal
+
+    Args:
+        field: The field to mark as internal.
+
+    Returns:
+        _InternalMarker sentinel (never actually used at runtime).
+    """
+    return _InternalMarker(field)
+
+
+def solve_order(*vars) -> "_SolveOrderExpr":
     """Solve ordering constraint: variables should be solved in specified order.
-    
+
     Example:
         @constraint
         def addr_data_relation(self):
             solve_order(self.addr, self.data)
             self.data == self.addr * 2
-        
+
         @constraint
         def pipeline_order(self):
             solve_order(self.stage1, self.stage2, self.stage3)
-    
+
     Args:
         *vars: Variables in solve order (first is solved first)
-        
+
     Returns:
         SolveOrderExpr marker (never actually executed)
     """
@@ -245,4 +311,6 @@ __all__ = [
     'ascending',
     'descending',
     'solve_order',
+    'valid',
+    'internal',
 ]

@@ -10,7 +10,7 @@ Expected output shows the parsed activity IR structure.
 """
 import dataclasses
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.ir.activity import (
+from zuspec.ir.core.activity import (
     ActivityBind,
     ActivitySequenceBlock,
     ActivityTraversal,
@@ -19,7 +19,7 @@ from zuspec.dataclasses.ir.activity import (
     ActivityRepeat,
     ActivitySelect,
 )
-from zuspec.dataclasses.ir.visitor import Visitor
+from zuspec.ir.core.visitor import Visitor
 
 
 # ---------------------------------------------------------------------------

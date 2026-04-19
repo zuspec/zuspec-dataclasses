@@ -3,7 +3,8 @@
 name = "zuspec-dataclasses"
 version = "0.0.1"
 dependencies = [
-    "networkx>=3.0"
+    "networkx>=3.0",
+    "zuspec-ir-core",
 ]
 
 [build-system]
@@ -23,6 +24,9 @@ Python = "zuspec.dataclasses.ir_checker.python_profile:PythonIRChecker"
 [project.entry-points."zuspec.profiles"]
 Retargetable = "zuspec.dataclasses.profiles:RetargetableProfile"
 Python = "zuspec.dataclasses.profiles:PythonProfile"
+
+[project.entry-points."zuspec.ext"]
+zuspec_dataclasses = "zuspec.dataclasses.cli_plugin:ZuspecDataclassesPlugin"
 
 [tool.setuptools.package-data]
 "zuspec.dataclasses" = [

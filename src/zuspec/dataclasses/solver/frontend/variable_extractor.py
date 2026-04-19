@@ -1,8 +1,8 @@
 """Variable Extractor - extracts variables from IR structures"""
 
 from typing import Dict, List, Optional, Set
-from zuspec.dataclasses.ir.data_type import DataType, DataTypeStruct, DataTypeClass
-from zuspec.dataclasses.ir.fields import Field
+from zuspec.ir.core.data_type import DataType, DataTypeStruct, DataTypeClass
+from zuspec.ir.core.fields import Field
 from ..core.variable import Variable, VarKind
 from ..core.domain import Domain
 from ..core.type_mapper import TypeMapper
@@ -139,7 +139,7 @@ class VariableExtractor:
             actual_size = field.size
             # If size not on field directly, try the DataTypeArray
             if actual_size is None:
-                from zuspec.dataclasses.ir.data_type import DataTypeArray
+                from zuspec.ir.core.data_type import DataTypeArray
                 if isinstance(field.datatype, DataTypeArray):
                     actual_size = field.datatype.size
             assert actual_size is not None, f"Fixed-size array {field.name} must have size"
@@ -148,7 +148,7 @@ class VariableExtractor:
         base_name = f"{prefix}{field.name}" if prefix else field.name
         
         # Create domain from element type (unwrap DataTypeArray if needed)
-        from zuspec.dataclasses.ir.data_type import DataTypeArray
+        from zuspec.ir.core.data_type import DataTypeArray
         element_datatype = field.datatype.element_type if isinstance(field.datatype, DataTypeArray) else field.datatype
         domain = self.type_mapper.to_domain(element_datatype, use_bitvector=True)
         

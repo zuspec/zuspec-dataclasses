@@ -52,7 +52,7 @@ class Covergroup:
     def _initialize_coverpoints(self):
         """Initialize coverpoint instances from descriptors."""
         from .descriptors import CoverpointDescriptor, CrossDescriptor
-        from zuspec.dataclasses.ir.coverage import CoverpointDef, CrossDef, BinDef
+        from zuspec.ir.core.coverage import CoverpointDef, CrossDef, BinDef
         
         # Find all coverpoint descriptors in the class
         for attr_name in dir(self.__class__):
@@ -113,7 +113,7 @@ class Covergroup:
         Returns:
             List of BinDef objects
         """
-        from zuspec.dataclasses.ir.coverage import BinDef
+        from zuspec.ir.core.coverage import BinDef
         
         bin_defs = []
         

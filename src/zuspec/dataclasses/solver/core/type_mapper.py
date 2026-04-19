@@ -1,7 +1,7 @@
 """Type system integration - maps IR data types to solver domains"""
 
 from typing import Optional, Union
-from zuspec.dataclasses.ir.data_type import DataType, DataTypeInt, DataTypeEnum, DataTypeUptr, DataTypeArray
+from zuspec.ir.core.data_type import DataType, DataTypeInt, DataTypeEnum, DataTypeUptr, DataTypeArray
 from .domain import Domain, IntDomain, EnumDomain, BitVectorDomain
 
 

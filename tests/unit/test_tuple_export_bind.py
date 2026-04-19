@@ -165,7 +165,7 @@ class TestTupleExportIR:
         req_field = next((f for f in comp_dt.fields if f.name == 'req'), None)
         assert req_field is not None, "Should have 'req' field"
         
-        from zuspec.dataclasses.ir.data_type import DataTypeTuple
+        from zuspec.ir.core.data_type import DataTypeTuple
         assert isinstance(req_field.datatype, DataTypeTuple), "req should be DataTypeTuple"
         assert req_field.datatype.size == 2, "req size should be 2"
     

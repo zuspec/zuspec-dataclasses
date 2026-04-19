@@ -10,7 +10,7 @@ import ast
 import inspect
 import sys
 import textwrap
-from ..ir.data_type import DataTypeStruct, DataTypeClass
+from zuspec.ir.core.data_type import DataTypeStruct, DataTypeClass
 from .core.constraint_system import ConstraintSystem
 from .core.variable import Variable
 from .frontend.constraint_system_builder import ConstraintSystemBuilder, BuildError
@@ -370,8 +370,8 @@ class RandomizeWithContext:
             constraint_system: System to add constraints to
             struct_type: IR struct type for context
         """
-        from ..ir.data_type import Function
-        from ..ir.stmt import StmtExpr, StmtAssert, StmtReturn
+        from zuspec.ir.core.data_type import Function
+        from zuspec.ir.core.stmt import StmtExpr, StmtAssert, StmtReturn
         from .frontend.ast_to_ir_converter import AstToIrConverter
         
         # Create converter to translate AST -> IR
@@ -393,7 +393,7 @@ class RandomizeWithContext:
         but for inline constraints.
         """
         from .frontend.ir_parser import IRExpressionParser
-        from ..ir.stmt import StmtExpr, StmtAssert, StmtReturn, StmtFor
+        from zuspec.ir.core.stmt import StmtExpr, StmtAssert, StmtReturn, StmtFor
         
         # Create parser
         parser = IRExpressionParser()
@@ -428,8 +428,8 @@ class RandomizeWithContext:
         Returns:
             IR Function or None
         """
-        from ..ir.data_type import Function
-        from ..ir.stmt import StmtExpr, StmtAssert
+        from zuspec.ir.core.data_type import Function
+        from zuspec.ir.core.stmt import StmtExpr, StmtAssert
         
         # Create function with single statement body
         body = []
@@ -479,9 +479,9 @@ class RandomizeWithContext:
     
     def _convert_if_to_function(self, if_stmt: ast.If, converter, index: int):
         """Convert if statement to Function with implies constraints."""
-        from ..ir.data_type import Function
-        from ..ir.stmt import StmtExpr
-        from ..ir.expr import ExprCall, ExprAttribute
+        from zuspec.ir.core.data_type import Function
+        from zuspec.ir.core.stmt import StmtExpr
+        from zuspec.ir.core.expr import ExprCall, ExprAttribute
         
         body = []
         
@@ -543,8 +543,8 @@ class RandomizeWithContext:
     
     def _convert_for_to_function(self, for_stmt: ast.For, converter, index: int):
         """Convert for loop to Function with IR StmtFor (for IR parser to expand)."""
-        from ..ir.data_type import Function
-        from ..ir.stmt import StmtFor, StmtAssert, StmtExpr
+        from zuspec.ir.core.data_type import Function
+        from zuspec.ir.core.stmt import StmtFor, StmtAssert, StmtExpr
         
         # Manually build IR StmtFor from AST for loop
         try:

@@ -13,7 +13,7 @@ import asyncio
 import dataclasses as dc
 from typing import TYPE_CHECKING, Any, Optional
 
-from ..ir.activity import (
+from zuspec.ir.core.activity import (
     ActivityAnonTraversal,
     ActivityAtomic,
     ActivityBind,
@@ -151,6 +151,7 @@ class ActivityRunner:
             structural_solver=ctx.structural_solver,
             forward_propagator=propagator,
             tracer=ctx.tracer,
+            check_contracts=ctx.check_contracts,
         )
 
         for stmt in node.stmts:
@@ -276,7 +277,12 @@ class ActivityRunner:
             structural_solver=ctx.structural_solver,
             forward_propagator=ctx.forward_propagator,
             tracer=ctx.tracer,
+            check_contracts=ctx.check_contracts,
         )
+
+        # 5b. Check @constraint.requires before body (debug mode)
+        if ctx.check_contracts:
+            self._check_role_constraints(action, action_type, child_ctx, 'requires')
 
         # 6. Execute body
         if ctx.tracer is not None:
@@ -292,12 +298,46 @@ class ActivityRunner:
         if ctx.tracer is not None:
             ctx.tracer.action_exec_end(action)
 
+        # 6b. Check @constraint.ensures after body (debug mode)
+        if ctx.check_contracts:
+            self._check_role_constraints(action, action_type, child_ctx, 'ensures')
+
         # Record this action's concrete field values for forward propagation
         # in subsequent sequential actions (P3).
         if ctx.forward_propagator is not None:
             ctx.forward_propagator.record_completed(action, label=label)
 
         return action
+
+    def _check_role_constraints(
+        self,
+        action: Any,
+        action_type: type,
+        ctx: ActionContext,
+        role: str,
+    ) -> None:
+        """Evaluate all constraints with *role* against *action*.
+
+        Raises ContractViolation on the first failing expression.
+        """
+        from ..constraint_parser import ConstraintParser
+        from ..decorators import ContractViolation
+        from .expr_eval import ExprEval
+
+        evaluator = ExprEval(ctx)
+        for name, method in action_type.__dict__.items():
+            if (hasattr(method, '_is_constraint') and method._is_constraint
+                    and getattr(method, '_constraint_role', None) == role):
+                parser = ConstraintParser()
+                info = parser.parse_constraint(method)
+                for expr in info['exprs']:
+                    result = evaluator.eval(expr)
+                    if not result:
+                        raise ContractViolation(
+                            role=role,
+                            method_name=f"{action_type.__name__}.{name}",
+                            expr_repr=str(expr),
+                        )
 
     async def _exec_action_body(
         self,
@@ -309,29 +349,51 @@ class ActivityRunner:
 
         If the action type has ``@extend`` subclasses, all activities are merged
         into an implied schedule block (PSS implied-schedule semantics).
+        When ``ctx.check_contracts`` is ``True``, ``with zdc.requires:`` /
+        ``with zdc.ensures:`` blocks inside ``body()`` are checked before/after
+        body execution.
         """
         extensions = _collect_extensions(action_type)
         if len(extensions) > 1:
             # Multiple extensions: implied schedule — run all activities as stages
-            from ..ir.activity import ActivitySchedule
+            from zuspec.ir.core.activity import ActivitySchedule
             activities = [
                 e.__dict__["__activity__"]
                 for e in extensions
                 if "__activity__" in e.__dict__ and e.__dict__["__activity__"] is not None
             ]
             if activities:
-                from ..ir.base import Base
+                from zuspec.ir.core.base import Base
                 implied = ActivitySchedule(stmts=activities)
                 await self._schedule(implied, ctx)
             else:
-                await action.body()
+                await self._call_body_with_contracts(action_type, action, ctx)
             return
 
         activity_ir = getattr(action_type, "__activity__", None)
         if activity_ir is not None:
             await ActivityRunner().run(activity_ir, ctx)
         else:
-            await action.body()
+            await self._call_body_with_contracts(action_type, action, ctx)
+
+    async def _call_body_with_contracts(
+        self,
+        action_type: type,
+        action: Any,
+        ctx: ActionContext,
+    ) -> None:
+        """Call ``action.body()``, checking ``with zdc.requires/ensures:`` contracts.
+
+        When ``ctx.check_contracts`` is ``False``, this is equivalent to
+        ``await action.body()``.
+        """
+        if ctx.check_contracts:
+            from .contract_checker import check_body_contracts
+            check_body_contracts(action_type, action, ctx, 'requires')
+        await action.body()
+        if ctx.check_contracts:
+            from .contract_checker import check_body_contracts
+            check_body_contracts(action_type, action, ctx, 'ensures')
 
     # ------------------------------------------------------------------
     # Handle traversal:  self.handle()

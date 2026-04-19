@@ -12,7 +12,7 @@ from unittest import mock
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.activity_parser import ActivityParser, _parse_cache
-from zuspec.dataclasses.ir.activity import (
+from zuspec.ir.core.activity import (
     ActivityAnonTraversal,
     ActivityParallel,
     ActivityRepeat,

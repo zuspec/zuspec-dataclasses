@@ -1,7 +1,7 @@
 """Concrete constraint classes for representing parsed constraints"""
 
 from typing import Set, Dict, Optional, List
-from zuspec.dataclasses.ir.expr import BinOp, UnaryOp, BoolOp, CmpOp
+from zuspec.ir.core.expr import BinOp, UnaryOp, BoolOp, CmpOp
 from .constraint import Constraint
 from .variable import Variable
 

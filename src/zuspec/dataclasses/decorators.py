@@ -28,6 +28,22 @@ if TYPE_CHECKING:
     from .profiles import Profile
 
 
+class PipelineError(Exception):
+    """Raised by pipeline synthesis passes when an unresolvable error is detected."""
+
+
+@dc.dataclass
+class _LegacyForwardingDecl:
+    """Forwarding declaration produced by ``zdc.forward(signal=..., from_stage=..., to_stage=...)``.
+
+    Used by :class:`~zuspec.synth.passes.pipeline_annotation.PipelineAnnotationPass`
+    to populate :class:`~zuspec.synth.ir.pipeline_ir.ForwardingDecl` entries.
+    """
+    signal: str
+    from_stage: str = ""
+    to_stage: str = ""
+
+
 def _resolve_annotations(cls) -> None:
     """Resolve any string annotations caused by 'from __future__ import annotations'.
 
@@ -147,7 +163,8 @@ def field(
         metadata : Optional[Dict[str,object]]=None,
         size : Optional[int]=None,
         domain : Optional[tuple]=None,
-        width=None):
+        width=None,
+        internal: bool = False):
     """Field declaration for structs and bundles.
     
     Args:
@@ -155,7 +172,43 @@ def field(
         domain: Domain constraint for random variable (tuple of (min, max) or list of values)
         width: For width-unspecified types (eg bitv), specifies the concrete width.
                May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
+        internal: When True, exclude this field from the synthesized output port list.
+                  Equivalent to using a leading underscore (``_name``) in the field name,
+                  which is the preferred convention.
     """
+    args = {}
+
+    if default_factory is not None:
+        args["default_factory"] = default_factory
+
+    # *Always* specify a default to avoid becoming a required field
+    if "default_factory" not in args.keys():
+        args["default"] = default
+    
+    if size is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["size"] = size
+    
+    if domain is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["domain"] = domain
+    
+    if width is not None:
+        metadata = {} if metadata is None else metadata
+        metadata["width"] = width
+    
+    if rand:
+        metadata = {} if metadata is None else metadata
+        metadata["rand"] = True
+
+    if internal:
+        metadata = {} if metadata is None else metadata
+        metadata["internal"] = True
+
+    if metadata is not None:
+        args["metadata"] = metadata
+
+    return dc.field(**args)
     args = {}
 
     if default_factory is not None:
@@ -606,6 +659,8 @@ def output(*args, width=None, reset=None, **kwargs) -> Any:
     return dc.field(default_factory=Output, metadata=metadata if metadata else None)
 
 
+
+
 class RegField(object):
     """Marker type for 'reg' (internal register) dataclass fields.
     
@@ -930,7 +985,7 @@ def enum(cls=None, *, width: int = None):
     must contain integer-valued class attributes (members). The decorated class
     gains ``_zdc_enum = True``, ``_zdc_enum_members``, ``_zdc_enum_width``, and
     a ``_zdc_data_type`` attribute pointing at the corresponding
-    :class:`~zuspec.dataclasses.ir.data_type.DataTypeEnum` IR node.
+    :class:`~zuspec.ir.core.data_type.DataTypeEnum` IR node.
 
     Usage::
 
@@ -956,7 +1011,7 @@ def enum(cls=None, *, width: int = None):
         The decorated class (with ``_zdc_enum`` markers and IR node attached).
     """
     import math
-    from .ir.data_type import DataTypeEnum
+    from zuspec.ir.core.data_type import DataTypeEnum
 
     def _apply(cls):
         members = {
@@ -1006,6 +1061,39 @@ def invariant(func):
     return func
 
 
+class ContractViolation(Exception):
+    """Raised when a requires or ensures constraint is violated at runtime."""
+
+    def __init__(self, role: str, method_name: str, expr_repr: str):
+        super().__init__(
+            f"{role} constraint violated in {method_name}: {expr_repr}")
+        self.role = role
+        self.method_name = method_name
+        self.expr_repr = expr_repr
+
+
+class _ContractContextManager:
+    """No-op context manager for ``with zdc.requires:`` / ``with zdc.ensures:`` blocks.
+
+    The block content is bare expression statements parsed by
+    ``ConstraintParser``.  At runtime, expressions are evaluated and
+    discarded — no side effects.  The parser harvests them as IR.
+    """
+
+    def __init__(self, role: str):
+        self._role = role
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False  # do not suppress exceptions
+
+
+requires = _ContractContextManager('requires')
+ensures  = _ContractContextManager('ensures')
+
+
 class _ConstraintDecorator:
     """Decorator for constraint methods with support for variants."""
     
@@ -1019,6 +1107,7 @@ class _ConstraintDecorator:
         """
         func._is_constraint = True
         func._constraint_kind = 'fixed'
+        func._constraint_role = None
         return func
     
     def generic(self, func):
@@ -1031,7 +1120,31 @@ class _ConstraintDecorator:
         """
         func._is_constraint = True
         func._constraint_kind = 'generic'
+        func._constraint_role = None
         return func
+
+    def requires(self, func):
+        """Mark constraint as a precondition (assume property in SV).
+
+        Solver uses it identically to ``@constraint``.  Backend emits
+        ``assume property``.  In debug mode, checked before ``body()``.
+        """
+        func._is_constraint = True
+        func._constraint_kind = 'fixed'
+        func._constraint_role = 'requires'
+        return func
+
+    def ensures(self, func):
+        """Mark constraint as a postcondition (assert property in SV).
+
+        NOT injected into solver (describes body() effect).  Backend
+        emits ``assert property``.  In debug mode, checked after ``body()``.
+        """
+        func._is_constraint = True
+        func._constraint_kind = 'fixed'
+        func._constraint_role = 'ensures'
+        return func
+
 
 # Create singleton instance
 constraint = _ConstraintDecorator()

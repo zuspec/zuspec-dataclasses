@@ -4,7 +4,7 @@ import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.domain import ClockDomain, ResetDomain, HardwareResetDomain
 from zuspec.dataclasses.data_model_factory import DataModelFactory
-from zuspec.dataclasses.ir.data_type import DataTypeComponent
+from zuspec.ir.core.data_type import DataTypeComponent
 
 
 def _get_dtc(cls):

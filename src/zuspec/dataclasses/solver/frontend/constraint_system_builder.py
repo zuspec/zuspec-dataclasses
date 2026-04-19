@@ -1,11 +1,11 @@
 """Constraint System Builder - builds complete ConstraintSystem from IR"""
 
 from typing import Dict, List, Optional, Set, Tuple
-from zuspec.dataclasses.ir.data_type import (
+from zuspec.ir.core.data_type import (
     DataType, DataTypeStruct, DataTypeClass, Function
 )
-from zuspec.dataclasses.ir.stmt import Stmt, StmtExpr, StmtAssert, StmtReturn, StmtFor
-from zuspec.dataclasses.ir.expr import Expr
+from zuspec.ir.core.stmt import Stmt, StmtExpr, StmtAssert, StmtReturn, StmtFor
+from zuspec.ir.core.expr import Expr
 from ..core.constraint_system import ConstraintSystem
 from ..core.constraint import Constraint, SourceLocation
 from ..core.variable import Variable
@@ -43,7 +43,8 @@ class ConstraintSystemBuilder:
     def build_from_struct(
         self,
         struct_type: DataTypeStruct,
-        field_metadata: Optional[Dict[str, Dict]] = None
+        field_metadata: Optional[Dict[str, Dict]] = None,
+        obj: object = None,
     ) -> ConstraintSystem:
         """
         Build a complete constraint system from an IR struct/class.
@@ -51,6 +52,12 @@ class ConstraintSystemBuilder:
         Args:
             struct_type: IR struct/class type
             field_metadata: Optional explicit metadata for fields
+            obj: Optional object instance.  When provided, the concrete values
+                of non-rand fields are extracted and used to constant-fold
+                cross-field references in constraints (e.g. a constraint
+                ``self.next_.domain_A == self.prev.domain_A + self.step``
+                becomes ``3 == 2 + step`` when *next_* and *prev* are already
+                bound flow objects).
             
         Returns:
             Complete ConstraintSystem ready for solving
@@ -86,12 +93,27 @@ class ConstraintSystemBuilder:
         for var in variables:
             self.expr_parser.register_variable(var.name, var)
         
-        # Register field index mappings
+        # Register field index mappings (rand fields from extractor)
         for idx, name in self.variable_extractor.field_index_map.items():
             self.expr_parser.register_field(idx, name)
         
+        # Also register non-rand fields by positional index so that constraints
+        # referencing bound objects (e.g. flow-in/out) can resolve ExprRefField.
+        rand_indexed = set(self.variable_extractor.field_index_map.keys())
+        for idx, field in enumerate(struct_type.fields):
+            if idx not in rand_indexed:
+                self.expr_parser.register_field(idx, field.name)
+        
         # Register array field metadata for array indexing support
         self.expr_parser.register_array_fields(self.variable_extractor.array_metadata)
+        
+        # Step 1b: Register bound values for non-rand fields if obj provided.
+        # This allows constraints like ``self.next_.domain_A == self.prev.domain_A
+        # + self.step`` to be constant-folded (``3 == 2 + step``) when next_/prev
+        # are bound flow objects whose values are already known.
+        if obj is not None:
+            rand_names = {var.name for var in variables}
+            self._register_bound_values(obj, struct_type, rand_names)
         
         # Step 2: Extract and parse constraint functions
         self._extract_constraint_functions(struct_type)
@@ -108,6 +130,45 @@ class ConstraintSystemBuilder:
         
         return self.system
     
+    def _register_bound_values(self, obj: object, struct_type, rand_names: set):
+        """Extract concrete values from non-rand fields of *obj* and register them
+        in the expression parser's bound_values map so constraint parsing can fold
+        them to constants.
+
+        For example, if the struct has a non-rand flow-object field ``next_`` with
+        an integer attribute ``domain_A = 3``, this registers the path
+        ``'next_.domain_A'`` → ``3``.
+        """
+        for field in struct_type.fields:
+            if field.name in rand_names:
+                continue  # skip rand fields — they remain solver variables
+            field_val = getattr(obj, field.name, None)
+            if field_val is None:
+                continue
+            self._collect_bound_values(field.name, field_val)
+
+    def _collect_bound_values(self, prefix: str, obj: object, depth: int = 0):
+        """Recursively collect integer leaf values from *obj* under *prefix*."""
+        if depth > 4:
+            return  # guard against infinite recursion on cyclic structures
+        if isinstance(obj, int):
+            self.expr_parser.register_bound_value(prefix, obj)
+            return
+        if isinstance(obj, bool):
+            self.expr_parser.register_bound_value(prefix, int(obj))
+            return
+        # For composite objects: walk public non-callable attributes
+        try:
+            for attr in vars(obj):
+                if attr.startswith('_'):
+                    continue
+                val = getattr(obj, attr, None)
+                if val is None:
+                    continue
+                self._collect_bound_values(f"{prefix}.{attr}", val, depth + 1)
+        except TypeError:
+            pass  # built-in type with no __dict__
+
     def _extract_constraint_functions(self, struct_type: DataTypeStruct):
         """Extract functions marked as constraints"""
         for func in struct_type.functions:
@@ -116,7 +177,11 @@ class ConstraintSystemBuilder:
                 self.constraint_functions.append(func)
     
     def _is_constraint_function(self, func: Function) -> bool:
-        """Check if function is a constraint"""
+        """Check if function is a constraint (and should be injected into solver)."""
+        # Skip ensures-role constraints — they are post-conditions checked at runtime
+        if func.metadata.get('_constraint_role') == 'ensures':
+            return False
+
         # Check metadata for constraint marker
         if func.metadata.get('_is_constraint', False):
             return True

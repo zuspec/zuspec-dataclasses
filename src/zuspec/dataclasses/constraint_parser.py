@@ -52,6 +52,7 @@ class ConstraintParser:
                     constraint_info = self.parse_constraint(value)
                     constraint_info['name'] = name
                     constraint_info['kind'] = getattr(value, '_constraint_kind', 'fixed')
+                    constraint_info['role'] = getattr(value, '_constraint_role', None)
                     constraints.append(constraint_info)
                 except Exception as e:
                     raise ValueError(f"Error parsing constraint {cls.__name__}.{name}: {e}") from e
@@ -247,6 +248,10 @@ class ConstraintParser:
             return self.parse_solve_order(node)
         elif func_name == 'range':
             return self.parse_range(node)
+        elif func_name == 'valid':
+            return self.parse_valid(node)
+        elif func_name == 'internal':
+            return self.parse_internal(node)
         
         # Generic function call
         return {
@@ -351,6 +356,31 @@ class ConstraintParser:
             'step': step
         }
     
+    def parse_valid(self, node: ast.Call) -> Dict[str, Any]:
+        """Parse zdc.valid(field) — observability declaration.
+
+        Records which field is being declared observable.  The enclosing
+        ``if`` guard (antecedent of the surrounding ``implies``) becomes the
+        observability condition; this method captures only the field argument.
+        The constraint compiler correlates validity_decl nodes with their
+        enclosing guard in ``_build_validity_decls()``.
+        """
+        if len(node.args) != 1:
+            raise ValueError(f"zdc.valid() requires exactly 1 argument, got {len(node.args)}")
+        return {
+            'type': 'validity_decl',
+            'field': self.parse_expr(node.args[0]),
+        }
+
+    def parse_internal(self, node: ast.Call) -> Dict[str, Any]:
+        """Parse zdc.internal(field) — internal-field declaration."""
+        if len(node.args) != 1:
+            raise ValueError(f"zdc.internal() requires exactly 1 argument, got {len(node.args)}")
+        return {
+            'type': 'internal_decl',
+            'field': self.parse_expr(node.args[0]),
+        }
+
     def parse_attribute(self, node: ast.Attribute) -> Dict[str, Any]:
         """Parse attribute access (self.field)."""
         return {
@@ -413,6 +443,108 @@ class ConstraintParser:
         else:
             return str(func_node)
 
+    def extract_method_contracts(self, method) -> dict:
+        """Extract requires/ensures blocks from an async method body.
+
+        Scans the function's AST for:
+          - ``with zdc.requires:`` (or ``with requires:``) blocks at the TOP
+            (before the first non-contract statement)
+          - ``with zdc.ensures:`` (or ``with ensures:``) blocks at the BOTTOM
+            (after the last non-contract statement)
+
+        Returns:
+            {
+              'requires': [list of parsed expr dicts],  # may be empty
+              'ensures':  [list of parsed expr dicts],  # may be empty
+            }
+
+        Raises ValueError if a requires block appears after non-contract
+        statements, or if an ensures block appears before non-contract
+        statements (i.e. ordering constraint is violated).
+        """
+        import textwrap
+
+        source = inspect.getsource(method)
+        source = textwrap.dedent(source)
+        tree = ast.parse(source)
+
+        func_def = tree.body[0]
+        if not isinstance(func_def, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            raise ValueError(f"Expected function definition, got {type(func_def)}")
+
+        requires_exprs: list = []
+        ensures_exprs: list = []
+
+        # Phase A = collecting leading requires blocks
+        # Phase B = in body (non-contract stmts)
+        # Phase C = collecting trailing ensures blocks
+        phase = 'A'
+
+        for stmt in func_def.body:
+            # Skip docstrings
+            if (isinstance(stmt, ast.Expr) and
+                    isinstance(stmt.value, ast.Constant) and
+                    isinstance(stmt.value.value, str)):
+                continue
+
+            role = self._get_with_role(stmt)
+
+            if role == 'requires':
+                if phase == 'B':
+                    raise ValueError(
+                        f"'with requires/zdc.requires:' block found after non-contract "
+                        f"statements in {method.__name__}. requires blocks must precede the body.")
+                if phase == 'C':
+                    raise ValueError(
+                        f"'with requires/zdc.requires:' block found after ensures block "
+                        f"in {method.__name__}.")
+                requires_exprs.extend(self._harvest_with_body(stmt))
+            elif role == 'ensures':
+                phase = 'C'
+                ensures_exprs.extend(self._harvest_with_body(stmt))
+            else:
+                # Non-contract statement
+                if phase == 'C':
+                    raise ValueError(
+                        f"Non-contract statement found after 'with ensures/zdc.ensures:' "
+                        f"block in {method.__name__}. ensures blocks must be at the end.")
+                phase = 'B'
+
+        return {
+            'requires': requires_exprs,
+            'ensures':  ensures_exprs,
+        }
+
+    def _get_with_role(self, stmt) -> 'str | None':
+        """Return 'requires' or 'ensures' if stmt is a matching with-block, else None."""
+        if not isinstance(stmt, ast.With):
+            return None
+        if not stmt.items:
+            return None
+        ctx_expr = stmt.items[0].context_expr
+        if isinstance(ctx_expr, ast.Name) and ctx_expr.id in ('requires', 'ensures'):
+            return ctx_expr.id
+        if (isinstance(ctx_expr, ast.Attribute) and
+                isinstance(ctx_expr.value, ast.Name) and
+                ctx_expr.value.id == 'zdc' and
+                ctx_expr.attr in ('requires', 'ensures')):
+            return ctx_expr.attr
+        return None
+
+    def _harvest_with_body(self, stmt: ast.With) -> list:
+        """Parse bare expression statements inside a with-block."""
+        exprs = []
+        for s in stmt.body:
+            if isinstance(s, ast.Pass):
+                continue
+            if isinstance(s, ast.Expr):
+                if isinstance(s.value, ast.Constant) and isinstance(s.value.value, str):
+                    continue
+                exprs.append(self.parse_expr(s.value))
+            elif isinstance(s, ast.Assert):
+                exprs.append(self.parse_expr(s.test))
+        return exprs
+
 
 def extract_rand_fields(cls: type) -> List[Dict[str, Any]]:
     """Extract all rand/randc fields from a dataclass.
@@ -434,9 +566,6 @@ def extract_rand_fields(cls: type) -> List[Dict[str, Any]]:
     
     rand_fields = []
     for field in dataclasses.fields(cls):
-        # The rand() helper returns a dc.Field object used as the type annotation.
-        # In that case field.metadata is empty and the actual metadata lives in
-        # field.type (the Field object that rand() returned).
         metadata = field.metadata
         if not metadata and isinstance(field.type, dataclasses.Field):
             metadata = field.type.metadata

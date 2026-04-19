@@ -50,4 +50,4 @@ class PythonIRChecker(BaseIRChecker):
 # Type hints
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..ir import Field, Function, Stmt, Expr
+    from zuspec.ir.core import Field, Function, Stmt, Expr

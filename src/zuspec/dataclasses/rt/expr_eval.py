@@ -57,7 +57,7 @@ class ExprEval:
         """Evaluate *expr* (a dict, IR node, or plain Python value)."""
         # Handle IR expression objects from PSS-translated activities
         try:
-            from zuspec.dataclasses.ir.expr import (
+            from zuspec.ir.core.expr import (
                 ExprConstant as _EC,
                 ExprRefField as _ERF,
                 ExprBin as _EB,

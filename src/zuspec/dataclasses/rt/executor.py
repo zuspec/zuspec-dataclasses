@@ -42,17 +42,17 @@ _PSS_CONSTANTS: dict[str, Any] = {
     'FULL':   5,
     'FATAL':  6,
 }
-from ..ir.stmt import (Stmt, StmtAssign, StmtAugAssign, StmtAnnAssign, StmtIf, StmtPass,
+from zuspec.ir.core.stmt import (Stmt, StmtAssign, StmtAugAssign, StmtAnnAssign, StmtIf, StmtPass,
                        StmtExpr, StmtFor, StmtWhile, StmtBreak, StmtContinue, StmtReturn,
                        StmtForeach, StmtRepeatWhile, StmtMatch, PatternValue, PatternAs,
                        StmtRepeat, StmtAssert, StmtAssume)
-from ..ir.expr import (
+from zuspec.ir.core.expr import (
     Expr, ExprConstant, ExprRefField, ExprBin, ExprAttribute,
     BinOp, AugOp, TypeExprRefSelf, ExprRefLocal, ExprRefUnresolved, ExprCall,
     ExprCompare, CmpOp, ExprSubscript, ExprBool, BoolOp,
     ExprUnary, ExprSlice, ExprCast, ExprStructLiteral, UnaryOp
 )
-from ..ir.expr_phase2 import ExprIfExp
+from zuspec.ir.core.expr_phase2 import ExprIfExp
 from .eval_state import EvalState
 
 if TYPE_CHECKING:
@@ -487,7 +487,7 @@ class Executor:
                 return base[int(index)]
 
         # Handle phase2 expressions
-        from ..ir.expr_phase2 import ExprList
+        from zuspec.ir.core.expr_phase2 import ExprList
         if isinstance(expr, ExprList):
             # Evaluate list literal
             return [self.evaluate_expr(elt) for elt in expr.elts]

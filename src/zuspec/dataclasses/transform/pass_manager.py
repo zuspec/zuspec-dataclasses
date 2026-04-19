@@ -23,7 +23,7 @@ class DomainNodeNotLoweredError(Exception):
 def _collect_domain_nodes(obj: Any, seen: set) -> list:
     """Recursively walk ``obj`` and collect any ``DomainNode`` instances found."""
     import dataclasses as _dc
-    from zuspec.dataclasses.ir.domain_node import DomainNode
+    from zuspec.ir.core.domain_node import DomainNode
 
     if id(obj) in seen:
         return []

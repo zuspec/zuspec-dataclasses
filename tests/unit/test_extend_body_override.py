@@ -259,7 +259,7 @@ def test_body_override_source_is_none_without_extension():
 
 def test_body_override_source_field_exists_on_data_type_action():
     """DataTypeAction has the body_override_source field with default None."""
-    from zuspec.dataclasses.ir.data_type import DataTypeAction
+    from zuspec.ir.core.data_type import DataTypeAction
 
     dt = DataTypeAction(super=None)
     assert hasattr(dt, 'body_override_source')

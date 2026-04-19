@@ -3,22 +3,22 @@ from typing import Union, Iterator, Type, get_type_hints, Any, Optional, Protoco
 import dataclasses as dc
 import inspect
 import ast
-from .ir.context import Context
+from zuspec.ir.core.context import Context
 import enum as _enum_mod
-from .ir.data_type import (
+from zuspec.ir.core.data_type import (
     DataType, DataTypeInt, DataTypeUptr, DataTypeStruct, DataTypeClass,
     DataTypeAction, DataTypeComponent, DataTypeExtern, DataTypeProtocol, DataTypeRef, DataTypeString,
     DataTypeLock, DataTypeEvent, DataTypeMemory, DataTypeArray, DataTypeChannel, DataTypeGetIF, DataTypePutIF,
     DataTypeTuple, DataTypeTupleReturn, DataTypeEnum, DataTypeClaimPool,
     Function, Process, ProcessKind
 )
-from .ir.fields import Field, FieldKind, Bind, FieldInOut
-from .ir.stmt import (
+from zuspec.ir.core.fields import Field, FieldKind, Bind, FieldInOut
+from zuspec.ir.core.stmt import (
     Stmt, Arguments, Arg,
     StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAnnAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
     StmtAssert, StmtAssume, StmtCover, StmtMatch, StmtMatchCase,
 )
-from .ir.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
+from zuspec.ir.core.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
 from .types import TypeBase, Component, Extern, Lock, Memory, Struct
 
 # Import Event at runtime to avoid circular dependency
@@ -480,6 +480,26 @@ class DataModelFactory(object):
         # match the Python class layout, but mark its C-struct presence separately.
         fields = self._extract_fields(t)
 
+        # Build field_indices so that constraint method bodies can resolve
+        # ``self.field_name`` references to the correct ExprFieldRef index.
+        field_indices = {f.name: idx for idx, f in enumerate(fields)}
+
+        # Collect @constraint-decorated methods into functions so the solver
+        # can use them as constraints during randomization.  Only pick up
+        # methods explicitly marked _is_constraint to avoid pulling in body(),
+        # pre_solve(), post_solve(), etc.
+        functions = []
+        for name, member in inspect.getmembers(t):
+            if name.startswith('_'):
+                continue
+            if not callable(member):
+                continue
+            if not (hasattr(member, '_is_constraint') and member._is_constraint):
+                continue
+            func = self._extract_function(t, name, member, field_indices)
+            if func is not None:
+                functions.append(func)
+
         # Collect @staticmethod members and convert them to Function IR.
         static_methods = self._collect_static_methods(t)
 
@@ -488,6 +508,7 @@ class DataModelFactory(object):
         return DataTypeAction(
             super=None,
             fields=fields,
+            functions=functions,
             comp_type_name=comp_type_name,
             body_stmts=[],   # populated on first inline
             static_methods=static_methods,
@@ -613,6 +634,8 @@ class DataModelFactory(object):
             func_metadata['_is_constraint'] = True
             if hasattr(member, '_constraint_kind'):
                 func_metadata['_constraint_kind'] = member._constraint_kind
+            if hasattr(member, '_constraint_role'):
+                func_metadata['_constraint_role'] = member._constraint_role
         
         # Create conversion scope; component=cls so action class names can be
         # resolved from the module globals via _get_scope_globals.
@@ -735,6 +758,20 @@ class DataModelFactory(object):
             
             if callable(member) and not isinstance(member, type):
                 func = self._extract_function(t, name, member, field_indices)
+                if func is not None:
+                    functions.append(func)
+
+        # Extract private async helper methods (single _ prefix, not __) for
+        # synthesis inlining.  These are async def methods that are not decorated
+        # with @proc/@sync/@comb and are not dunder methods.
+        for name, member in t.__dict__.items():
+            if not (name.startswith('_') and not name.startswith('__')):
+                continue
+            if isinstance(member, (ExecProc, ExecSync, ExecComb)):
+                continue
+            raw = member.__func__ if isinstance(member, classmethod) else member
+            if callable(raw) and inspect.iscoroutinefunction(raw):
+                func = self._extract_function(t, name, raw, field_indices)
                 if func is not None:
                     functions.append(func)
 
@@ -1057,7 +1094,7 @@ class DataModelFactory(object):
             if field_metadata and 'width' in field_metadata:
                 width_val = field_metadata['width']
                 if callable(width_val):
-                    from .ir.expr import ExprLambda
+                    from zuspec.ir.core.expr import ExprLambda
                     width_expr = ExprLambda(callable=width_val)
             
             # Extract kwargs expression if present
@@ -1065,7 +1102,7 @@ class DataModelFactory(object):
             if field_metadata and 'kwargs' in field_metadata:
                 kwargs_val = field_metadata['kwargs']
                 if callable(kwargs_val):
-                    from .ir.expr import ExprLambda
+                    from zuspec.ir.core.expr import ExprLambda
                     kwargs_expr = ExprLambda(callable=kwargs_val)
             
             # Try to get source location for this field
@@ -1125,7 +1162,7 @@ class DataModelFactory(object):
         try:
             import inspect
             import ast
-            from .ir.base import Loc
+            from zuspec.ir.core.base import Loc
             
             # Get source file and lines
             source_lines, start_lineno = inspect.getsourcelines(cls)
@@ -1425,8 +1462,308 @@ class DataModelFactory(object):
     # -----------------------------------------------------------------------
 
     def _build_pipeline_irs(self, t: Type):
-        """Old sync pipeline API removed. Always returns (None, [], [])."""
-        return None, [], []
+        """Build pipeline IRs from ``@zdc.stage`` and ``@zdc.pipeline`` decorated methods.
+
+        Returns ``(pipeline_root_ir, stage_method_irs, sync_method_irs)`` where:
+
+        * ``pipeline_root_ir`` is a :class:`~zuspec.ir.core.pipeline.PipelineRootIR`
+          built from the non-async ``@zdc.pipeline`` orchestrator method, or ``None`` when
+          there is no ``@zdc.stage`` usage in the class.
+        * ``stage_method_irs`` is a list of
+          :class:`~zuspec.ir.core.pipeline.StageMethodIR`, one per ``@zdc.stage``
+          decorated method.
+        * ``sync_method_irs`` is a list of
+          :class:`~zuspec.ir.core.pipeline.SyncMethodIR` for ``@zdc.sync`` methods
+          that contain pipeline interactions (``zdc.stage.flush`` / ``zdc.stage.ready``).
+        """
+        from zuspec.ir.core.pipeline import (
+            StageCallNode, StageMethodIR, SyncMethodIR, PipelineRootIR,
+            StallDecl, CancelDecl, FlushDecl, QueryNode,
+        )
+        from .decorators import ExecSync
+
+        # ---- 1. Collect @zdc.stage decorated methods ----------------------------
+        stage_method_irs = []
+        for name, member in t.__dict__.items():
+            if not callable(member):
+                continue
+            if not getattr(member, '_zdc_stage', False):
+                continue
+            smir = self._parse_stage_method_ir(name, member)
+            if smir is not None:
+                stage_method_irs.append(smir)
+
+        # ---- 2. Find non-async @zdc.pipeline orchestrator method ----------------
+        pipeline_method = None
+        for name, member in t.__dict__.items():
+            if not callable(member):
+                continue
+            if (getattr(member, '_zdc_pipeline', False) and
+                    not getattr(member, '_zdc_async_pipeline', False)):
+                pipeline_method = member
+                break
+
+        if not stage_method_irs and pipeline_method is None:
+            return None, [], []
+
+        # ---- 3. Parse pipeline orchestrator body --------------------------------
+        root_ir = None
+        if pipeline_method is not None:
+            stage_calls = self._parse_pipeline_calls(t, pipeline_method)
+            root_ir = PipelineRootIR(
+                stage_calls=stage_calls,
+                forward=getattr(pipeline_method, '_zdc_pipeline_forward', None),
+                clock=getattr(pipeline_method, '_zdc_pipeline_clock', None),
+                reset=getattr(pipeline_method, '_zdc_pipeline_reset', None),
+            )
+
+        # ---- 4. Build SyncMethodIRs from @zdc.sync methods with stage calls ----
+        sync_method_irs = self._parse_sync_method_irs(t, ExecSync)
+
+        return root_ir, stage_method_irs, sync_method_irs
+
+    # ------------------------------------------------------------------
+    # Pipeline IR parse helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_attr_chain(node) -> list:
+        """Return attribute chain as a list of strings.
+
+        ``zdc.stage.stall`` → ``["zdc", "stage", "stall"]``.
+        Returns an empty list when the node is not an attribute chain.
+        """
+        import ast
+        if isinstance(node, ast.Attribute):
+            parent = DataModelFactory._get_attr_chain(node.value)
+            return parent + [node.attr] if parent is not None else []
+        if isinstance(node, ast.Name):
+            return [node.id]
+        return []
+
+    @staticmethod
+    def _get_attr_leaf(node) -> str:
+        """Return the leaf attribute name from ``self.X`` or ``Name("X")``."""
+        import ast
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        if isinstance(node, ast.Name):
+            return node.id
+        return ""
+
+    def _parse_stage_method_ir(self, name: str, method):
+        """Parse a single ``@zdc.stage`` method and return a :class:`StageMethodIR`."""
+        import ast
+        import inspect
+        import textwrap
+        from zuspec.ir.core.pipeline import StageMethodIR, StallDecl, CancelDecl, FlushDecl
+
+        no_forward = getattr(method, '_zdc_no_forward', False)
+        cycles     = getattr(method, '_zdc_cycles', 1)
+        stall_decls:  list = []
+        cancel_decls: list = []
+        flush_decls:  list = []
+        body_ast = None
+
+        try:
+            src = textwrap.dedent(inspect.getsource(method))
+            tree = ast.parse(src)
+            func_def = None
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                    func_def = node
+                    break
+            if func_def is not None:
+                body_ast = func_def
+                for stmt in ast.walk(func_def):
+                    if not isinstance(stmt, ast.Expr):
+                        continue
+                    call = stmt.value
+                    if not isinstance(call, ast.Call):
+                        continue
+                    chain = self._get_attr_chain(call.func)
+                    # Match zdc.stage.stall / zdc.stage.cancel / zdc.stage.flush
+                    if len(chain) >= 3 and chain[-3:] == ["zdc", "stage", "stall"]:
+                        cond = call.args[1] if len(call.args) > 1 else None
+                        stall_decls.append(StallDecl(cond_ast=cond))
+                    elif len(chain) >= 3 and chain[-3:] == ["zdc", "stage", "cancel"]:
+                        cond = call.args[1] if len(call.args) > 1 else None
+                        cancel_decls.append(CancelDecl(cond_ast=cond))
+                    elif len(chain) >= 3 and chain[-3:] == ["zdc", "stage", "flush"]:
+                        target = self._get_attr_leaf(call.args[0]) if call.args else ""
+                        cond = call.args[1] if len(call.args) > 1 else None
+                        flush_decls.append(FlushDecl(target_stage=target, cond_ast=cond))
+        except Exception:
+            pass  # AST parse failure is non-fatal; we still return a partial IR
+
+        return StageMethodIR(
+            name=name,
+            no_forward=no_forward,
+            cycles=cycles,
+            stall_decls=stall_decls,
+            cancel_decls=cancel_decls,
+            flush_decls=flush_decls,
+            body_ast=body_ast,
+        )
+
+    def _parse_pipeline_calls(self, t: Type, method) -> list:
+        """Parse the ``@zdc.pipeline`` orchestrator body and return ``StageCallNode`` list."""
+        import ast
+        import inspect
+        import textwrap
+        from zuspec.ir.core.pipeline import StageCallNode
+
+        stage_calls: list = []
+        method_name = getattr(method, '__name__', None)
+        if method_name is None:
+            return stage_calls
+
+        try:
+            src = textwrap.dedent(inspect.getsource(method))
+            tree = ast.parse(src)
+            func_def = None
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == method_name:
+                    func_def = node
+                    break
+            if func_def is None:
+                return stage_calls
+
+            for stmt in func_def.body:
+                self._collect_stage_calls(stmt, stage_calls, StageCallNode, cycles=1)
+        except Exception:
+            pass
+
+        return stage_calls
+
+    def _collect_stage_calls(self, stmt, stage_calls: list, StageCallNode, cycles: int = 1) -> None:
+        """Recursively collect ``StageCallNode`` from *stmt*, honouring ``with zdc.stage.cycles(N):``."""
+        import ast
+
+        # Pattern C: with zdc.stage.cycles(N): ...
+        if isinstance(stmt, ast.With):
+            n = cycles  # default: inherit outer cycles
+            for item in stmt.items:
+                n = self._extract_cycles_cm(item.context_expr) or n
+            for inner in stmt.body:
+                self._collect_stage_calls(inner, stage_calls, StageCallNode, cycles=n)
+            return
+
+        # Pattern A: (x, y) = self.STAGE(a, b)
+        if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+            stage_name, arg_names = self._extract_self_call(stmt.value)
+            if stage_name:
+                return_names = self._extract_target_names(stmt.targets[0])
+                stage_calls.append(StageCallNode(
+                    stage_name=stage_name,
+                    arg_names=arg_names,
+                    return_names=return_names,
+                    cycles=cycles,
+                ))
+            return
+
+        # Pattern B: self.STAGE(a, b)  (no return capture)
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            stage_name, arg_names = self._extract_self_call(stmt.value)
+            if stage_name:
+                stage_calls.append(StageCallNode(
+                    stage_name=stage_name,
+                    arg_names=arg_names,
+                    return_names=[],
+                    cycles=cycles,
+                ))
+
+    @staticmethod
+    def _extract_cycles_cm(node) -> int:
+        """Return *N* if *node* is a ``zdc.stage.cycles(N)`` call, else 0."""
+        import ast
+        if not isinstance(node, ast.Call):
+            return 0
+        # Match: zdc.stage.cycles(N)  or  stage.cycles(N)  or  cycles(N)
+        chain = DataModelFactory._get_attr_chain(node.func)
+        if chain and chain[-1] == "cycles":
+            if node.args and isinstance(node.args[0], ast.Constant):
+                val = node.args[0].value
+                if isinstance(val, int) and val >= 1:
+                    return val
+        return 0
+
+    @staticmethod
+    def _extract_self_call(call_node):
+        """Return ``(stage_name, arg_name_list)`` if *call_node* is ``self.X(args)``."""
+        import ast
+        if not isinstance(call_node, ast.Call):
+            return None, []
+        func = call_node.func
+        if not (isinstance(func, ast.Attribute) and
+                isinstance(func.value, ast.Name) and
+                func.value.id == 'self'):
+            return None, []
+        stage_name = func.attr
+        arg_names = []
+        for arg in call_node.args:
+            if isinstance(arg, ast.Name):
+                arg_names.append(arg.id)
+        return stage_name, arg_names
+
+    @staticmethod
+    def _extract_target_names(target) -> list:
+        """Extract variable names from an assignment target (Name or Tuple)."""
+        import ast
+        if isinstance(target, ast.Name):
+            return [target.id]
+        if isinstance(target, ast.Tuple):
+            names = []
+            for elt in target.elts:
+                if isinstance(elt, ast.Name):
+                    names.append(elt.id)
+            return names
+        return []
+
+    def _parse_sync_method_irs(self, t: Type, exec_sync_cls) -> list:
+        """Return :class:`SyncMethodIR` for ``@zdc.sync`` methods with stage interactions."""
+        import ast
+        import inspect
+        import textwrap
+        from zuspec.ir.core.pipeline import SyncMethodIR, FlushDecl, QueryNode
+
+        sync_method_irs: list = []
+        for name, member in t.__dict__.items():
+            if not isinstance(member, exec_sync_cls):
+                continue
+            method = member.method
+            flush_decls: list = []
+            query_nodes: list = []
+            try:
+                src = textwrap.dedent(inspect.getsource(method))
+                tree = ast.parse(src)
+                func_def = None
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == method.__name__:
+                        func_def = node
+                        break
+                if func_def is not None:
+                    for node in ast.walk(func_def):
+                        if not isinstance(node, ast.Call):
+                            continue
+                        chain = DataModelFactory._get_attr_chain(node.func)
+                        if len(chain) >= 3 and chain[-3:] == ["zdc", "stage", "flush"]:
+                            target = DataModelFactory._get_attr_leaf(node.args[0]) if node.args else ""
+                            cond = node.args[1] if len(node.args) > 1 else None
+                            flush_decls.append(FlushDecl(target_stage=target, cond_ast=cond))
+                        elif len(chain) >= 3 and chain[-3:] == ["zdc", "stage", "ready"]:
+                            stage_name = DataModelFactory._get_attr_leaf(node.args[0]) if node.args else ""
+                            query_nodes.append(QueryNode(kind="ready", stage_name=stage_name))
+            except Exception:
+                pass
+            if flush_decls or query_nodes:
+                sync_method_irs.append(SyncMethodIR(
+                    name=name,
+                    flush_decls=flush_decls,
+                    query_nodes=query_nodes,
+                ))
+
+        return sync_method_irs
 
     def _extract_process(self, cls : Type, name : str, exec_proc : ExecProc, field_indices: dict = None) -> Optional[Process]:
         """Extract a Process from an @process decorated method.
@@ -1833,7 +2170,7 @@ class DataModelFactory(object):
 
     def _convert_ast_body(self, body : list, scope: ConversionScope = None) -> list:
         """Convert AST statement list to data model statements."""
-        from .ir.base import Loc, Base
+        from zuspec.ir.core.base import Loc, Base
         stmts = []
         for node in body:
             stmt = self._convert_ast_stmt(node, scope)
@@ -2877,17 +3214,18 @@ class DataModelFactory(object):
                     return _ExprActionSelf()
                 return TypeExprRefSelf()
             
+            # Handle method parameter reference — checked before field_indices
+            # so that a parameter can shadow a same-named component field.
+            if scope and name in scope.method_params:
+                return ExprRefParam(name=name)
+
             # Handle field reference
             if scope and name in scope.field_indices:
                 return ExprRefField(
                     base=TypeExprRefSelf(),
                     index=scope.field_indices[name]
                 )
-            
-            # Handle method parameter reference
-            if scope and name in scope.method_params:
-                return ExprRefParam(name=name)
-            
+
             # Handle local variable reference
             if scope and name in scope.local_vars:
                 return ExprRefLocal(name=name)
@@ -2916,20 +3254,20 @@ class DataModelFactory(object):
                 rhs=self._convert_ast_expr(node.right, scope)
             )
         elif isinstance(node, ast.Compare):
-            from .ir.expr import ExprCompare
+            from zuspec.ir.core.expr import ExprCompare
             return ExprCompare(
                 left=self._convert_ast_expr(node.left, scope),
                 ops=[self._convert_cmpop(op) for op in node.ops],
                 comparators=[self._convert_ast_expr(comp, scope) for comp in node.comparators]
             )
         elif isinstance(node, ast.BoolOp):
-            from .ir.expr import ExprBool
+            from zuspec.ir.core.expr import ExprBool
             return ExprBool(
                 op=self._convert_boolop(node.op),
                 values=[self._convert_ast_expr(v, scope) for v in node.values]
             )
         elif isinstance(node, ast.UnaryOp):
-            from .ir.expr import ExprUnary
+            from zuspec.ir.core.expr import ExprUnary
             return ExprUnary(
                 op=self._convert_unaryop(node.op),
                 operand=self._convert_ast_expr(node.operand, scope)
@@ -2941,7 +3279,7 @@ class DataModelFactory(object):
             )
         elif isinstance(node, ast.IfExp):
             # Handle ternary conditional expression (a if test else b)
-            from .ir.expr_phase2 import ExprIfExp
+            from zuspec.ir.core.expr_phase2 import ExprIfExp
             return ExprIfExp(
                 test=self._convert_ast_expr(node.test, scope),
                 body=self._convert_ast_expr(node.body, scope),
@@ -2962,11 +3300,11 @@ class DataModelFactory(object):
             if all(isinstance(e, ExprConstant) for e in elts):
                 return ExprConstant(value=[e.value for e in elts])
             # Otherwise use ExprList from phase2
-            from .ir.expr_phase2 import ExprList
+            from zuspec.ir.core.expr_phase2 import ExprList
             return ExprList(elts=elts)
         elif isinstance(node, ast.Slice):
             # Handle bit-slice expressions, e.g. x[4:0] → ExprSlice(lower=4, upper=0)
-            from .ir.expr import ExprSlice
+            from zuspec.ir.core.expr import ExprSlice
             return ExprSlice(
                 lower=self._convert_ast_expr(node.lower, scope) if node.lower is not None else None,
                 upper=self._convert_ast_expr(node.upper, scope) if node.upper is not None else None,
@@ -2980,24 +3318,24 @@ class DataModelFactory(object):
             )
         elif isinstance(node, ast.Tuple):
             # Handle tuple literals (a, b, c) or return (x, y)
-            from .ir.expr_phase2 import ExprTuple
+            from zuspec.ir.core.expr_phase2 import ExprTuple
             return ExprTuple(
                 elts=[self._convert_ast_expr(elt, scope) for elt in node.elts]
             )
         elif isinstance(node, ast.ListComp):
-            from .ir.expr_phase2 import ExprListComp
+            from zuspec.ir.core.expr_phase2 import ExprListComp
             return ExprListComp(
                 elt=self._convert_ast_expr(node.elt, scope),
                 generators=[self._convert_comprehension(g, scope) for g in node.generators]
             )
         elif isinstance(node, ast.GeneratorExp):
-            from .ir.expr_phase2 import ExprGeneratorExp
+            from zuspec.ir.core.expr_phase2 import ExprGeneratorExp
             return ExprGeneratorExp(
                 elt=self._convert_ast_expr(node.elt, scope),
                 generators=[self._convert_comprehension(g, scope) for g in node.generators]
             )
         elif isinstance(node, ast.Lambda):
-            from .ir.expr_phase2 import ExprLambda as ExprLambdaPhase2
+            from zuspec.ir.core.expr_phase2 import ExprLambda as ExprLambdaPhase2
             arg_names = [a.arg for a in node.args.args]
             # Extend scope with lambda parameters so the body can reference them
             lambda_scope = scope
@@ -3022,7 +3360,7 @@ class DataModelFactory(object):
         The comprehension's target variable(s) are added to the scope so that
         the iterator expression and filter conditions can reference them.
         """
-        from .ir.expr_phase2 import Comprehension
+        from zuspec.ir.core.expr_phase2 import Comprehension
         # Collect names introduced by this comprehension's target so they are
         # visible inside ``ifs`` and in subsequent generators.
         target_names: list[str] = []
@@ -3050,7 +3388,7 @@ class DataModelFactory(object):
 
     def _convert_ast_pattern(self, node: ast.pattern, scope: ConversionScope = None):
         """Convert AST match pattern to data model Pattern."""
-        from .ir.stmt import PatternValue, PatternAs, PatternOr, PatternSequence
+        from zuspec.ir.core.stmt import PatternValue, PatternAs, PatternOr, PatternSequence
         
         if isinstance(node, ast.MatchValue):
             # Literal value pattern: case 0:, case "hello":
@@ -3097,7 +3435,7 @@ class DataModelFactory(object):
     
     def _convert_cmpop(self, op : ast.cmpop):
         """Convert AST comparison operator to data model CmpOp."""
-        from .ir.expr import CmpOp
+        from zuspec.ir.core.expr import CmpOp
         op_map = {
             ast.Eq: CmpOp.Eq,
             ast.NotEq: CmpOp.NotEq,
@@ -3114,7 +3452,7 @@ class DataModelFactory(object):
     
     def _convert_boolop(self, op : ast.boolop):
         """Convert AST boolean operator to data model BoolOp."""
-        from .ir.expr import BoolOp as DmBoolOp
+        from zuspec.ir.core.expr import BoolOp as DmBoolOp
         op_map = {
             ast.And: DmBoolOp.And,
             ast.Or: DmBoolOp.Or,
@@ -3123,7 +3461,7 @@ class DataModelFactory(object):
     
     def _convert_unaryop(self, op : ast.unaryop):
         """Convert AST unary operator to data model UnaryOp."""
-        from .ir.expr import UnaryOp
+        from zuspec.ir.core.expr import UnaryOp
         op_map = {
             ast.Invert: UnaryOp.Invert,
             ast.Not: UnaryOp.Not,
@@ -3134,7 +3472,7 @@ class DataModelFactory(object):
 
     def _convert_cmpop(self, op : ast.cmpop) -> 'CmpOp':
         """Convert AST comparison operator to data model CmpOp."""
-        from .ir.expr import CmpOp
+        from zuspec.ir.core.expr import CmpOp
         op_map = {
             ast.Eq: CmpOp.Eq,
             ast.NotEq: CmpOp.NotEq,

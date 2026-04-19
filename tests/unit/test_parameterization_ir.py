@@ -2,9 +2,9 @@
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.data_model_factory import DataModelFactory
-from zuspec.dataclasses.ir.data_type import DataTypeComponent, DataTypeInt
-from zuspec.dataclasses.ir.expr import ExprLambda
-from zuspec.dataclasses.ir.fields import Field, FieldInOut
+from zuspec.ir.core.data_type import DataTypeComponent, DataTypeInt
+from zuspec.ir.core.expr import ExprLambda
+from zuspec.ir.core.fields import Field, FieldInOut
 
 
 def test_ir_field_metadata_complete():

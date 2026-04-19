@@ -1,7 +1,7 @@
 """Tests for IR Expression Parser"""
 
 import pytest
-from zuspec.dataclasses.ir.expr import (
+from zuspec.ir.core.expr import (
     ExprConstant, ExprBin, ExprUnary, ExprBool, ExprCompare,
     ExprRefLocal, ExprRefField, ExprRefBottomUp, ExprSubscript, ExprSlice,
     BinOp, UnaryOp, BoolOp, CmpOp, TypeExprRefSelf

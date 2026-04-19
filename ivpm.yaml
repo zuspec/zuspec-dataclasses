@@ -23,6 +23,8 @@ package:
       deps:
       - name: networkx
         src: pypi
+      - name: zuspec-ir-core
+        url: https://github.com/zuspec/zuspec-ir-core.git
 
 
 

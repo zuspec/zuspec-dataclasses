@@ -76,7 +76,7 @@ class ZuspecIRChecker:
         Returns:
             List of validation errors found, sorted by location
         """
-        from ..ir import Context as IRContext
+        from zuspec.ir.core import Context as IRContext
         
         if context is None:
             logger.warning("Received None context, returning no errors")
@@ -122,4 +122,4 @@ class ZuspecIRChecker:
 # Type hints
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..ir import Context
+    from zuspec.ir.core import Context

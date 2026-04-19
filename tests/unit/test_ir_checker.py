@@ -48,7 +48,7 @@ class TestZuspecIRChecker:
     
     def test_check_empty_context(self):
         """Test checking an empty context."""
-        from zuspec.dataclasses.ir import Context
+        from zuspec.ir.core import Context
         
         checker = ZuspecIRChecker(profile='Retargetable')
         context = Context()

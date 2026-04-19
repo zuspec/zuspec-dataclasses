@@ -40,11 +40,13 @@ class ScenarioRunner:
         comp: "Component",
         seed: Optional[int] = None,
         tracer=None,
+        check_contracts: bool = False,
     ) -> None:
         self._comp = comp
         self._resolver = PoolResolver.build(comp)
         self._seed = seed if seed is not None else random.randrange(2**32)
         self._tracer = tracer
+        self._check_contracts = check_contracts
         # Build ICL table once for structural inference
         self._registry = ActionRegistry.build(comp)
         self._icl_table = ICLTable.build(self._registry)
@@ -61,6 +63,7 @@ class ScenarioRunner:
             seed=self._seed,
             structural_solver=self._structural_solver,
             tracer=self._tracer,
+            check_contracts=self._check_contracts,
         )
         runner = ActivityRunner()
         try:

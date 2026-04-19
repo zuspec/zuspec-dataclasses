@@ -1,10 +1,10 @@
 """Tests for Constraint System Builder"""
 
 import pytest
-from zuspec.dataclasses.ir.data_type import DataTypeInt, DataTypeStruct, Function
-from zuspec.dataclasses.ir.fields import Field
-from zuspec.dataclasses.ir.stmt import StmtExpr
-from zuspec.dataclasses.ir.expr import ExprBin, ExprRefField, ExprConstant, BinOp, TypeExprRefSelf
+from zuspec.ir.core.data_type import DataTypeInt, DataTypeStruct, Function
+from zuspec.ir.core.fields import Field
+from zuspec.ir.core.stmt import StmtExpr
+from zuspec.ir.core.expr import ExprBin, ExprRefField, ExprConstant, BinOp, TypeExprRefSelf
 from zuspec.dataclasses.solver.frontend import ConstraintSystemBuilder, BuildError
 from zuspec.dataclasses.solver.core import Variable, IntDomain, CompareConstraint
 
@@ -272,4 +272,4 @@ class TestConstraintSystemBuilder:
 
 
 # Need to import ExprRefLocal for tests
-from zuspec.dataclasses.ir.expr import ExprRefLocal
+from zuspec.ir.core.expr import ExprRefLocal

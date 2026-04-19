@@ -4,7 +4,7 @@ import textwrap
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.activity_parser import ActivityParser, ActivityParseError
-from zuspec.dataclasses.ir.activity import (
+from zuspec.ir.core.activity import (
     ActivityAnonTraversal,
     ActivityBind,
     ActivitySequenceBlock,
