@@ -51,6 +51,13 @@ class ActivityParseError(ValueError):
     """Raised when an unsupported AST pattern is encountered."""
 
 
+# DSL keyword names that are NOT action types and must not be treated as
+# anonymous traversal targets (e.g. parallel, schedule, bind, …).
+_ACTIVITY_DSL_KEYWORDS: frozenset = frozenset({
+    "parallel", "schedule", "sequence", "atomic", "select", "branch",
+    "do_while", "while_do", "constraint", "bind", "replicate",
+})
+
 _parse_cache: Dict[Tuple, ActivitySequenceBlock] = {}
 
 
@@ -186,22 +193,28 @@ class ActivityParser:
             dst = self._parse_expr(call.args[1])
             return ActivityBind(src=src, dst=dst, loc=self._loc(inner))
 
-        # await do(Type) → ActivityAnonTraversal
-        # Bare do(Type) without await is now an error.
-        if self._is_call_name(inner, "do"):
-            if not awaited:
-                type_name = self._type_name(inner.args[0])  # type: ignore[attr-defined]
-                raise ActivityParseError(
-                    f"Anonymous traversal must be awaited: "
-                    f"use 'await do({type_name})' "
-                    f"at line {getattr(node, 'lineno', '?')}"
+        # await T() or await pkg.T() → ActivityAnonTraversal (direct type-call syntax)
+        if awaited and isinstance(inner, ast.Call):
+            func = inner.func  # type: ignore[attr-defined]
+            if isinstance(func, ast.Name):
+                type_name = func.id
+                cls = self._resolve_type_cls(type_name)
+                if cls is not None or type_name not in _ACTIVITY_DSL_KEYWORDS:
+                    return ActivityAnonTraversal(
+                        action_type=type_name,
+                        action_type_cls=cls,
+                        init_bindings=self._parse_init_bindings(inner),
+                        loc=self._loc(inner),
+                    )
+            elif isinstance(func, ast.Attribute) and not self._is_self_attr_call(inner):
+                type_name = self._type_name(func)
+                cls = self._resolve_type_cls(type_name)
+                return ActivityAnonTraversal(
+                    action_type=type_name,
+                    action_type_cls=cls,
+                    init_bindings=self._parse_init_bindings(inner),
+                    loc=self._loc(inner),
                 )
-            type_name = self._type_name(inner.args[0])  # type: ignore[attr-defined]
-            return ActivityAnonTraversal(
-                action_type=type_name,
-                action_type_cls=self._resolve_type_cls(type_name),
-                loc=self._loc(inner),
-            )
 
         # await self.handle() → ActivityTraversal
         if isinstance(inner, ast.Call) and self._is_self_attr_call(inner):
@@ -222,34 +235,31 @@ class ActivityParser:
     # ------------------------------------------------------------------
 
     def _parse_assign(self, node: ast.Assign) -> ActivityStmt:
-        """Handle ``x = await do(Type)`` — labeled anonymous traversal.
-
-        Bare ``x = do(Type)`` without ``await`` is rejected.
-        """
+        """Handle ``x = await T()`` — labeled anonymous traversal."""
         rhs = node.value
         awaited = isinstance(rhs, ast.Await)
         if awaited:
             rhs = rhs.value
+
+        # x = await T(kwargs) (direct type-call syntax)
         if (
-            len(node.targets) == 1
+            awaited
+            and len(node.targets) == 1
             and isinstance(node.targets[0], ast.Name)
-            and self._is_call_name(rhs, "do")
+            and isinstance(rhs, ast.Call)
+            and isinstance(rhs.func, ast.Name)
         ):
             label = node.targets[0].id
-            call: ast.Call = rhs  # type: ignore[assignment]
-            type_name = self._type_name(call.args[0])
-            if not awaited:
-                raise ActivityParseError(
-                    f"Labeled anonymous traversal must be awaited: "
-                    f"use '{label} = await do({type_name})' "
-                    f"at line {getattr(node, 'lineno', '?')}"
+            type_name = rhs.func.id
+            cls = self._resolve_type_cls(type_name)
+            if cls is not None or type_name not in _ACTIVITY_DSL_KEYWORDS:
+                return ActivityAnonTraversal(
+                    action_type=type_name,
+                    label=label,
+                    action_type_cls=cls,
+                    init_bindings=self._parse_init_bindings(rhs),
+                    loc=self._loc(node),
                 )
-            return ActivityAnonTraversal(
-                action_type=type_name,
-                label=label,
-                action_type_cls=self._resolve_type_cls(type_name),
-                loc=self._loc(node),
-            )
 
         raise ActivityParseError(
             f"Unsupported assignment in activity body: {ast.dump(node)}"
@@ -268,20 +278,6 @@ class ActivityParser:
         item = node.items[0]
         ctx = item.context_expr
         asname = item.optional_vars
-
-        # with do(Type) as x: → ActivityAnonTraversal (labeled + constraints)
-        if self._is_call_name(ctx, "do"):
-            call: ast.Call = ctx  # type: ignore[assignment]
-            label = asname.id if isinstance(asname, ast.Name) else None
-            constraints = self._parse_inline_constraints(node.body)
-            type_name = self._type_name(call.args[0])
-            return ActivityAnonTraversal(
-                action_type=type_name,
-                label=label,
-                inline_constraints=constraints,
-                action_type_cls=self._resolve_type_cls(type_name),
-                loc=self._loc(node),
-            )
 
         # with self.handle(): → error; must be async with
         if isinstance(ctx, ast.Call) and self._is_self_attr_call(ctx):
@@ -351,6 +347,21 @@ class ActivityParser:
                 constraints=self._parse_inline_constraints(node.body),
                 loc=self._loc(node),
             )
+
+        # with T() as x: → ActivityAnonTraversal with inline constraints
+        if isinstance(ctx, ast.Call) and isinstance(ctx.func, ast.Name):
+            type_name = ctx.func.id
+            cls = self._resolve_type_cls(type_name)
+            if cls is not None or type_name not in _ACTIVITY_DSL_KEYWORDS:
+                label = asname.id if isinstance(asname, ast.Name) else None
+                constraints = self._parse_inline_constraints(node.body)
+                return ActivityAnonTraversal(
+                    action_type=type_name,
+                    label=label,
+                    inline_constraints=constraints,
+                    action_type_cls=cls,
+                    loc=self._loc(node),
+                )
 
         raise ActivityParseError(
             f"Unsupported 'with' context in activity: {ast.dump(ctx)}"
@@ -507,6 +518,26 @@ class ActivityParser:
             )
         loc = self._loc(parent_node) if parent_node is not None else None
         return ActivitySelect(branches=branches, loc=loc)
+
+    # ------------------------------------------------------------------
+    # Init-bindings parsing
+    # ------------------------------------------------------------------
+
+    def _parse_init_bindings(self, call: ast.Call) -> List[Tuple[str, str, str]]:
+        """Parse keyword args of ``await T(field=label.attr)`` as init bindings."""
+        result = []
+        for kw in call.keywords:
+            if kw.arg is None:
+                raise ActivityParseError("**kwargs not supported in action traversal call")
+            if (isinstance(kw.value, ast.Attribute)
+                    and isinstance(kw.value.value, ast.Name)):
+                result.append((kw.arg, kw.value.value.id, kw.value.attr))
+            else:
+                raise ActivityParseError(
+                    f"Unsupported init binding value: {ast.unparse(kw.value)} "
+                    f"(expected label.attr)"
+                )
+        return result
 
     # ------------------------------------------------------------------
     # Join-spec parsing

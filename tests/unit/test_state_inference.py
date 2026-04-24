@@ -123,7 +123,7 @@ class ObservePowerState(zdc.Action[GraphicsComp]):
 @zdc.dataclass
 class ObserveWithConstraint(zdc.Action[GraphicsComp]):
     async def activity(self):
-        with zdc.do(ObservePowerState) as obs:
+        with ObservePowerState() as obs:
             obs.curr_state.domain_B == 2
 
 
@@ -131,7 +131,7 @@ class ObserveWithConstraint(zdc.Action[GraphicsComp]):
 @zdc.dataclass
 class ObserveNoConstraint(zdc.Action[GraphicsComp]):
     async def activity(self):
-        await zdc.do(ObservePowerState)
+        await ObservePowerState()
 
 
 # Huge state type for overflow test
@@ -182,7 +182,7 @@ class ConsumeBuf(zdc.Action[BufComp]):
 @zdc.dataclass
 class BufScenario(zdc.Action[BufComp]):
     async def activity(self):
-        await zdc.do(ConsumeBuf)
+        await ConsumeBuf()
 
 
 # ---------------------------------------------------------------------------

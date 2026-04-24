@@ -2,7 +2,6 @@
 import asyncio
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.activity_dsl import do, select, branch
 from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
 
 
@@ -46,7 +45,7 @@ class Tock(zdc.Action[SysComp]):
 class RepeatThree(zdc.Action[SysComp]):
     async def activity(self):
         for i in range(3):
-            await do(Tick)
+            await Tick()
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +58,7 @@ class ForeachFive(zdc.Action[SysComp]):
 
     async def activity(self):
         for idx, item in enumerate(self.items):
-            await do(Tick)
+            await Tick()
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +71,9 @@ class IfElse(zdc.Action[SysComp]):
 
     async def activity(self):
         if self.flag:
-            await do(Tick)
+            await Tick()
         else:
-            await do(Tock)
+            await Tock()
 
 
 # ---------------------------------------------------------------------------
@@ -86,9 +85,9 @@ class SelectEither(zdc.Action[SysComp]):
     async def activity(self):
         with select():
             with branch(weight=1):
-                await do(Tick)
+                await Tick()
             with branch(weight=1):
-                await do(Tock)
+                await Tock()
 
 
 # ---------------------------------------------------------------------------
@@ -116,9 +115,9 @@ class NestedControl(zdc.Action[SysComp]):
     async def activity(self):
         if self.flag:
             for i in range(2):
-                await do(Tick)
+                await Tick()
         else:
-            await do(Tock)
+            await Tock()
 
 
 # ---------------------------------------------------------------------------
@@ -160,9 +159,9 @@ def test_if_else_false_branch():
 
         async def activity(self):
             if self.flag:
-                await do(Tick)
+                await Tick()
             else:
-                await do(Tock)
+                await Tock()
 
     comp = SysComp()
     _run(ScenarioRunner(comp, seed=3).run(IfElseFalse))

@@ -81,6 +81,13 @@ class ConversionScope:
     # Source location info for loc propagation onto IR Stmt* nodes
     src_file: Optional[str] = None      # absolute path of the Python source file
     src_start_lineno: int = 0           # 1-indexed line of the class start in the file
+    # Local pure function inlining (Phase 1)
+    # name -> ast.FunctionDef/AsyncFunctionDef for pure (no-await) local helpers
+    local_func_defs: dict = dc.field(default_factory=dict)
+    # param_name -> ast.expr  (applied in _convert_ast_expr before other Name lookups)
+    param_subs: dict = dc.field(default_factory=dict)
+    # param_name -> IR expr (takes priority over param_subs; used for module-level func inlining)
+    ir_param_subs: dict = dc.field(default_factory=dict)
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -2168,6 +2175,87 @@ class DataModelFactory(object):
 
         return '\n'.join(parts) if parts else None
 
+    # ------------------------------------------------------------------
+    # Local pure-function inlining (Phase 1)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_pure_ast(func_node) -> bool:
+        """Return True if func_node contains no ast.Await anywhere in its body."""
+        for child in ast.walk(func_node):
+            if isinstance(child, ast.Await):
+                return False
+        return True
+
+    def _make_inline_scope(self, func_def, call_args, parent_scope: ConversionScope) -> ConversionScope:
+        """Build a child ConversionScope for inlining *func_def* with *call_args*.
+
+        Parameter names are bound to the supplied AST argument nodes via
+        ``param_subs``; outer scope variables (closures) resolve through
+        the inherited ``local_vars`` / ``method_params``.
+        """
+        params = [a.arg for a in func_def.args.args
+                  if a.arg != 'self']
+        param_subs = dict(zip(params, call_args))
+        return ConversionScope(
+            component=parent_scope.component,
+            field_indices=parent_scope.field_indices.copy(),
+            method_params=parent_scope.method_params.copy(),
+            local_vars=parent_scope.local_vars.copy(),
+            regfile_bindings=parent_scope.regfile_bindings.copy(),
+            is_action_body=parent_scope.is_action_body,
+            action_result_var=parent_scope.action_result_var,
+            action_field_names=parent_scope.action_field_names,
+            action_local_prefix=parent_scope.action_local_prefix,
+            comp_field_indices=parent_scope.comp_field_indices.copy(),
+            pool_claims=parent_scope.pool_claims.copy(),
+            action_cls=parent_scope.action_cls,
+            is_constraint_mode=parent_scope.is_constraint_mode,
+            src_file=parent_scope.src_file,
+            src_start_lineno=parent_scope.src_start_lineno,
+            local_func_defs=parent_scope.local_func_defs.copy(),  # nested calls resolve
+            param_subs=param_subs,
+        )
+
+    def _inline_local_func_expr(self, call_node, scope: ConversionScope):
+        """Inline a pure local function call in an *expression* context.
+
+        The function body must end with a ``return <expr>`` statement.
+        Any preceding statements (e.g. local assignments) are silently
+        dropped; use ``_inline_local_func_stmt`` for void/multi-stmt bodies.
+        Returns the converted return expression, or ``None`` on failure.
+        """
+        func_def = scope.local_func_defs[call_node.func.id]
+        child = self._make_inline_scope(func_def, call_node.args, scope)
+        # Find the return statement in the body
+        for stmt in reversed(func_def.body):
+            if isinstance(stmt, ast.Return) and stmt.value is not None:
+                return self._convert_ast_expr(stmt.value, child)
+        return None  # void function used in expression context — caller handles
+
+    def _inline_local_func_stmt(self, call_node, scope: ConversionScope):
+        """Inline a pure local function call in a *statement* context.
+
+        Converts every statement in the function body and returns the
+        resulting list (or a single Stmt).  ``return`` statements are
+        dropped (their value is not used).
+        """
+        from zuspec.ir.core.stmt import StmtReturn
+        func_def = scope.local_func_defs[call_node.func.id]
+        child = self._make_inline_scope(func_def, call_node.args, scope)
+        stmts = []
+        for ast_stmt in func_def.body:
+            if isinstance(ast_stmt, ast.Return):
+                continue  # discard return value in void context
+            result = self._convert_ast_stmt(ast_stmt, child)
+            if result is None:
+                continue
+            if isinstance(result, list):
+                stmts.extend(result)
+            else:
+                stmts.append(result)
+        return stmts if len(stmts) != 1 else stmts[0]
+
     def _convert_ast_body(self, body : list, scope: ConversionScope = None) -> list:
         """Convert AST statement list to data model statements."""
         from zuspec.ir.core.base import Loc, Base
@@ -2226,6 +2314,8 @@ class DataModelFactory(object):
             is_constraint_mode=scope.is_constraint_mode if scope else False,
             src_file=scope.src_file if scope else None,
             src_start_lineno=scope.src_start_lineno if scope else 0,
+            local_func_defs=scope.local_func_defs.copy() if scope else {},
+            param_subs=scope.param_subs.copy() if scope else {},
         )
 
         for item in node.items:
@@ -2391,6 +2481,133 @@ class DataModelFactory(object):
             )],
             value=val_ir,
         )
+
+    # ------------------------------------------------------------------
+    # Module-level pure async function inlining
+    # ------------------------------------------------------------------
+
+    def _try_expand_pure_module_async_call(
+        self,
+        var_name: str,
+        await_node,
+        scope,
+    ):
+        """Try to expand ``var = await pure_module_func(args)`` into individual field assignments.
+
+        When a module-level ``async def`` function contains no ``await`` expressions
+        and returns a dataclass constructed with keyword arguments (e.g. ``DecodeResult(...)``),
+        this method expands the call into individual ``StmtAssign`` nodes of the form
+        ``var_fieldname = expr`` for each returned field.
+
+        This allows struct-returning helper functions like ``_decode`` to be inlined
+        combinatorially into the FSM without requiring a dedicated IR node type.
+
+        Returns a list of IR stmts on success, or None if the pattern doesn't match.
+        """
+        import asyncio
+        import textwrap
+
+        # Must be an await of a simple function call (not self.method)
+        if not isinstance(await_node, ast.Await):
+            return None
+        call_node = await_node.value
+        if not isinstance(call_node, ast.Call):
+            return None
+        func = call_node.func
+        if not isinstance(func, ast.Name):
+            return None
+        func_name = func.id
+
+        # Look up in module globals
+        py_globals = self._get_scope_globals(scope)
+        func_obj = py_globals.get(func_name)
+        if func_obj is None:
+            return None
+
+        # Must be a coroutine function or plain function
+        if not (asyncio.iscoroutinefunction(func_obj) or inspect.isfunction(func_obj)):
+            return None
+
+        # Get the AST for the function
+        try:
+            source = inspect.getsource(func_obj)
+            source = textwrap.dedent(source)
+            tree = ast.parse(source)
+        except (OSError, TypeError):
+            return None
+
+        # Find the function def node
+        func_def = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+                func_def = node
+                break
+        if func_def is None:
+            return None
+
+        # Check that body contains no await (pure combinatorial)
+        for node in ast.walk(func_def):
+            if isinstance(node, ast.Await):
+                return None
+
+        # Convert call arguments to IR in the caller's scope
+        param_names = [a.arg for a in func_def.args.args]
+        call_args_ast = call_node.args
+        ir_params: dict = {}
+        for pname, arg_ast in zip(param_names, call_args_ast):
+            ir_params[pname] = self._convert_ast_expr(arg_ast, scope)
+
+        # Build a child scope for converting the callee body
+        child_scope = ConversionScope(
+            component=scope.component if scope else None,
+            field_indices=scope.field_indices if scope else {},
+            method_params=scope.method_params if scope else set(),
+            local_vars=set(scope.local_vars) if scope else set(),
+            local_func_defs=scope.local_func_defs if scope else {},
+            src_file=scope.src_file if scope else None,
+            src_start_lineno=scope.src_start_lineno if scope else 0,
+            ir_param_subs=dict(ir_params),
+        )
+
+        # Process each statement in the function body
+        stmts = []
+        for stmt in func_def.body:
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
+                # Docstring — skip
+                continue
+
+            if (isinstance(stmt, ast.Assign)
+                    and len(stmt.targets) == 1
+                    and isinstance(stmt.targets[0], ast.Name)):
+                # Local binding: convert RHS and add to child scope's ir_param_subs
+                local_name = stmt.targets[0].id
+                ir_val = self._convert_ast_expr(stmt.value, child_scope)
+                child_scope.ir_param_subs[local_name] = ir_val
+                continue
+
+            if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Call):
+                # return StructClass(f1=e1, f2=e2, ...)
+                ret_call = stmt.value
+                for kw in ret_call.keywords:
+                    field_name = kw.arg
+                    result_field_var = f"{var_name}_{field_name}"
+                    ir_expr = self._convert_ast_expr(kw.value, child_scope)
+                    stmts.append(StmtAssign(
+                        targets=[ExprRefLocal(name=result_field_var)],
+                        value=ir_expr,
+                    ))
+                    if scope is not None:
+                        scope.local_vars.add(result_field_var)
+                break
+
+        if not stmts:
+            return None
+
+        # Add `var` itself to local_vars so downstream code can pass it to methods
+        if scope is not None:
+            scope.local_vars.add(var_name)
+
+        return stmts
 
     # ------------------------------------------------------------------
     # Action call inlining
@@ -2903,6 +3120,12 @@ class DataModelFactory(object):
                     )
                     if inlined is not None:
                         return inlined
+            # Check for void call to a local pure helper: ``W(rd, result)``
+            if (isinstance(node.value, ast.Call) and
+                    isinstance(node.value.func, ast.Name) and
+                    scope is not None and
+                    node.value.func.id in scope.local_func_defs):
+                return self._inline_local_func_stmt(node.value, scope)
             expr = self._convert_ast_expr(node.value, scope)
             if expr is not None:
                 return StmtExpr(expr=expr)
@@ -2956,6 +3179,15 @@ class DataModelFactory(object):
                     )
                     if inlined is not None:
                         return inlined
+                # Try to expand a module-level pure async function call into field assignments:
+                # ``dec = await _decode(instr)`` → ``dec_opcode = …, dec_rd = …, …``
+                expanded = self._try_expand_pure_module_async_call(
+                    var_name=node.targets[0].id,
+                    await_node=node.value,
+                    scope=scope,
+                )
+                if expanded is not None:
+                    return expanded
             # Lower tuple-unpack: ``a, b, ... = f(...)`` → temp struct + field extracts.
             # Special case: ``a, b = await self.comp.regfile.read_all(i1, i2)``
             # → ``a = CompName_regfile_get(comp, i1); b = CompName_regfile_get(comp, i2)``
@@ -3094,6 +3326,12 @@ class DataModelFactory(object):
             )
         elif isinstance(node, (ast.AsyncWith, ast.With)):
             return self._convert_async_with(node, scope)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Local function definition: capture pure (no-await) helpers in scope
+            # for later call-site inlining.  Async defs with await are Phase 2.
+            if scope is not None and self._is_pure_ast(node):
+                scope.local_func_defs[node.name] = node
+            return None  # never emit a stmt for a local def
         return None
 
     def _convert_ast_expr(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Any]:
@@ -3149,6 +3387,25 @@ class DataModelFactory(object):
                             return ExprConstant(value=int(val))
                     except Exception:
                         pass
+
+            # Inline a pure local helper used in expression context: ``R(rs1)``
+            if (isinstance(node.func, ast.Name) and scope is not None and
+                    node.func.id in scope.local_func_defs):
+                inlined = self._inline_local_func_expr(node, scope)
+                if inlined is not None:
+                    return inlined
+
+            # Recognise ``zdc.sext / zext / bit / signed`` as tagged built-in
+            # calls so the synthesizer can lower them to the correct SV.
+            if (isinstance(node.func, ast.Attribute) and
+                    isinstance(node.func.value, ast.Name) and
+                    node.func.value.id == 'zdc' and
+                    node.func.attr in ('sext', 'zext', 'cbit', 'signed')):
+                builtin_name = f"zdc.{node.func.attr}"
+                return ExprCall(
+                    func=ExprRefUnresolved(name=builtin_name),
+                    args=[self._convert_ast_expr(a, scope) for a in node.args],
+                )
 
             return ExprCall(
                 func=self._convert_ast_expr(node.func, scope),
@@ -3213,7 +3470,16 @@ class DataModelFactory(object):
                 if scope and scope.is_action_body:
                     return _ExprActionSelf()
                 return TypeExprRefSelf()
-            
+
+            # IR param subs (for module-level async function inlining): return pre-compiled IR.
+            if scope and name in scope.ir_param_subs:
+                return scope.ir_param_subs[name]
+
+            # Local pure-function inlining: substitute param with the supplied
+            # AST argument node and convert recursively.
+            if scope and name in scope.param_subs:
+                return self._convert_ast_expr(scope.param_subs[name], scope)
+
             # Handle method parameter reference — checked before field_indices
             # so that a parameter can shadow a same-named component field.
             if scope and name in scope.method_params:

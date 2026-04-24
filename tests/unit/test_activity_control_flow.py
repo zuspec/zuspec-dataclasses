@@ -73,7 +73,7 @@ def test_repeat_no_index_var():
     ir = _parse("""
         async def activity(self):
             for _ in range(5):
-                await do(WriteAction)
+                await WriteAction()
     """)
     rep = ir.stmts[0]
     assert isinstance(rep, ActivityRepeat)
@@ -101,7 +101,7 @@ def test_repeat_in_parallel():
         async def activity(self):
             with parallel():
                 for i in range(4):
-                    await do(WriteAction)
+                    await WriteAction()
     """)
     par = ir.stmts[0]
     assert isinstance(par, ActivityParallel)
@@ -119,7 +119,7 @@ def test_foreach_basic():
     ir = _parse("""
         async def activity(self):
             for item in self.data_array:
-                await do(ProcessAction)
+                await ProcessAction()
     """)
     assert len(ir.stmts) == 1
     fe = ir.stmts[0]
@@ -180,7 +180,7 @@ def test_while_do():
     ir = _parse("""
         async def activity(self):
             with while_do(self.remaining > 0):
-                await do(ProcessAction)
+                await ProcessAction()
     """)
     wd = ir.stmts[0]
     assert isinstance(wd, ActivityWhileDo)
@@ -200,7 +200,7 @@ def test_replicate_basic():
         async def activity(self):
             with parallel():
                 for i in replicate(self.count):
-                    await do(ActionA)
+                    await ActionA()
     """)
     par = ir.stmts[0]
     rep = par.stmts[0]
@@ -217,8 +217,8 @@ def test_replicate_with_label():
         async def activity(self):
             with parallel():
                 for i in replicate(self.count, label='RL'):
-                    await do(ActionA)
-                    await do(ActionB)
+                    await ActionA()
+                    await ActionB()
     """)
     rep = ir.stmts[0].stmts[0]
     assert isinstance(rep, ActivityReplicate)
@@ -232,7 +232,7 @@ def test_replicate_literal_count():
         async def activity(self):
             with parallel():
                 for i in replicate(4):
-                    await do(ActionA)
+                    await ActionA()
     """)
     rep = ir.stmts[0].stmts[0]
     assert rep.count['value'] == 4
@@ -303,14 +303,14 @@ def test_select_branch_guard_and_weight():
 
 
 def test_select_branch_body_has_do():
-    """Branch body can contain await do() anonymous traversals."""
+    """Branch body can contain await T() anonymous traversals."""
     ir = _parse("""
         async def activity(self):
             with select():
                 with branch(weight=50):
-                    await do(WriteData)
+                    await WriteData()
                 with branch(weight=50):
-                    await do(ReadData)
+                    await ReadData()
     """)
     sel = ir.stmts[0]
     assert isinstance(sel.branches[0].body[0], ActivityAnonTraversal)
@@ -323,11 +323,11 @@ def test_select_three_branches():
         async def activity(self):
             with select():
                 with branch(weight=70):
-                    await do(DmaXfer)
+                    await DmaXfer()
                 with branch(weight=20):
-                    await do(ReadData)
+                    await ReadData()
                 with branch(weight=10):
-                    await do(WriteData)
+                    await WriteData()
     """)
     assert len(ir.stmts[0].branches) == 3
 
@@ -520,9 +520,9 @@ def test_repeat_with_select_inside():
             for i in range(self.count):
                 with select():
                     with branch(weight=70):
-                        await do(DmaXfer)
+                        await DmaXfer()
                     with branch(weight=30):
-                        await do(ReadData)
+                        await ReadData()
     """)
     rep = ir.stmts[0]
     assert isinstance(rep, ActivityRepeat)
@@ -536,9 +536,9 @@ def test_parallel_with_repeat_and_select():
     ir = _parse("""
         async def activity(self):
             with parallel(join_first=1):
-                await do(WriteData)
-                await do(WriteData)
-            await do(ReadData)
+                await WriteData()
+                await WriteData()
+            await ReadData()
     """)
     par = ir.stmts[0]
     assert isinstance(par, ActivityParallel)

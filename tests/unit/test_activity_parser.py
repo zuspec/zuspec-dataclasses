@@ -107,10 +107,10 @@ def test_traversal_with_empty_with_block():
 # ---------------------------------------------------------------------------
 
 def test_anon_traversal_bare():
-    """await do(WriteAction) → ActivityAnonTraversal(action_type='WriteAction')."""
+    """await WriteAction() → ActivityAnonTraversal(action_type='WriteAction')."""
     ir = _parse_src("""
         async def activity(self):
-            await do(WriteAction)
+            await WriteAction()
     """)
     assert len(ir.stmts) == 1
     t = ir.stmts[0]
@@ -121,19 +121,19 @@ def test_anon_traversal_bare():
 
 
 def test_anon_traversal_bare_requires_await():
-    """Bare do(WriteAction) without await raises ActivityParseError."""
-    with pytest.raises(ActivityParseError, match="must be awaited"):
+    """Bare WriteAction() without await raises ActivityParseError."""
+    with pytest.raises(ActivityParseError, match="Unsupported expression statement"):
         _parse_src("""
             async def activity(self):
-                do(WriteAction)
+                WriteAction()
         """)
 
 
 def test_anon_traversal_with_label_assign():
-    """xfer = await do(WriteAction) → ActivityAnonTraversal(label='xfer')."""
+    """xfer = await WriteAction() → ActivityAnonTraversal(label='xfer')."""
     ir = _parse_src("""
         async def activity(self):
-            xfer = await do(WriteAction)
+            xfer = await WriteAction()
     """)
     t = ir.stmts[0]
     assert isinstance(t, ActivityAnonTraversal)
@@ -142,19 +142,19 @@ def test_anon_traversal_with_label_assign():
 
 
 def test_anon_traversal_label_assign_requires_await():
-    """xfer = do(WriteAction) without await raises ActivityParseError."""
-    with pytest.raises(ActivityParseError, match="must be awaited"):
+    """xfer = WriteAction() without await raises ActivityParseError."""
+    with pytest.raises(ActivityParseError, match="Unsupported assignment"):
         _parse_src("""
             async def activity(self):
-                xfer = do(WriteAction)
+                xfer = WriteAction()
         """)
 
 
 def test_anon_traversal_with_context_manager_label():
-    """with do(WriteAction) as wr: → ActivityAnonTraversal(label='wr')."""
+    """with WriteAction() as wr: → ActivityAnonTraversal(label='wr')."""
     ir = _parse_src("""
         async def activity(self):
-            with do(WriteAction) as wr:
+            with WriteAction() as wr:
                 wr.size > 10
     """)
     t = ir.stmts[0]
@@ -171,10 +171,10 @@ def test_anon_traversal_with_context_manager_label():
 
 
 def test_anon_traversal_no_constraints_with_block():
-    """with do(WriteAction) as wr: pass → label set, no constraints."""
+    """with WriteAction() as wr: pass → label set, no constraints."""
     ir = _parse_src("""
         async def activity(self):
-            with do(WriteAction) as wr:
+            with WriteAction() as wr:
                 pass
     """)
     t = ir.stmts[0]
@@ -184,10 +184,10 @@ def test_anon_traversal_no_constraints_with_block():
 
 
 def test_anon_traversal_dotted_type():
-    """await do(pkg.WriteAction) → action_type='pkg.WriteAction'."""
+    """await pkg.WriteAction() → action_type='pkg.WriteAction'."""
     ir = _parse_src("""
         async def activity(self):
-            await do(pkg.WriteAction)
+            await pkg.WriteAction()
     """)
     t = ir.stmts[0]
     assert isinstance(t, ActivityAnonTraversal)

@@ -446,6 +446,24 @@ class ActivityRunner:
                     ctx,
                 )
 
+        # Resolve explicit init_bindings: inject flow bindings from labeled predecessors.
+        if node.init_bindings and effective_ctx.forward_propagator is not None:
+            from .flow_obj_rt import BufferInstance
+            extra_bindings: dict = {}
+            for (field_name, src_label, src_attr) in node.init_bindings:
+                src_action = effective_ctx.forward_propagator.get_action(src_label)
+                if src_action is not None:
+                    val = getattr(src_action, src_attr, None)
+                    if val is not None:
+                        buf = BufferInstance(obj=val)
+                        buf.set_ready()
+                        extra_bindings[field_name] = (buf, "input")
+            if extra_bindings:
+                effective_ctx = dc.replace(
+                    effective_ctx,
+                    flow_bindings={**effective_ctx.flow_bindings, **extra_bindings},
+                )
+
         action = await self._traverse(
             action_type,
             node.inline_constraints,

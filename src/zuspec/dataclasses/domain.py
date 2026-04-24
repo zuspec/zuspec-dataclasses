@@ -54,22 +54,62 @@ class ClockDomain:
     _timebase: Any = dc.field(default=None, init=False, repr=False, compare=False)
     _rt_domain: Any = dc.field(default=None, init=False, repr=False, compare=False)
 
-    async def wait_cycle(self, n: int = 1) -> None:
-        """Wait *n* clock cycles.
+    # Sim-time waiter list.  Coroutines blocked on wait_cycle() append a
+    # Future here; tick() resolves them to advance simulated time.
+    _cycle_waiters: Any = dc.field(default_factory=list, init=False, repr=False, compare=False)
 
-        At Level 0 (functional/NOP): returns immediately.
-        At Level 1 (behavioral timing): delegates to the runtime timebase so
-        actual simulated time passes.
+    async def wait_cycle(self, n: int = 1) -> None:
+        """Wait *n* clock cycles on this domain.
+
+        * Pipeline RT (``_timebase`` wired): delegates to the timebase so
+          actual simulated time passes.
+        * Testbench-driven sim (``tick()`` called by testbench): blocks until
+          the testbench advances the clock *n* times.
+        * Unbound (neither): raises ``RuntimeError`` — every runnable system
+          must have its clock domain driven by something.
 
         Args:
             n: Number of cycles.  Must be >= 1.
         """
+        import asyncio
         if self._timebase is not None and self._rt_domain is not None:
             await self._timebase.wait_cycles(n, self._rt_domain)
+        elif self._cycle_waiters is not None:
+            # Testbench drives tick() — block until tick() resolves our future.
+            loop = asyncio.get_running_loop()
+            for _ in range(n):
+                fut = loop.create_future()
+                self._cycle_waiters.append(fut)
+                await fut
+        else:
+            raise RuntimeError(
+                f"ClockDomain {self!r} is unbound: no timebase and no testbench "
+                "tick() driver. Every runnable system must bind its clock domains."
+            )
 
     async def wait_cycles(self, n: int) -> None:
         """Alias for :meth:`wait_cycle` with explicit count."""
         await self.wait_cycle(n)
+
+    async def tick(self, n: int = 1) -> None:
+        """Advance *n* clock cycles (testbench-side clock driver).
+
+        Resolves all coroutines currently blocked on :meth:`wait_cycle`, then
+        yields to the asyncio event loop so those coroutines can run before
+        this coroutine returns.  Call this in a loop from the testbench to
+        drive simulated time::
+
+            async def _clock_driver(self):
+                while not self._stop.is_set():
+                    await self.core.clock_domain.tick(1)
+        """
+        import asyncio
+        for _ in range(n):
+            waiters, self._cycle_waiters = self._cycle_waiters, []
+            for fut in waiters:
+                if not fut.done():
+                    fut.set_result(None)
+            await asyncio.sleep(0)  # yield so resolved coroutines can run
 
     @property
     def period_ns(self) -> Optional[float]:

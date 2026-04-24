@@ -675,14 +675,29 @@ class CompImplRT(object):
                 object.__setattr__(comp, trace_attr, rt.trace)
                 task = asyncio.create_task(self._run_pipeline(comp, proc.method, rt))
             else:
-                # Plain @proc — publish the component via ContextVar so that
-                # zdc.cycles() can find CompImplRT.wait_cycles() at sim time.
-                # asyncio.create_task copies the current context, so the task
-                # inherits the ContextVar value set here.
+                # Plain @proc — resolve clock domain and publish via task attribute
+                # so zdc.tick() / zdc.cycles() can wait on the correct domain.
+                from ..domain import ClockDomain
+                cd_lambda = getattr(proc.method, '_zdc_proc_clock_domain', None)
+                if cd_lambda is not None:
+                    cd = cd_lambda(comp)
+                else:
+                    # Auto-infer: first ClockDomain class attribute (walks MRO)
+                    cd = None
+                    for klass in type(comp).__mro__:
+                        for attr_val in vars(klass).values():
+                            if isinstance(attr_val, ClockDomain):
+                                cd = attr_val
+                                break
+                        if cd is not None:
+                            break
+
                 from ..pipeline_ns import _CURRENT_PROC_COMP
                 tok = _CURRENT_PROC_COMP.set(comp)
                 task = asyncio.create_task(proc.method(comp))
                 _CURRENT_PROC_COMP.reset(tok)
+                if cd is not None:
+                    task._zdc_clock_domain = cd
             self._tasks.append(task)
 
     @staticmethod

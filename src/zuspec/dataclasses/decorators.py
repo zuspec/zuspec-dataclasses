@@ -704,10 +704,11 @@ def array(depth: int, default=None) -> Any:
         depth:   Number of elements (must be a positive integer).
         default: Optional per-element reset/default value.
     """
+    fill = default if default is not None else 0
     metadata: dict = {"kind": "array", "depth": depth}
     if default is not None:
         metadata["default"] = default
-    return dc.field(default_factory=list, metadata=metadata)
+    return dc.field(default_factory=lambda: [fill] * depth, metadata=metadata)
 
 
 def const(default=None) -> Any:
@@ -902,15 +903,29 @@ class ExecComb(Exec):
 
 
 
-def proc(T):
+def proc(_method=None, *, clock_domain=None):
     """
     Marks an always-running process. The specified
     method must be `async` and take no arguments. The
     process is started when the component containing 
     it begins to run.
+
+    Args:
+        clock_domain: Optional lambda ``lambda self: self.<field>`` returning
+            the :class:`~zuspec.dataclasses.domain.ClockDomain` this process is
+            bound to.  When omitted the first ``ClockDomain`` class attribute
+            found on the component is used automatically.
     """
-    # Datamodel Mapping
-    return ExecProc(T)
+    def _make(T):
+        if clock_domain is not None:
+            T._zdc_proc_clock_domain = clock_domain
+        return ExecProc(T)
+
+    if _method is not None:
+        # Used as @zdc.proc (no parentheses)
+        return _make(_method)
+    # Used as @zdc.proc(...) (with parentheses)
+    return _make
 
 def sync(_method=None, *,
          domain=None,

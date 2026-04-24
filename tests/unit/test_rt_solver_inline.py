@@ -2,7 +2,7 @@
 
 These tests prove that:
   - `async with self.handle(): constraint` actually constrains the rand field
-  - `with do(T) as lbl: constraint` actually constrains the rand field
+  - `with T() as lbl: constraint` actually constrains the rand field
   - same seed + same constraint → same solution (determinism)
   - constraint is satisfied across a range of seeds
 """
@@ -64,11 +64,11 @@ class RangeConstraintOuter(zdc.Action[Cpu]):
 
 @zdc.dataclass
 class AnonConstraintOuter(zdc.Action[Cpu]):
-    """with do(Leaf) as s: s.size < 50  →  label writeback to self.s"""
+    """with Leaf() as s: s.size < 50  →  label writeback to self.s"""
     s: Leaf = None
 
     async def activity(self):
-        with do(Leaf) as s:
+        with Leaf() as s:
             s.size < 50
 
 

@@ -50,8 +50,8 @@ class CompoundAction(zdc.Action[SimpleCpu]):
     events: list = dc.field(default_factory=list, compare=False)
 
     async def activity(self):
-        await do(SimpleAction)
-        await do(SimpleAction)
+        await SimpleAction()
+        await SimpleAction()
 
 
 @zdc.dataclass

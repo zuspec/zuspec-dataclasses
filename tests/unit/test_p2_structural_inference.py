@@ -82,7 +82,7 @@ class InferenceScenario(zdc.Action[NetComp]):
     """Top-level scenario: just traverses ConsumePacket without explicit producer."""
 
     async def activity(self):
-        await zdc.do(ConsumePacket)
+        await ConsumePacket()
 
 
 # Scenario that chains two levels of inference
@@ -92,7 +92,7 @@ class ChainedInferenceScenario(zdc.Action[NetComp]):
     has an unbound input, so the solver must recursively find ProducePacket."""
 
     async def activity(self):
-        await zdc.do(ForwardPacket)
+        await ForwardPacket()
 
 
 # Scenario: consumer with no available ICL candidate
@@ -117,14 +117,14 @@ class OrphanConsumer(zdc.Action[OrphanComp]):
 @zdc.dataclass
 class OrphanScenario(zdc.Action[OrphanComp]):
     async def activity(self):
-        await zdc.do(OrphanConsumer)
+        await OrphanConsumer()
 
 
 # Used in TestStructuralInferenceEndToEnd.test_standalone_action_unaffected
 @zdc.dataclass
 class StandaloneScenario(zdc.Action[NetComp]):
     async def activity(self):
-        await zdc.do(StandaloneAction)
+        await StandaloneAction()
 
 
 # ---------------------------------------------------------------------------

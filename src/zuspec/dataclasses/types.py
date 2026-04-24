@@ -379,13 +379,13 @@ class Struct(TypeBase):
     pass
 
 
-class Buffer(Struct):
-    """PSS buffer flow-object base type.
+# class Buffer(Struct):
+#     """PSS buffer flow-object base type.
 
-    A buffer is produced by one action and consumed by another.
-    Use ``zdc.output()`` / ``zdc.input()`` to declare buffer fields on actions.
-    """
-    pass
+#     A buffer is produced by one action and consumed by another.
+#     Use ``zdc.output()`` / ``zdc.input()`` to declare buffer fields on actions.
+#     """
+#     pass
 
 
 class Stream(Struct):
@@ -444,7 +444,17 @@ class Component(TypeBase):
     - sync
     - constraint
     - activity
+
+    Every Component inherits a default ``clock_domain`` so that ``@zdc.proc``
+    methods can automatically bind to the component's clock without an explicit
+    declaration.  Components that need a custom period can shadow it::
+
+        class MyComp(zdc.Component):
+            clock_domain = zdc.ClockDomain(period=zdc.Time.ns(5))
     """
+    from .domain import ClockDomain as _ClockDomain
+    clock_domain: ClassVar[_ClockDomain] = _ClockDomain()
+    del _ClockDomain
 
     _impl : Optional[CompImpl] = dc.field(default=None)
 
@@ -528,6 +538,9 @@ def _find_comp_instances(comp: 'Component', comp_type: type) -> list:
 class Action[T]:
     comp: T = field()
 
+    def __await__(self):
+        return self.__call__().__await__()
+
     async def __call__(self, comp: Optional['Component'] = None,
                        seed: Optional[int] = None) -> Self:
         """Traverse this action against *comp* with full inference support.
@@ -574,7 +587,6 @@ class Action[T]:
     async def body(self) -> None:
         pass
 
-
 @dc.dataclass
 class XtorComponent[T](Component):
     """A Transactor component has a single-level interface and an 
@@ -617,6 +629,7 @@ class Claim[T](Protocol):
 
     @property
     def id(self) -> int:
+        """instance id (index) of the claimed resource"""
         ...
 
     @property
@@ -629,6 +642,12 @@ class Claim[T](Protocol):
 
     def drop(self):
         """Release the claimed resource back to the pool"""
+        ...
+
+class Buffer[T](Protocol):
+
+    @property
+    def t(self) -> T:
         ...
 
 

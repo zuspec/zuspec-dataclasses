@@ -97,7 +97,7 @@ from .constraint_parser import ConstraintParser, extract_rand_fields
 from .activity_parser import ActivityParser, ActivityParseError
 from .pragma import scan_pragmas, parse_pragma_str, scan_line_comments
 from .activity_dsl import (
-    do, parallel, schedule, sequence, atomic, select, branch,
+    parallel, schedule, sequence, atomic, select, branch,
     do_while, while_do, replicate, constraint as activity_constraint, bind as activity_bind
 )
 from .types import *
@@ -212,7 +212,7 @@ __all__ = [
     'ActivityParser', 'ActivityParseError',
     'scan_pragmas', 'parse_pragma_str', 'scan_line_comments',
     # From activity_dsl
-    'do', 'parallel', 'schedule', 'sequence', 'atomic', 'select', 'branch',
+    'parallel', 'schedule', 'sequence', 'atomic', 'select', 'branch',
     'do_while', 'while_do', 'replicate',
     # From types (re-exported via *)
     'Action',
@@ -281,7 +281,8 @@ __all__ = [
     # Submodules
     'ir', 'profiles',
     # Other exports
-    'DataModelFactory', 'Event', 'cycles',
+    'DataModelFactory', 'Event', 'cycles', 'tick',
+    'sext', 'zext', 'cbit', 'signed',
 ]
 
 @dataclass
@@ -313,19 +314,16 @@ class _CyclesAwaitable:
         self.n = n
     
     def __await__(self):
-        # At simulation time: find the active @proc component via ContextVar
-        # and delegate to its CompImplRT.wait_cycles(), which is driven by
-        # domain_clock_edge() / tick_cycle().
-        try:
-            from .pipeline_ns import _CURRENT_PROC_COMP
-            comp = _CURRENT_PROC_COMP.get()
-            if comp is not None and hasattr(comp, '_impl'):
-                yield from comp._impl.wait_cycles(self.n).__await__()
-                return
-        except Exception:
-            pass
-        # Fallback: synthesis marker / Level-0 sim — yield once to event loop.
-        yield self
+        import asyncio as _asyncio
+        task = _asyncio.current_task()
+        cd = getattr(task, '_zdc_clock_domain', None) if task is not None else None
+        if cd is None:
+            raise RuntimeError(
+                "await zdc.tick()/cycles() called from a proc with no clock domain. "
+                "Every @zdc.proc must run in a component that has a ClockDomain, "
+                "and that domain must be driven (bound to a timebase or testbench tick())."
+            )
+        yield from cd.wait_cycle(self.n).__await__()
         return None
     
     def __repr__(self):
@@ -335,7 +333,7 @@ class _CyclesAwaitable:
 def cycles(n: int = 1) -> _CyclesAwaitable:
     """Wait for N clock cycles in a synchronous process.
     
-    Used within @zdc.sync decorated methods to introduce explicit
+    Used within @zdc.sync or @zdc.proc methods to introduce explicit
     clock cycle boundaries, which translate to FSM state transitions.
     
     Args:
@@ -345,15 +343,101 @@ def cycles(n: int = 1) -> _CyclesAwaitable:
         An awaitable that represents waiting for N cycles
         
     Example:
-        @zdc.sync(clock=lambda s: s.clock, reset=lambda s: s.reset)
+        @zdc.proc
         async def process(self):
             while True:
-                self.data = self.input
-                await zdc.cycles(1)  # State boundary
-                self.output = self.data * 2
-                await zdc.cycles(1)  # Another state boundary
+                self.data = self.input * 2
+                await zdc.cycles(1)  # advance one cycle
     """
     return _CyclesAwaitable(n)
 
+
+def tick() -> _CyclesAwaitable:
+    """Advance exactly one clock cycle in a @zdc.proc or @zdc.sync process.
+
+    Convenience alias for ``zdc.cycles(1)``.  Use this at the end of a
+    ``while True`` loop body when the proc has no blocking port calls —
+    it marks the cycle boundary so that all preceding assignments in the
+    loop are lowered to non-blocking assignments in the same FSM state.
+
+    Example:
+        @zdc.proc
+        async def _count(self):
+            while True:
+                self.count = self.count + 1
+                await zdc.tick()   # ← end of cycle; loop back
+    """
+    return _CyclesAwaitable(1)
+
+
+# ---------------------------------------------------------------------------
+# Bit-manipulation built-ins — synthesizable subset helpers
+# ---------------------------------------------------------------------------
+
+def sext(val: int, bits: int) -> int:
+    """Sign-extend *val* from a *bits*-wide two's-complement value.
+
+    At simulation time performs the Python integer arithmetic.  The synthesizer
+    lowers ``zdc.sext(val, bits)`` to the SV bit-concatenation pattern::
+
+        {{(W-bits){val[bits-1]}}, val[bits-1:0]}
+
+    Args:
+        val:  The value to sign-extend (only the low ``bits`` bits are used).
+        bits: Source bit width (must be a compile-time constant for synthesis).
+    """
+    mask = (1 << bits) - 1
+    val = val & mask
+    if val & (1 << (bits - 1)):
+        return val - (1 << bits)
+    return val
+
+
+def zext(val: int, bits: int) -> int:
+    """Zero-extend *val* to the target width.
+
+    At simulation time masks *val* to *bits* bits.  The synthesizer lowers
+    ``zdc.zext(val, bits)`` to ``val[bits-1:0]`` (zero-padded to target width).
+
+    Args:
+        val:  The value to zero-extend.
+        bits: Source bit width.
+    """
+    return val & ((1 << bits) - 1)
+
+
+def cbit(val) -> int:
+    """Cast an expression to a 1-bit value (0 or 1).
+
+    At simulation time returns ``1`` if *val* is truthy, ``0`` otherwise.
+    The synthesizer lowers ``zdc.cbit(expr)`` as follows:
+
+    * If *expr* is a comparison (already 1-bit in SV), the cast is elided.
+    * Otherwise, ``expr[0]`` is emitted to force a 1-bit result.
+
+    Typical use::
+
+        rd = zdc.cbit(rs1 < rs2)   # SLT: set rd to 1 if less-than, 0 otherwise
+    """
+    return 1 if val else 0
+
+
+def signed(val: int) -> int:
+    """Treat *val* as a signed (two's-complement) 32-bit integer.
+
+    At simulation time sign-extends *val* from 32 bits to a Python signed int
+    (equivalent to what ``$signed(val)`` does on a 32-bit SV expression).
+    The synthesizer lowers ``zdc.signed(val)`` to ``$signed(val)`` in
+    SystemVerilog, which propagates signed arithmetic through the expression
+    tree (important for shifts and comparisons).
+
+    Example::
+
+        result = zdc.signed(a) < zdc.signed(b)  # signed less-than
+    """
+    val = int(val) & 0xFFFFFFFF
+    if val & 0x80000000:
+        return val - 0x100000000
+    return val
 
 

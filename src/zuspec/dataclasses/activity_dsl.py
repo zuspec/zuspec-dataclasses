@@ -21,7 +21,7 @@ Typical import (via ``zuspec.dataclasses``)::
         async def activity(self):
             await self.a()
             with zdc.parallel():
-                await zdc.do(WriteAction)
+                await WriteAction()
                 await self.b()
 """
 from __future__ import annotations
@@ -35,23 +35,6 @@ _MSG = (
     "It must only appear inside 'async def activity(self)' bodies, "
     "which are parsed from AST and never executed directly."
 )
-
-
-def do(action_type: Type[Any], /) -> Any:
-    """Traverse an action by type (anonymous traversal).
-
-    PSS equivalent: ``do ActionType;``
-
-    Always ``await`` this call — action traversal is asynchronous::
-
-        await do(WriteAction)
-
-        with do(WriteAction) as wr:
-            wr.size > 16
-
-        xfer = await do(WriteAction)   # labeled, no constraints
-    """
-    raise RuntimeError(_MSG.format(name="do"))
 
 
 class _ActivityCtx:
@@ -219,7 +202,6 @@ def bind(src: Any, dst: Any, /) -> None:
 
 
 __all__ = [
-    "do",
     "parallel",
     "schedule",
     "sequence",
