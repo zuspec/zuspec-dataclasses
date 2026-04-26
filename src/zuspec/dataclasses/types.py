@@ -22,7 +22,7 @@ import typing
 from typing import (
     Callable, cast, ClassVar, Dict, Generic, List, Optional, TypeVar, 
     Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, 
-    Self, Union, Awaitable)
+    Self, Union, Awaitable, runtime_checkable)
 from .decorators import dataclass, field, export
 
 
@@ -379,14 +379,18 @@ class Struct(TypeBase):
     pass
 
 
-# class Buffer(Struct):
-#     """PSS buffer flow-object base type.
+@runtime_checkable
+class Buffer[T](Protocol):
+    """PSS buffer flow-object base type.
 
-#     A buffer is produced by one action and consumed by another.
-#     Use ``zdc.output()`` / ``zdc.input()`` to declare buffer fields on actions.
-#     """
-#     pass
+    A buffer is produced by one action and consumed by another.
+    Use ``zdc.output()`` / ``zdc.input()`` to declare buffer fields on actions.
+    The type parameter T is the payload dataclass (e.g. ``Buffer[DecodeResult]``).
+    """
 
+    @property
+    def t(self) -> T:
+        ...
 
 class Stream(Struct):
     """PSS stream flow-object base type.
@@ -406,15 +410,21 @@ class State(Struct):
     initial: bool = False
 
 
-class Resource(Struct):
+class Resource[T](Protocol):
     """PSS resource base type.
 
     Resources are claimed by actions via ``zdc.lock()`` (exclusive) or
     ``zdc.share()`` (shared).  The ``instance_id`` attribute is assigned by
     the pool when the resource is allocated.
     """
-    instance_id: int = 0
 
+    @property
+    def id(self) -> int:
+        ...
+
+    @property
+    def t(self) -> T:
+        ...
 
 class Bundle(TypeBase):
     """Bundle base class for interface/port collections with directionality.
@@ -644,7 +654,9 @@ class Claim[T](Protocol):
         """Release the claimed resource back to the pool"""
         ...
 
-class Buffer[T](Protocol):
+@runtime_checkable
+class _BufferProto[T](Protocol):
+    """Internal structural protocol for objects that expose a ``.t`` payload."""
 
     @property
     def t(self) -> T:
@@ -771,6 +783,12 @@ class ClaimPool[T](Pool[T]):
         """Returns a ClaimPool populated by *resources*."""
         from .rt.list_claim_pool import ListClaimPool
         return ListClaimPool(resources)
+
+
+#: ``ResourcePool`` is the preferred term for ``ClaimPool``.  Both names refer
+#: to the same class; use ``ResourcePool`` in new code.
+ResourcePool = ClaimPool
+
 
 class Lock(Protocol):
     """A mutex lock for coordinating access to shared resources.

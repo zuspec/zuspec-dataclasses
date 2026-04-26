@@ -220,7 +220,7 @@ __all__ = [
     'AddrHandle', 'AddressSpace', 'Array', 'BackdoorMemory', 'BackdoorRegFile',
     'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
-    'Reg', 'RegFifo', 'RegFile', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
+    'Reg', 'RegFifo', 'RegFile', 'ResourcePool', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
     'bit', 'bit1', 'bit16', 'bit2', 'bit3', 'bit32', 'bit4', 'bit5', 'bit6',
     'bit64', 'bit7', 'bit8', 'bitv', 'bv',
