@@ -18,7 +18,7 @@ from zuspec.ir.core.stmt import (
     StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAnnAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
     StmtAssert, StmtAssume, StmtCover, StmtMatch, StmtMatchCase,
 )
-from zuspec.ir.core.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
+from zuspec.ir.core.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool, ExprSext, ExprZext, ExprCbit, ExprSigned
 from .types import TypeBase, Component, Extern, Lock, Memory, Struct
 
 # Import Event at runtime to avoid circular dependency
@@ -88,6 +88,8 @@ class ConversionScope:
     param_subs: dict = dc.field(default_factory=dict)
     # param_name -> IR expr (takes priority over param_subs; used for module-level func inlining)
     ir_param_subs: dict = dc.field(default_factory=dict)
+    # Extra name->object bindings added from local ``from X import Y`` stmts in methods.
+    extra_globals: dict = dc.field(default_factory=dict)
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -424,7 +426,10 @@ class DataModelFactory(object):
         """Return the module-level globals for the component class in *scope*.
 
         These are used to resolve action class names encountered in method bodies.
+        Includes names imported via local ``from X import Y`` stmts (stored in
+        ``scope.extra_globals``).
         """
+        result: dict = {}
         if scope is not None and scope.component is not None:
             # scope.component may be a DataTypeComponent (with .py_type)
             # or the raw Python class itself (during early processing)
@@ -436,8 +441,10 @@ class DataModelFactory(object):
             if comp_py_type is not None:
                 mod = inspect.getmodule(comp_py_type)
                 if mod is not None:
-                    return vars(mod)
-        return {}
+                    result.update(vars(mod))
+        if scope is not None and scope.extra_globals:
+            result.update(scope.extra_globals)
+        return result
 
     def _is_action(self, t: Type) -> bool:
         """Return True if *t* is a zdc.Action[T] subclass."""
@@ -446,6 +453,25 @@ class DataModelFactory(object):
             if getattr(base, '__origin__', None) is Action:
                 return True
         return False
+
+    def _execute_local_import_from(self, node: 'ast.ImportFrom', scope: 'ConversionScope') -> None:
+        """Execute a ``from module import name`` AST node and store results in scope.extra_globals.
+
+        Used so that action class names declared via local imports inside ``@zdc.proc``
+        bodies (e.g. ``from rv32_single_cycle import RV32ISingleCycleA``) are resolvable
+        when the DMF later attempts to inline action calls.
+        """
+        try:
+            import importlib
+            module = importlib.import_module(node.module)
+            for alias in node.names:
+                obj_name = alias.name
+                local_name = alias.asname if alias.asname else alias.name
+                val = getattr(module, obj_name, None)
+                if val is not None:
+                    scope.extra_globals[local_name] = val
+        except Exception:
+            pass
 
     def _get_action_comp_type(self, t: Type):
         """Return the component type T from ``Action[T]``, or None."""
@@ -2682,6 +2708,10 @@ class DataModelFactory(object):
               keywords=[ast.keyword(arg="comp", ...)]
             )
           )
+
+        Also handles single-call syntax ``await ActionCls(comp=self)`` or
+        ``await ActionCls(kwargs)`` (without a separate constructor call).  In
+        this case inner_call == outer_call (same node for both).
         """
         # Unwrap a bare Await at the top level
         if isinstance(node, ast.Await):
@@ -2696,6 +2726,10 @@ class DataModelFactory(object):
         inner_call = outer_call.func
 
         if not isinstance(inner_call, ast.Call):
+            # Single-call: ``await ActionCls(kwargs)``
+            # func is ast.Name (bare class), not a Call constructor.
+            if isinstance(inner_call, ast.Name):
+                return (inner_call.id, outer_call, outer_call)
             return None
 
         func_node = inner_call.func
@@ -2835,7 +2869,17 @@ class DataModelFactory(object):
             body_method = action_cls.__dict__.get('body', None)
 
         if body_method is None:
-            # No explicit body: try compiling @zdc.constraint methods as imperative logic
+            # No explicit body: check for an activity() method (root action pattern).
+            activity_method = action_cls.__dict__.get('activity', None)
+            if activity_method is not None:
+                return self._convert_activity_body(
+                    action_cls=action_cls,
+                    activity_method=activity_method,
+                    result_var=result_var,
+                    comp_field_indices=comp_field_indices,
+                    outer_scope=outer_scope,
+                )
+            # Fall back to compiling @zdc.constraint methods as imperative logic.
             return self._compile_constraint_methods_as_body(
                 action_cls, result_var, action_field_names, local_prefix,
                 comp_field_indices, outer_scope
@@ -2849,7 +2893,14 @@ class DataModelFactory(object):
         except Exception:
             return []
 
-        # Build action-body scope
+        # Build action-body scope.
+        # Include the action class's own module globals so that module-level constants
+        # (e.g. TOHOST_ADDR imported at the top of the action file) can be resolved.
+        action_module = inspect.getmodule(action_cls)
+        action_extra_globals = dict(vars(action_module)) if action_module else {}
+        if outer_scope is not None and outer_scope.extra_globals:
+            action_extra_globals.update(outer_scope.extra_globals)
+
         action_scope = ConversionScope(
             component=outer_scope.component,
             field_indices={},            # action fields accessed via sentinels, not field_indices
@@ -2862,6 +2913,7 @@ class DataModelFactory(object):
             action_local_prefix=local_prefix,
             comp_field_indices=comp_field_indices,
             action_cls=action_cls,
+            extra_globals=action_extra_globals,
         )
 
         # Walk the function def body
@@ -2871,6 +2923,60 @@ class DataModelFactory(object):
 
         func_def = func_nodes[0]
         return self._convert_ast_body(func_def.body, action_scope)
+
+    def _convert_activity_body(
+        self,
+        action_cls: type,
+        activity_method,
+        result_var: str,
+        comp_field_indices: dict,
+        outer_scope: 'ConversionScope',
+    ) -> list:
+        """Convert a root action's ``activity()`` method to IR stmts for inlining.
+
+        Used when an action has no ``body()`` but has an ``activity()`` — this is the
+        root-action pattern where the activity sequences sub-actions in a ``while True:``
+        loop.  Each ``fetch = await Fetch()`` etc. in the activity body is recursively
+        inlined via :meth:`_inline_action_call`.
+
+        The scope uses the action class's module globals (plus ``outer_scope.extra_globals``)
+        so that sub-action class names (Fetch, Decode, …) can be resolved.
+        """
+        try:
+            import textwrap
+            src = inspect.getsource(activity_method)
+            src = textwrap.dedent(src)
+            tree = ast.parse(src)
+        except Exception:
+            return []
+
+        # Build activity-body scope.
+        # Use the action class's module globals as extra_globals so stage names resolve.
+        activity_module = inspect.getmodule(action_cls)
+        activity_extra = dict(vars(activity_module)) if activity_module else {}
+        activity_extra.update(outer_scope.extra_globals)
+
+        activity_scope = ConversionScope(
+            component=outer_scope.component,
+            field_indices={},
+            method_params=set(),
+            local_vars=set(outer_scope.local_vars),
+            regfile_bindings={},
+            is_action_body=True,
+            action_result_var=result_var,
+            action_field_names=set(),  # root action has no data fields
+            action_local_prefix=(result_var + "_") if result_var else "",
+            comp_field_indices=comp_field_indices,
+            action_cls=action_cls,
+            extra_globals=activity_extra,
+        )
+
+        func_nodes = [n for n in ast.walk(tree) if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef))]
+        if not func_nodes:
+            return []
+
+        func_def = func_nodes[0]
+        return self._convert_ast_body(func_def.body, activity_scope)
 
     def _compile_constraint_methods_as_body(
         self,
@@ -3009,6 +3115,12 @@ class DataModelFactory(object):
 
     def _convert_ast_stmt(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Stmt]:
         """Convert an AST statement to a data model statement."""
+
+        # Execute local ``from module import name`` stmts and add to scope.extra_globals
+        # so that action class names (e.g. RV32ISingleCycleA, Fetch) can be resolved later.
+        if isinstance(node, ast.ImportFrom) and scope is not None and node.module:
+            self._execute_local_import_from(node, scope)
+            return None
 
         def _leading_comment(n) -> Optional[str]:
             """Collect the block of plain comment lines immediately above n.lineno."""
@@ -3395,17 +3507,32 @@ class DataModelFactory(object):
                 if inlined is not None:
                     return inlined
 
-            # Recognise ``zdc.sext / zext / bit / signed`` as tagged built-in
-            # calls so the synthesizer can lower them to the correct SV.
+            # Recognise ``zdc.sext / zext / cbit / signed`` and emit typed IR nodes.
             if (isinstance(node.func, ast.Attribute) and
                     isinstance(node.func.value, ast.Name) and
                     node.func.value.id == 'zdc' and
                     node.func.attr in ('sext', 'zext', 'cbit', 'signed')):
-                builtin_name = f"zdc.{node.func.attr}"
-                return ExprCall(
-                    func=ExprRefUnresolved(name=builtin_name),
-                    args=[self._convert_ast_expr(a, scope) for a in node.args],
-                )
+                attr = node.func.attr
+                converted_args = [self._convert_ast_expr(a, scope) for a in node.args]
+                if attr == 'sext' and len(converted_args) == 2:
+                    bits_arg = converted_args[1]
+                    bits = bits_arg.value if isinstance(bits_arg, ExprConstant) and isinstance(bits_arg.value, int) else None
+                    if bits is not None:
+                        return ExprSext(value=converted_args[0], bits=bits)
+                    # bits not a compile-time constant — fall back to tagged ExprCall
+                    return ExprCall(func=ExprRefUnresolved(name='zdc.sext'), args=converted_args)
+                if attr == 'zext' and len(converted_args) == 2:
+                    bits_arg = converted_args[1]
+                    bits = bits_arg.value if isinstance(bits_arg, ExprConstant) and isinstance(bits_arg.value, int) else None
+                    if bits is not None:
+                        return ExprZext(value=converted_args[0], bits=bits)
+                    return ExprCall(func=ExprRefUnresolved(name='zdc.zext'), args=converted_args)
+                if attr == 'cbit' and len(converted_args) == 1:
+                    return ExprCbit(value=converted_args[0])
+                if attr == 'signed' and len(converted_args) == 1:
+                    return ExprSigned(value=converted_args[0])
+                # Unknown arity — fall back to tagged ExprCall
+                return ExprCall(func=ExprRefUnresolved(name=f'zdc.{attr}'), args=converted_args)
 
             return ExprCall(
                 func=self._convert_ast_expr(node.func, scope),
@@ -3457,6 +3584,18 @@ class DataModelFactory(object):
                     index=scope.field_indices[attr_name]
                 )
             
+            # Try to evaluate attribute access on a module-level name as a constant
+            # (e.g. MyEnum.VALUE, or ClassName.CONST).  This handles IntEnum members
+            # and any other class-level integer constants used in constraint bodies.
+            if isinstance(value_expr, ExprRefUnresolved):
+                py_globals = self._get_scope_globals(scope)
+                if py_globals:
+                    base_val = py_globals.get(value_expr.name)
+                    if base_val is not None and hasattr(base_val, attr_name):
+                        attr_val = getattr(base_val, attr_name)
+                        if isinstance(attr_val, int) and not isinstance(attr_val, bool):
+                            return ExprConstant(value=int(attr_val))
+
             # For other cases, use ExprAttribute
             return ExprAttribute(
                 value=value_expr,
