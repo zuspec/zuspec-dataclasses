@@ -34,6 +34,8 @@ def make_resource(cls: type) -> Any:
             object.__setattr__(obj, f.name, f.default_factory())
         else:
             object.__setattr__(obj, f.name, None)
+    if not hasattr(obj, 'instance_id'):
+        object.__setattr__(obj, 'instance_id', 0)
     return obj
 
 
@@ -72,23 +74,34 @@ def get_resource_fields(action_type: type) -> list[ResourceFieldInfo]:
 async def acquire_resources(
     action: Any,
     ctx: "ActionContext",
+    extra_hints: Optional[dict] = None,
 ) -> list[tuple]:
     """Acquire all resource claims on *action* in canonical (deadlock-free) order.
 
     Returns a list of (pool, claim) pairs for later release via
     :func:`release_resources`.
+
+    *extra_hints* supplements ``ctx.head_resource_hints`` with resource-id
+    values solved by the constraint solver (stored in
+    ``action._zdc_resource_hints`` and passed here by the activity runner).
+    These override any hints already in *ctx* for the same field name.
     """
     resource_fields = get_resource_fields(type(action))
     if not resource_fields:
         return []
+
+    # Merge context hints with solver-solved hints; solver hints take priority.
+    hints: dict = dict(ctx.head_resource_hints)
+    if extra_hints:
+        hints.update(extra_hints)
 
     entries = []
     for fi in resource_fields:
         pool = ctx.pool_resolver.resolve_pool(action, fi.name)
         if pool is None:
             continue
-        # Use pre-assigned instance_id hint from BindingSolver when present
-        instance_id = ctx.head_resource_hints.get(fi.name)
+        # Use pre-assigned instance_id hint from BindingSolver or constraint solver
+        instance_id = hints.get(fi.name)
         entries.append((pool, fi, instance_id))
 
     # Sort by (pool identity, instance_id) for deadlock-free ordering
@@ -101,9 +114,15 @@ async def acquire_resources(
             filter_fn = lambda _r, i, _iid=instance_id: i == _iid
         if fi.claim == "lock":
             claim = await pool.lock(filter=filter_fn)
+            # Apply solver-determined write-back: if a constraint assigned a new
+            # value to this lock() resource (e.g. assert self.pc.t == next_pc),
+            # the solved value is stored in hints as "field.t".
+            write_val = hints.get(f"{fi.name}.t")
+            if write_val is not None:
+                claim.t = write_val
         else:
             claim = await pool.share(filter=filter_fn)
-        setattr(action, fi.name, claim.t)
+        setattr(action, fi.name, claim)
         claims.append((pool, claim))
 
     return claims

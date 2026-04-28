@@ -139,7 +139,8 @@ def test_acquire_lock_sets_field():
         )
         claims = await acquire_resources(action, ctx)
         assert action.chan is not None
-        assert isinstance(action.chan, DmaChannel)
+        # The field is now a ListClaim so that body() can use self.chan.t
+        assert isinstance(action.chan.t, DmaChannel)
         release_resources(claims)
         return claims
 
