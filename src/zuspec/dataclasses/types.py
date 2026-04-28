@@ -473,10 +473,11 @@ class Component(TypeBase):
             self._impl.post_init(self)
     
     def __setattr__(self, name: str, value):
-        if name.startswith('_'):
+        # _impl is infrastructure; always write directly to avoid recursion.
+        if name == '_impl':
             object.__setattr__(self, name, value)
             return
-        
+
         impl = object.__getattribute__(self, '_impl')
         if impl is not None:
             impl.handle_setattr(self, name, value)
@@ -564,6 +565,8 @@ class Action[T]:
         import dataclasses as dc
         import random
 
+        if comp is None:
+            comp = getattr(self, 'comp', None)
         seed_val = seed if seed is not None else random.randrange(2**32)
         infra = get_or_build_infra(comp)
 
