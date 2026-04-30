@@ -3,7 +3,7 @@ import asyncio
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.activity_dsl import (
-    do, do_while, while_do, replicate, select, branch
+    do_while, while_do, replicate, select, branch
 )
 from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
 
@@ -41,7 +41,7 @@ class RepeatLeaf(zdc.Action[SimpleComp]):
 class RepeatAction(zdc.Action[SimpleComp]):
     async def activity(self):
         for i in range(3):
-            await do(RepeatLeaf)
+            await RepeatLeaf()
 
 
 def test_repeat_executes_n_times():
@@ -65,7 +65,7 @@ class RepeatIndexAction(zdc.Action[SimpleComp]):
     loop_i: int = 0
     async def activity(self):
         for loop_i in range(4):
-            await do(RepeatIndexInnerLeaf)
+            await RepeatIndexInnerLeaf()
 
 
 def test_repeat_index_var():
@@ -93,7 +93,7 @@ class DoWhileAction(zdc.Action[SimpleComp]):
     n: int = 0
     async def activity(self):
         with do_while(self.n < 3):
-            await do(DoWhileLeaf)
+            await DoWhileLeaf()
 
 
 def test_do_while_runs_at_least_once():
@@ -107,7 +107,7 @@ def test_do_while_runs_at_least_once():
 class DoWhileOnceAction(zdc.Action[SimpleComp]):
     async def activity(self):
         with do_while(False):
-            await do(DoWhileLeaf)
+            await DoWhileLeaf()
 
 
 def test_do_while_executes_once_when_cond_false():
@@ -134,7 +134,7 @@ class WhileDoLeaf(zdc.Action[SimpleComp]):
 class WhileDoFalseAction(zdc.Action[SimpleComp]):
     async def activity(self):
         with while_do(False):
-            await do(WhileDoLeaf)
+            await WhileDoLeaf()
 
 
 def test_while_do_skips_when_cond_false():
@@ -149,7 +149,7 @@ def test_while_do_skips_when_cond_false():
 class WhileDoTrueAction(zdc.Action[SimpleComp]):
     async def activity(self):
         with while_do(True):
-            await do(WhileDoLeaf)
+            await WhileDoLeaf()
 
 
 def test_while_do_runs_when_cond_true():
@@ -182,9 +182,9 @@ class SelectAction(zdc.Action[SimpleComp]):
     async def activity(self):
         with select():
             with branch():
-                await do(SelectBranchA)
+                await SelectBranchA()
             with branch():
-                await do(SelectBranchB)
+                await SelectBranchB()
 
 
 def test_select_picks_one_branch():
@@ -202,9 +202,9 @@ class SelectGuardAction(zdc.Action[SimpleComp]):
     async def activity(self):
         with select():
             with branch(guard=self.flag == 1):
-                await do(SelectBranchA)
+                await SelectBranchA()
             with branch():
-                await do(SelectBranchB)
+                await SelectBranchB()
 
 
 def test_select_guard_filters_branch():
@@ -238,18 +238,18 @@ class IfLeafB(zdc.Action[SimpleComp]):
 class IfTrueAction(zdc.Action[SimpleComp]):
     async def activity(self):
         if True:
-            await do(IfLeafA)
+            await IfLeafA()
         else:
-            await do(IfLeafB)
+            await IfLeafB()
 
 
 @zdc.dataclass
 class IfFalseAction(zdc.Action[SimpleComp]):
     async def activity(self):
         if False:
-            await do(IfLeafA)
+            await IfLeafA()
         else:
-            await do(IfLeafB)
+            await IfLeafB()
 
 
 def test_if_true_branch():
@@ -273,9 +273,9 @@ class IfFieldAction(zdc.Action[SimpleComp]):
     flag: int = 1
     async def activity(self):
         if self.flag > 0:
-            await do(IfLeafA)
+            await IfLeafA()
         else:
-            await do(IfLeafB)
+            await IfLeafB()
 
 
 def test_if_field_condition():
@@ -310,9 +310,9 @@ class MatchAction(zdc.Action[SimpleComp]):
     async def activity(self):
         match self.val:
             case 1:
-                await do(MatchLeafX)
+                await MatchLeafX()
             case 2:
-                await do(MatchLeafY)
+                await MatchLeafY()
 
 
 def test_match_correct_case():
@@ -349,7 +349,7 @@ class ReplicateLeaf(zdc.Action[SimpleComp]):
 class ReplicateAction(zdc.Action[SimpleComp]):
     async def activity(self):
         for i in replicate(3):
-            await do(ReplicateLeaf)
+            await ReplicateLeaf()
 
 
 def test_replicate_executes_n_times():

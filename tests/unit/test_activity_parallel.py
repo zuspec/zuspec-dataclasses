@@ -61,9 +61,9 @@ def test_parallel_join_branch():
     ir = _parse("""
         async def activity(self):
             with parallel(join_branch='L2'):
-                L2 = await do(ActionA)
-                L3 = await do(ActionB)
-            await do(ActionC)
+                L2 = await ActionA()
+                L3 = await ActionB()
+            await ActionC()
     """)
     par = ir.stmts[0]
     assert isinstance(par, ActivityParallel)
@@ -123,12 +123,12 @@ def test_parallel_join_first():
 
 
 def test_parallel_with_do_stmts():
-    """parallel() body can contain await do() anonymous traversals."""
+    """parallel() body can contain await T() anonymous traversals."""
     ir = _parse("""
         async def activity(self):
             with parallel():
-                await do(WriteData)
-                await do(ReadData)
+                await WriteData()
+                await ReadData()
     """)
     par = ir.stmts[0]
     assert len(par.stmts) == 2
@@ -162,9 +162,9 @@ def test_schedule_join_branch():
     ir = _parse("""
         async def activity(self):
             with schedule(join_branch='L1'):
-                L1 = await do(ActionA)
-                L2 = await do(ActionB)
-            await do(ActionC)
+                L1 = await ActionA()
+                L2 = await ActionB()
+            await ActionC()
     """)
     sched = ir.stmts[0]
     assert isinstance(sched, ActivitySchedule)
@@ -178,7 +178,7 @@ def test_schedule_join_none():
     ir = _parse("""
         async def activity(self):
             with schedule(join_none=True):
-                await do(ActionA)
+                await ActionA()
     """)
     js = ir.stmts[0].join_spec
     assert js.kind == 'none'
@@ -189,9 +189,9 @@ def test_schedule_join_first():
     ir = _parse("""
         async def activity(self):
             with schedule(join_first=2):
-                await do(ActionA)
-                await do(ActionB)
-                await do(ActionC)
+                await ActionA()
+                await ActionB()
+                await ActionC()
     """)
     js = ir.stmts[0].join_spec
     assert js.kind == 'first'
@@ -260,7 +260,7 @@ def test_atomic_single_stmt():
     ir = _parse("""
         async def activity(self):
             with atomic():
-                await do(WriteAction)
+                await WriteAction()
     """)
     atom = ir.stmts[0]
     assert isinstance(atom, ActivityAtomic)

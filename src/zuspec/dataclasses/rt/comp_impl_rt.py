@@ -75,6 +75,9 @@ class CompImplRT(object):
                         # Also update the actual field
                         object.__setattr__(comp, name, value)
                         return
+                    # For all other component fields, keep _signal_values in sync
+                    # so that @zdc.sync processes can read the latest value.
+                    self._signal_values[name] = value
                     break
         
         # Normal assignment for inputs and non-evaluated fields
@@ -151,11 +154,14 @@ class CompImplRT(object):
                         self._sensitivity[signal_name] = set()
                     self._sensitivity[signal_name].add(idx)
         
-        # Initialize signal values from component fields
+        # Initialize signal values from component fields.
+        # Include underscore-prefixed user fields (e.g. mailbox registers) but
+        # exclude the _impl infrastructure field.
         for field in dc.fields(comp):
-            if not field.name.startswith('_'):
-                value = getattr(comp, field.name, 0)
-                self._signal_values[field.name] = value
+            if field.name == '_impl':
+                continue
+            value = getattr(comp, field.name, 0)
+            self._signal_values[field.name] = value
         
         # Also initialize signal descriptors (inputs/outputs/signals converted to descriptors)
         # Late import to avoid circular dependency
@@ -611,13 +617,16 @@ class CompImplRT(object):
 
                 self._deferred_writes.clear()
 
-        # Flush committed values back to the component's Python attributes
+        # Flush committed values back to the component's Python attributes.
+        # Include underscore-prefixed fields (mailbox registers etc.) but
+        # skip _impl which is the component's infrastructure object.
         for sig_name, val in self._signal_values.items():
-            if not sig_name.startswith('_'):
-                try:
-                    object.__setattr__(comp, sig_name, val)
-                except Exception:
-                    pass
+            if sig_name == '_impl':
+                continue
+            try:
+                object.__setattr__(comp, sig_name, val)
+            except Exception:
+                pass
 
         # Advance proc-cycle waiters — each domain tick = one @proc cycle.
         # Futures are resolved here synchronously; the event loop will wake
@@ -675,14 +684,45 @@ class CompImplRT(object):
                 object.__setattr__(comp, trace_attr, rt.trace)
                 task = asyncio.create_task(self._run_pipeline(comp, proc.method, rt))
             else:
-                # Plain @proc — publish the component via ContextVar so that
-                # zdc.cycles() can find CompImplRT.wait_cycles() at sim time.
-                # asyncio.create_task copies the current context, so the task
-                # inherits the ContextVar value set here.
+                # Plain @proc — resolve clock domain and publish via task attribute
+                # so zdc.tick() / zdc.cycles() can wait on the correct domain.
+                from ..domain import ClockDomain
+                cd_lambda = getattr(proc.method, '_zdc_proc_clock_domain', None)
+                if cd_lambda is not None:
+                    cd = cd_lambda(comp)
+                else:
+                    # Auto-infer: first ClockDomain class attribute (walks MRO)
+                    cd = None
+                    for klass in type(comp).__mro__:
+                        for attr_val in vars(klass).values():
+                            if isinstance(attr_val, ClockDomain):
+                                cd = attr_val
+                                break
+                        if cd is not None:
+                            break
+
                 from ..pipeline_ns import _CURRENT_PROC_COMP
+
+                # Wrap the proc so that wrapped_method calls inside it see
+                # _execution_depth > 0 and use the inline-await (nested) path
+                # rather than creating a new task without a clock domain.
+                _tb = self.timebase()
+                _proc_method = proc.method
+
+                async def _proc_wrapper(_comp=comp, _method=_proc_method, _timebase=_tb):
+                    if _timebase is not None:
+                        _timebase._execution_depth += 1
+                    try:
+                        await _method(_comp)
+                    finally:
+                        if _timebase is not None:
+                            _timebase._execution_depth -= 1
+
                 tok = _CURRENT_PROC_COMP.set(comp)
-                task = asyncio.create_task(proc.method(comp))
+                task = asyncio.create_task(_proc_wrapper())
                 _CURRENT_PROC_COMP.reset(tok)
+                if cd is not None:
+                    task._zdc_clock_domain = cd
             self._tasks.append(task)
 
     @staticmethod

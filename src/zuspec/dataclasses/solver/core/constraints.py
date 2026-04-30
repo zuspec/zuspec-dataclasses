@@ -272,6 +272,54 @@ class ImplicationConstraint(Constraint):
         return result
 
 
+class SextConstraint(Constraint):
+    """result = sign_extend(value, bits) — sign-extend from bits-wide source."""
+
+    def __init__(self, value: Constraint, bits: Constraint, **kwargs):
+        super().__init__(value.variables | bits.variables, **kwargs)
+        self.value = value
+        self.bits = bits
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        return self.value.is_satisfied(assignment) and self.bits.is_satisfied(assignment)
+
+    def __repr__(self) -> str:
+        return f"Sext({self.value}, {self.bits})"
+
+
+class CbitConstraint(Constraint):
+    """result = 1 if expr else 0 — boolean reification to u1."""
+
+    def __init__(self, expr: Constraint, **kwargs):
+        super().__init__(expr.variables, **kwargs)
+        self.expr = expr
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        return self.expr.is_satisfied(assignment)
+
+    def __repr__(self) -> str:
+        return f"Cbit({self.expr})"
+
+
+class SignedViewConstraint(Constraint):
+    """Treat inner expression as signed two's-complement (32-bit by default).
+
+    Does not change the bit-pattern; affects how enclosing comparisons
+    and arithmetic are evaluated.
+    """
+
+    def __init__(self, inner: Constraint, width: int = 32, **kwargs):
+        super().__init__(inner.variables, **kwargs)
+        self.inner = inner
+        self.width = width
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        return self.inner.is_satisfied(assignment)
+
+    def __repr__(self) -> str:
+        return f"Signed({self.inner})"
+
+
 class UniqueConstraint(Constraint):
     """Represents a uniqueness constraint: all variables must have distinct values."""
 

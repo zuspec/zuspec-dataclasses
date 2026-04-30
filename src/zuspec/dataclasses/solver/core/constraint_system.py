@@ -37,6 +37,13 @@ class ConstraintSystem:
         
         # Solve order respecting solve...before constraints
         self.solve_order: List[Variable] = []
+
+        # Set of lock() resource write-target paths that were actually referenced
+        # in at least one constraint (e.g. {"pc.t", "rd_reg.t"}).
+        # A lock resource whose write-target is NOT in this set was not constrained;
+        # acquire_resources should NOT write back to the pool slot so the resource
+        # value is preserved (write-enable-via-absence-of-constraint semantics).
+        self.referenced_lock_writes: Set[str] = set()
     
     def add_variable(self, variable: Variable):
         """

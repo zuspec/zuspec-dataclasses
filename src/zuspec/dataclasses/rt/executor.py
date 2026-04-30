@@ -59,7 +59,8 @@ from zuspec.ir.core.expr import (
     Expr, ExprConstant, ExprRefField, ExprBin, ExprAttribute,
     BinOp, AugOp, TypeExprRefSelf, ExprRefLocal, ExprRefUnresolved, ExprCall,
     ExprCompare, CmpOp, ExprSubscript, ExprBool, BoolOp,
-    ExprUnary, ExprSlice, ExprCast, ExprStructLiteral, UnaryOp
+    ExprUnary, ExprSlice, ExprCast, ExprStructLiteral, UnaryOp,
+    ExprSext, ExprZext, ExprCbit, ExprSigned,
 )
 from zuspec.ir.core.expr_phase2 import ExprIfExp
 from .eval_state import EvalState
@@ -404,6 +405,25 @@ class Executor:
                     return getattr(mod, expr.name)
             return 0  # Default if not found
         
+        elif isinstance(expr, ExprSext):
+            val = self.evaluate_expr(expr.value) & 0xFFFFFFFF
+            n = expr.bits
+            if val & (1 << (n - 1)):
+                val |= -(1 << n)
+            return val & 0xFFFFFFFF
+
+        elif isinstance(expr, ExprZext):
+            val = self.evaluate_expr(expr.value)
+            return int(val) & ((1 << expr.bits) - 1)
+
+        elif isinstance(expr, ExprCbit):
+            val = self.evaluate_expr(expr.value)
+            return 1 if val else 0
+
+        elif isinstance(expr, ExprSigned):
+            val = int(self.evaluate_expr(expr.value)) & 0xFFFFFFFF
+            return val if val < 0x80000000 else val - 0x100000000
+
         elif isinstance(expr, ExprCall):
             # Handle function/method calls
             func = self.evaluate_expr(expr.func)

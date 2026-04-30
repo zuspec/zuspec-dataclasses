@@ -9,7 +9,8 @@ from typing import Any, Optional
 from zuspec.ir.core.expr import (
     Expr, ExprConstant, ExprBin, ExprUnary, ExprCompare,
     ExprRefLocal, ExprAttribute, ExprCall, ExprSubscript,
-    BinOp, UnaryOp, CmpOp
+    ExprRefUnresolved, BinOp, UnaryOp, CmpOp,
+    ExprSext, ExprZext, ExprCbit, ExprSigned,
 )
 from zuspec.ir.core.data_type import DataTypeStruct
 
@@ -198,18 +199,38 @@ class AstToIrConverter:
             comparators=[right]
         )
     
-    def _convert_call(self, node: ast.Call) -> ExprCall:
-        """Convert function/method call."""
-        # Convert function/method
+    def _convert_call(self, node: ast.Call) -> Expr:
+        """Convert function/method call, emitting typed nodes for zdc built-ins."""
+        # Recognise zdc.sext / zext / cbit / signed → typed IR nodes
+        if (isinstance(node.func, ast.Attribute) and
+                isinstance(node.func.value, ast.Name) and
+                node.func.value.id == 'zdc' and
+                node.func.attr in ('sext', 'zext', 'cbit', 'signed')):
+            attr = node.func.attr
+            converted_args = [self.convert_expr(a) for a in node.args]
+            if attr == 'sext' and len(converted_args) == 2:
+                bits_arg = converted_args[1]
+                bits = bits_arg.value if isinstance(bits_arg, ExprConstant) and isinstance(bits_arg.value, int) else None
+                if bits is not None:
+                    return ExprSext(value=converted_args[0], bits=bits)
+                return ExprCall(func=ExprRefUnresolved(name='zdc.sext'), args=converted_args)
+            if attr == 'zext' and len(converted_args) == 2:
+                bits_arg = converted_args[1]
+                bits = bits_arg.value if isinstance(bits_arg, ExprConstant) and isinstance(bits_arg.value, int) else None
+                if bits is not None:
+                    return ExprZext(value=converted_args[0], bits=bits)
+                return ExprCall(func=ExprRefUnresolved(name='zdc.zext'), args=converted_args)
+            if attr == 'cbit' and len(converted_args) == 1:
+                return ExprCbit(value=converted_args[0])
+            if attr == 'signed' and len(converted_args) == 1:
+                return ExprSigned(value=converted_args[0])
+            return ExprCall(func=ExprRefUnresolved(name=f'zdc.{attr}'), args=converted_args)
+
+        # Generic call
         func_ir = self.convert_expr(node.func)
-        
-        # Convert arguments
         args_ir = [self.convert_expr(arg) for arg in node.args]
-        
-        # TODO: Handle keyword arguments if needed
         if node.keywords:
             raise ConversionError("Keyword arguments not yet supported")
-        
         return ExprCall(func=func_ir, args=args_ir)
     
     def _convert_subscript(self, node: ast.Subscript) -> ExprSubscript:

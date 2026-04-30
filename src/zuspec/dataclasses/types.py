@@ -22,7 +22,7 @@ import typing
 from typing import (
     Callable, cast, ClassVar, Dict, Generic, List, Optional, TypeVar, 
     Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, 
-    Self, Union, Awaitable)
+    Self, Union, Awaitable, runtime_checkable)
 from .decorators import dataclass, field, export
 
 
@@ -379,14 +379,18 @@ class Struct(TypeBase):
     pass
 
 
-class Buffer(Struct):
+@runtime_checkable
+class Buffer[T](Protocol):
     """PSS buffer flow-object base type.
 
     A buffer is produced by one action and consumed by another.
     Use ``zdc.output()`` / ``zdc.input()`` to declare buffer fields on actions.
+    The type parameter T is the payload dataclass (e.g. ``Buffer[DecodeResult]``).
     """
-    pass
 
+    @property
+    def t(self) -> T:
+        ...
 
 class Stream(Struct):
     """PSS stream flow-object base type.
@@ -406,15 +410,21 @@ class State(Struct):
     initial: bool = False
 
 
-class Resource(Struct):
+class Resource[T](Protocol):
     """PSS resource base type.
 
     Resources are claimed by actions via ``zdc.lock()`` (exclusive) or
     ``zdc.share()`` (shared).  The ``instance_id`` attribute is assigned by
     the pool when the resource is allocated.
     """
-    instance_id: int = 0
 
+    @property
+    def id(self) -> int:
+        ...
+
+    @property
+    def t(self) -> T:
+        ...
 
 class Bundle(TypeBase):
     """Bundle base class for interface/port collections with directionality.
@@ -444,7 +454,17 @@ class Component(TypeBase):
     - sync
     - constraint
     - activity
+
+    Every Component inherits a default ``clock_domain`` so that ``@zdc.proc``
+    methods can automatically bind to the component's clock without an explicit
+    declaration.  Components that need a custom period can shadow it::
+
+        class MyComp(zdc.Component):
+            clock_domain = zdc.ClockDomain(period=zdc.Time.ns(5))
     """
+    from .domain import ClockDomain as _ClockDomain
+    clock_domain: ClassVar[_ClockDomain] = _ClockDomain()
+    del _ClockDomain
 
     _impl : Optional[CompImpl] = dc.field(default=None)
 
@@ -453,10 +473,11 @@ class Component(TypeBase):
             self._impl.post_init(self)
     
     def __setattr__(self, name: str, value):
-        if name.startswith('_'):
+        # _impl is infrastructure; always write directly to avoid recursion.
+        if name == '_impl':
             object.__setattr__(self, name, value)
             return
-        
+
         impl = object.__getattribute__(self, '_impl')
         if impl is not None:
             impl.handle_setattr(self, name, value)
@@ -528,6 +549,9 @@ def _find_comp_instances(comp: 'Component', comp_type: type) -> list:
 class Action[T]:
     comp: T = field()
 
+    def __await__(self):
+        return self.__call__().__await__()
+
     async def __call__(self, comp: Optional['Component'] = None,
                        seed: Optional[int] = None) -> Self:
         """Traverse this action against *comp* with full inference support.
@@ -541,6 +565,8 @@ class Action[T]:
         import dataclasses as dc
         import random
 
+        if comp is None:
+            comp = getattr(self, 'comp', None)
         seed_val = seed if seed is not None else random.randrange(2**32)
         infra = get_or_build_infra(comp)
 
@@ -573,7 +599,6 @@ class Action[T]:
 
     async def body(self) -> None:
         pass
-
 
 @dc.dataclass
 class XtorComponent[T](Component):
@@ -617,6 +642,7 @@ class Claim[T](Protocol):
 
     @property
     def id(self) -> int:
+        """instance id (index) of the claimed resource"""
         ...
 
     @property
@@ -629,6 +655,14 @@ class Claim[T](Protocol):
 
     def drop(self):
         """Release the claimed resource back to the pool"""
+        ...
+
+@runtime_checkable
+class _BufferProto[T](Protocol):
+    """Internal structural protocol for objects that expose a ``.t`` payload."""
+
+    @property
+    def t(self) -> T:
         ...
 
 
@@ -752,6 +786,12 @@ class ClaimPool[T](Pool[T]):
         """Returns a ClaimPool populated by *resources*."""
         from .rt.list_claim_pool import ListClaimPool
         return ListClaimPool(resources)
+
+
+#: ``ResourcePool`` is the preferred term for ``ClaimPool``.  Both names refer
+#: to the same class; use ``ResourcePool`` in new code.
+ResourcePool = ClaimPool
+
 
 class Lock(Protocol):
     """A mutex lock for coordinating access to shared resources.

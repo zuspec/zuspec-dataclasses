@@ -273,3 +273,74 @@ class TestConstraintSystemBuilder:
 
 # Need to import ExprRefLocal for tests
 from zuspec.ir.core.expr import ExprRefLocal
+
+
+# ---------------------------------------------------------------------------
+# Tests for _extract_resource_id_vars and pool registration
+# ---------------------------------------------------------------------------
+
+import dataclasses as _dc
+import zuspec.dataclasses as zdc
+from zuspec.dataclasses.types import ClaimPool
+from zuspec.dataclasses.rt.resource_rt import make_resource
+
+
+@zdc.dataclass
+class _GprComp(zdc.Component):
+    gpr: ClaimPool = zdc.pool(
+        default_factory=lambda: ClaimPool.fromList([10, 20, 30, 40])
+    )
+
+
+@zdc.dataclass
+class _RsAction(zdc.Action[_GprComp]):
+    rs1: zdc.Resource[zdc.u32] = zdc.share()
+    output_val: zdc.u32 = zdc.rand()
+
+    def __bind__(self):
+        return (
+            (self.rs1, self.comp.gpr),
+        )
+
+    @zdc.constraint
+    def c_val(self):
+        assert self.output_val == self.rs1.t
+
+
+def _make_rs_action():
+    comp = _GprComp()
+    action = object.__new__(_RsAction)
+    for f in _dc.fields(_RsAction):
+        object.__setattr__(action, f.name, f.default if f.default is not _dc.MISSING else None)
+    object.__setattr__(action, 'comp', comp)
+    return action
+
+
+class TestResourceIdVarExtraction:
+    """Tests for _extract_resource_id_vars and pool registration in builder."""
+
+    def test_extract_resource_id_vars_creates_id_variable(self):
+        """_extract_resource_id_vars synthesises rs1.id with pool-size domain."""
+        action = _make_rs_action()
+        builder = ConstraintSystemBuilder()
+        vars_ = builder._extract_resource_id_vars(action)
+        names = [v.name for v in vars_]
+        assert "rs1.id" in names
+
+    def test_extract_resource_id_vars_domain_fits_pool(self):
+        """Domain of rs1.id covers all pool slot indices."""
+        action = _make_rs_action()
+        builder = ConstraintSystemBuilder()
+        vars_ = builder._extract_resource_id_vars(action)
+        id_var = next(v for v in vars_ if v.name == "rs1.id")
+        # pool has 4 elements; domain must include 0..3
+        all_vals = list(id_var.domain.values())
+        assert 0 in all_vals
+        assert 3 in all_vals
+
+    def test_extract_resource_id_vars_registers_pool(self):
+        """Pool is registered in expr_parser.resource_pools after extraction."""
+        action = _make_rs_action()
+        builder = ConstraintSystemBuilder()
+        builder._extract_resource_id_vars(action)
+        assert "rs1" in builder.expr_parser.resource_pools

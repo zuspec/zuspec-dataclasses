@@ -34,10 +34,19 @@ class EqualPropagator(Propagator):
         
         if intersection.is_empty():
             return PropagationResult.conflict()
-        
-        lhs.domain = intersection
-        rhs.domain = intersection.copy()
-        
+
+        # Preserve each variable's own width/signed metadata so that sharing a
+        # constant variable across propagators with different widths does not
+        # cause oscillation (the intersection intervals are the same; only the
+        # type metadata must stay tied to the variable, not the peer).
+        new_lhs = IntDomain._from_normalized(
+            list(intersection._intervals), lhs.domain.width, lhs.domain.signed)
+        new_rhs = IntDomain._from_normalized(
+            list(intersection._intervals), rhs.domain.width, rhs.domain.signed)
+
+        lhs.domain = new_lhs
+        rhs.domain = new_rhs
+
         if lhs.domain != old_lhs:
             changed.add(lhs)
         if rhs.domain != old_rhs:

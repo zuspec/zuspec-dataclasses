@@ -57,9 +57,9 @@ class UnrelatedAction(zdc.Action[Comp]):
 @zdc.dataclass
 class SeqConstraintScenario(zdc.Action[Comp]):
     async def activity(self):
-        with zdc.do(ActionA) as a:
+        with ActionA() as a:
             pass
-        with zdc.do(ActionB) as b:
+        with ActionB() as b:
             assert b.in_val == a.out_val + 1
 
 
@@ -67,9 +67,9 @@ class SeqConstraintScenario(zdc.Action[Comp]):
 @zdc.dataclass
 class UnrelatedNotAffectedScenario(zdc.Action[Comp]):
     async def activity(self):
-        with zdc.do(ActionA) as a:
+        with ActionA() as a:
             pass
-        with zdc.do(UnrelatedAction) as u:
+        with UnrelatedAction() as u:
             pass
 
 
@@ -78,12 +78,12 @@ class UnrelatedNotAffectedScenario(zdc.Action[Comp]):
 class MultiStepChainScenario(zdc.Action[Comp]):
     """a → b (b.in_val == a.out_val + 1) → c (c.in_val == b.in_val * 2)."""
     async def activity(self):
-        with zdc.do(ActionA) as a:
+        with ActionA() as a:
             # Bound out_val so that (out_val+1)*2 fits in U(32)
             assert a.out_val < 1000
-        with zdc.do(ActionB) as b:
+        with ActionB() as b:
             assert b.in_val == a.out_val + 1
-        with zdc.do(ActionB) as c:
+        with ActionB() as c:
             assert c.in_val == b.in_val * 2
 
 

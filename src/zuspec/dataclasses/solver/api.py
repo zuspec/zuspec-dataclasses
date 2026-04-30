@@ -41,6 +41,8 @@ def get_backend(name=None):
         _BACKEND_CACHE = result
     return result
 
+_cached_backend = None
+
 
 def randomize(obj: Any, 
               seed: Optional[int] = None,
@@ -83,7 +85,10 @@ def randomize(obj: Any,
                            malformed constraints, etc.), if no solution exists
                            (UNSAT), or if timeout occurred.
     """
-    get_backend().randomize(obj, seed=seed, timeout_ms=timeout_ms)
+    global _cached_backend
+    if _cached_backend is None:
+        _cached_backend = get_backend()
+    _cached_backend.randomize(obj, seed=seed, timeout_ms=timeout_ms)
 
 
 class _HandleAccessRewriter(ast.NodeTransformer):

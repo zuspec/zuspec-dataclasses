@@ -217,22 +217,24 @@ class BacktrackingSearch:
         if result.status == PropagationStatus.CONFLICT:
             return None  # UNSAT
 
-        # Build the full variable dict for backtracking state.
+        # Fast path: if initial propagation reduced all decision variables to
+        # singletons, extract values directly without running the search.
+        # This is common when all inputs are bound (e.g. flow-input stages
+        # like Decode/Execute whose fields are fully determined by prior stages).
+        singleton_assignment = {}
+        for var_name, var in variables.items():
+            if var.domain.is_singleton():
+                singleton_assignment[var_name] = var.domain.min_val
+            else:
+                break
+        else:
+            return singleton_assignment
+
+        # Build the full variable dict for backtracking state:
+        # includes all engine variables (temp bool vars, consts, etc.)
+        # so they are properly saved/restored on backtrack.
         all_vars = dict(self.engine.variables)
         all_vars.update(variables)
-
-        # Fast path: if propagation already reduced every decision variable to a
-        # singleton domain, we can read off the assignment without any search.
-        assignment = {}
-        all_singletons = True
-        for vname in variables:
-            v = all_vars.get(vname)
-            if v is None or v.domain.size() != 1:
-                all_singletons = False
-                break
-            assignment[vname] = next(iter(v.domain.values()))
-        if all_singletons:
-            return assignment
 
         # Slow path: backtracking search.
         state = SearchState(all_vars, decision_vars=set(variables.keys()))

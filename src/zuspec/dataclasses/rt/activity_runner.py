@@ -535,7 +535,8 @@ class ActivityRunner:
         if ctx.tracer is not None:
             ctx.tracer.action_exec_begin(action)
         from .resource_rt import acquire_resources, release_resources
-        claims = await acquire_resources(action, child_ctx)
+        solved_resource_hints = getattr(action, '_zdc_resource_hints', None)
+        claims = await acquire_resources(action, child_ctx, extra_hints=solved_resource_hints)
         try:
             await self._exec_action_body(action_type, action, child_ctx)
             for buf_inst in output_flow_insts:
@@ -702,9 +703,12 @@ class ActivityRunner:
 
         # Structural inference: if the consumer has unbound flow-input slots,
         # use the structural solver to select and traverse producer actions first.
+        # Exclude fields already covered by explicit init_bindings (e.g. Decode(fetch=fetch.out))
+        # so that the structural solver does not infer duplicate predecessor actions.
         effective_ctx = ctx
         if ctx.structural_solver is not None:
-            unbound = _collect_unbound_flow_inputs(action_type, ctx.flow_bindings)
+            explicitly_bound = {field_name for field_name, _, _ in (node.init_bindings or [])}
+            unbound = _collect_unbound_flow_inputs(action_type, ctx.flow_bindings, explicitly_bound)
             if unbound:
                 effective_ctx = await self._apply_inferred_actions(
                     ctx.structural_solver.solve(
@@ -712,6 +716,24 @@ class ActivityRunner:
                         inline_constraints=node.inline_constraints,
                     ),
                     ctx,
+                )
+
+        # Resolve explicit init_bindings: inject flow bindings from labeled predecessors.
+        if node.init_bindings and effective_ctx.forward_propagator is not None:
+            from .flow_obj_rt import BufferInstance
+            extra_bindings: dict = {}
+            for (field_name, src_label, src_attr) in node.init_bindings:
+                src_action = effective_ctx.forward_propagator.get_action(src_label)
+                if src_action is not None:
+                    val = getattr(src_action, src_attr, None)
+                    if val is not None:
+                        buf = BufferInstance(obj=val)
+                        buf.set_ready()
+                        extra_bindings[field_name] = (buf, "input")
+            if extra_bindings:
+                effective_ctx = dc.replace(
+                    effective_ctx,
+                    flow_bindings={**effective_ctx.flow_bindings, **extra_bindings},
                 )
 
         # Evaluate comp_expr to get an explicit component instance override.
@@ -1144,9 +1166,14 @@ def _match_pattern(subject, pattern, ev):
 def _collect_unbound_flow_inputs(
     action_type: type,
     flow_bindings: dict,
+    explicitly_bound: set = None,
 ) -> list:
     """Return ``(field_name, flow_obj_type)`` tuples for flow-input fields on
     *action_type* that are not already present in *flow_bindings*.
+
+    *explicitly_bound* is an optional set of field names covered by explicit
+    init_bindings (e.g. ``Decode(fetch=fetch.out)``); those fields are excluded
+    so the structural solver does not infer duplicate predecessor actions.
 
     These represent slots that the structural solver needs to fill.
     """
@@ -1167,6 +1194,8 @@ def _collect_unbound_flow_inputs(
         if meta.get("direction") != "input":
             continue
         if f.name in flow_bindings:
+            continue
+        if explicitly_bound and f.name in explicitly_bound:
             continue
         flow_obj_type = ann.get(f.name)
         if isinstance(flow_obj_type, type):

@@ -248,8 +248,22 @@ class PoolResolver:
                         ancestor = self._comp_parent.get(id(ancestor))
                 self._type_pool_cache[_type_key] = result
 
+        # 4. Action-level __bind__ dict: {field_name: pool}
+        if result is None:
+            result = self._resolve_action_bind(action, field_name)
+
         self._resolve_cache[_memo_key] = result
         return result
+
+    def _resolve_action_bind(self, action: Any, field_name: str) -> Optional[Any]:
+        """Resolve pool for *field_name* via an action-level ``__bind__``.
+
+        Handles both the tuple-of-tuples format ``((self.rs1, pool), ...)``
+        and the legacy dict format ``{field_name: pool}``.
+        """
+        from ..action_bind import parse_action_bind
+        mapping = parse_action_bind(action)
+        return mapping.get(field_name)
 
     def resolve_pool_by_type(
         self, action_type: type, field_name: str, comp: "Component"

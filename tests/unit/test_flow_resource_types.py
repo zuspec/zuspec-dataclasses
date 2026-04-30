@@ -9,13 +9,17 @@ import zuspec.dataclasses as zdc
 # ---------------------------------------------------------------------------
 
 def test_buffer_subclass_hierarchy():
-    """Buffer subclass correctly inherits from Buffer and Struct."""
-    @zdc.dataclass
-    class MyBuf(zdc.Buffer):
-        seg_base: zdc.u32 = zdc.rand()
+    """Buffer is a Protocol; payload types satisfy it via the .t property."""
+    @dataclasses.dataclass
+    class MyPayload:
+        data: zdc.u32 = 0
 
-    assert issubclass(MyBuf, zdc.Buffer)
-    assert issubclass(MyBuf, zdc.Struct)
+        @property
+        def t(self):
+            return self
+
+    obj = MyPayload()
+    assert isinstance(obj, zdc.Buffer), "Payload with .t satisfies Buffer protocol"
 
 
 def test_stream_subclass_hierarchy():

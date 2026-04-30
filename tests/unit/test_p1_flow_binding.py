@@ -13,7 +13,6 @@ import asyncio
 
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.activity_dsl import do
 from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
 from zuspec.dataclasses.rt.flow_constraint_store import FlowObjectConstraintStore
 
@@ -72,8 +71,8 @@ class _ProbeConsumer(zdc.Action[MyComp]):
 class _ProbeTransfer(zdc.Action[MyComp]):
     async def activity(self) -> None:
         with zdc.schedule():
-            await do(_ProbeProducer)
-            await do(_ProbeConsumer)
+            await _ProbeProducer()
+            await _ProbeConsumer()
 
 
 # -- NoRand: buffer has no rand fields --
@@ -94,8 +93,8 @@ class _NRCons(zdc.Action[MyComp]):
 class _NRTransfer(zdc.Action[MyComp]):
     async def activity(self) -> None:
         with zdc.schedule():
-            await do(_NRProd)
-            await do(_NRCons)
+            await _NRProd()
+            await _NRCons()
 
 
 # -- ConsBody: consumer records body() flow object --
@@ -120,8 +119,8 @@ class _ConsCB(zdc.Action[MyComp]):
 class _XferCB(zdc.Action[MyComp]):
     async def activity(self) -> None:
         with zdc.schedule():
-            await do(_ProdCB)
-            await do(_ConsCB)
+            await _ProdCB()
+            await _ConsCB()
 
 
 # -- PreSolveProd: producer records flow object at pre_solve --
@@ -149,8 +148,8 @@ class _ConsPS(zdc.Action[MyComp]):
 class _XferPS(zdc.Action[MyComp]):
     async def activity(self) -> None:
         with zdc.schedule():
-            await do(_ProdPS)
-            await do(_ConsPS)
+            await _ProdPS()
+            await _ConsPS()
 
 
 # -- SameInst: producer and consumer capture their buf reference --
@@ -177,8 +176,8 @@ class _ConsSI(zdc.Action[MyComp]):
 class _XferSI(zdc.Action[MyComp]):
     async def activity(self) -> None:
         with zdc.schedule():
-            await do(_ProdSI)
-            await do(_ConsSI)
+            await _ProdSI()
+            await _ConsSI()
 
 
 # -- ConsPreSolve: consumer records flow object at pre_solve --
@@ -204,8 +203,8 @@ class _ConsCP(zdc.Action[MyComp]):
 class _XferCP(zdc.Action[MyComp]):
     async def activity(self) -> None:
         with zdc.schedule():
-            await do(_ProdCP)
-            await do(_ConsCP)
+            await _ProdCP()
+            await _ConsCP()
 
 
 # -- Consistent values: both producer and consumer record addr/size --
@@ -234,8 +233,8 @@ class _ConsCV(zdc.Action[MyComp]):
 class _XferCV(zdc.Action[MyComp]):
     async def activity(self) -> None:
         with zdc.schedule():
-            await do(_ProdCV)
-            await do(_ConsCV)
+            await _ProdCV()
+            await _ConsCV()
 
 
 # ---------------------------------------------------------------------------

@@ -157,6 +157,8 @@ class ConstraintParser:
             return self.parse_subscript(node)
         elif isinstance(node, ast.List):
             return self.parse_list(node)
+        elif isinstance(node, ast.Tuple):
+            return self.parse_tuple(node)
         else:
             raise ValueError(f"Unsupported expression type: {type(node).__name__}")
     
@@ -433,7 +435,14 @@ class ConstraintParser:
             'type': 'list',
             'elts': [self.parse_expr(elt) for elt in node.elts]
         }
-    
+
+    def parse_tuple(self, node: ast.Tuple) -> Dict[str, Any]:
+        """Parse tuple literal (used as zero-fill arguments in zdc.concat)."""
+        return {
+            'type': 'tuple',
+            'elts': [self.parse_expr(elt) for elt in node.elts]
+        }
+
     def get_call_name(self, func_node: ast.expr) -> str:
         """Extract function name from call node."""
         if isinstance(func_node, ast.Name):

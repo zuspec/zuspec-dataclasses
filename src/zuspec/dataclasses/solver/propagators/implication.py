@@ -192,20 +192,70 @@ class BoolNotPropagator(Propagator):
 class BoolOrPropagator(Propagator):
     """Enforces: at least one variable in var_names must equal 1.
 
-    Used to implement logical OR: if all but one reified boolean are 0,
-    the remaining one is forced to 1. If all are 0, conflict.
+    If result_var is provided, reifies the OR into a boolean:
+      result_var = 1 iff any var_names = 1.
+    Otherwise, enforces the constraint directly (at least one must be 1).
     """
 
-    def __init__(self, var_names: List[str]):
+    def __init__(self, var_names: List[str], result_var: Optional[str] = None):
         self.var_names = var_names
+        self.result_var = result_var
 
     def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
         var_objs = [variables[n] for n in self.var_names if n in variables]
         if not var_objs:
             return PropagationResult.fixed_point()
 
+        any_true = any(v.domain.is_singleton() and 1 in v.domain.values() for v in var_objs)
+        all_false = all(v.domain.is_singleton() and 0 in v.domain.values() for v in var_objs)
+
+        if self.result_var is not None:
+            # Reifying mode: result_var = 1 iff any input = 1
+            result = variables.get(self.result_var)
+            if result is None:
+                return PropagationResult.fixed_point()
+
+            changed = []
+
+            # Forward: if any input is 1 → result = 1
+            if any_true:
+                new_d = IntDomain([(1, 1)], result.domain.width, result.domain.signed)
+                if new_d != result.domain:
+                    result.domain = new_d
+                    changed.append(result)
+
+            # Forward: if all inputs are 0 → result = 0
+            elif all_false:
+                new_d = IntDomain([(0, 0)], result.domain.width, result.domain.signed)
+                if new_d != result.domain:
+                    result.domain = new_d
+                    changed.append(result)
+
+            # Backward: if result = 1 and all-but-one are 0, force remaining to 1
+            if result.domain.is_singleton() and 1 in result.domain.values():
+                zero_indices = {i for i, v in enumerate(var_objs)
+                                if v.domain.is_singleton() and 0 in v.domain.values()}
+                if len(zero_indices) == len(var_objs) - 1:
+                    for i, v in enumerate(var_objs):
+                        if i not in zero_indices:
+                            new_d = IntDomain([(1, 1)], v.domain.width, v.domain.signed)
+                            if new_d != v.domain:
+                                v.domain = new_d
+                                changed.append(v)
+
+            # Backward: if result = 0 → all inputs must be 0
+            if result.domain.is_singleton() and 0 in result.domain.values():
+                for v in var_objs:
+                    new_d = IntDomain([(0, 0)], v.domain.width, v.domain.signed)
+                    if new_d != v.domain:
+                        v.domain = new_d
+                        changed.append(v)
+
+            return PropagationResult.consistent(changed) if changed else PropagationResult.fixed_point()
+
+        # Non-reifying mode: enforce at least one is 1
         # OR is satisfied if any var is already 1
-        if any(v.domain.is_singleton() and 1 in v.domain.values() for v in var_objs):
+        if any_true:
             return PropagationResult.fixed_point()
 
         # Identify which vars are forced to 0
@@ -231,13 +281,81 @@ class BoolOrPropagator(Propagator):
         return PropagationResult.fixed_point()
 
     def affected_variables(self) -> Set[str]:
-        return set(self.var_names)
+        vars_ = set(self.var_names)
+        if self.result_var is not None:
+            vars_.add(self.result_var)
+        return vars_
 
     def is_satisfied(self, assignment: Dict[str, int]) -> bool:
-        return any(assignment.get(n, 0) == 1 for n in self.var_names)
+        or_val = any(assignment.get(n, 0) == 1 for n in self.var_names)
+        if self.result_var is not None:
+            return assignment.get(self.result_var, -1) == int(or_val)
+        return or_val
 
     def __repr__(self) -> str:
-        return f"BoolOrPropagator({' || '.join(self.var_names)})"
+        result = f"{self.result_var} = " if self.result_var else ""
+        return f"BoolOrPropagator({result}{' || '.join(self.var_names)})"
+
+
+class BoolAndPropagator(Propagator):
+    """Enforces: result_var = 1 iff ALL var_names equal 1.
+
+    Used to reify a compound-AND condition so it can appear as the
+    condition of an ImplicationPropagator.
+    """
+
+    def __init__(self, result_var: str, var_names: List[str]):
+        self.result_var = result_var
+        self.var_names = var_names
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        result = variables.get(self.result_var)
+        if result is None:
+            return PropagationResult.fixed_point()
+        var_objs = [variables[n] for n in self.var_names if n in variables]
+        if not var_objs:
+            return PropagationResult.fixed_point()
+
+        # Forward: any operand forced to 0 → result is 0
+        if any(v.domain.is_singleton() and 0 in v.domain.values() for v in var_objs):
+            new_dom = IntDomain([(0, 0)], result.domain.width, result.domain.signed)
+            if new_dom != result.domain:
+                result.domain = new_dom
+                return PropagationResult.consistent([result])
+            return PropagationResult.fixed_point()
+
+        # Forward: all operands forced to 1 → result is 1
+        if all(v.domain.is_singleton() and 1 in v.domain.values() for v in var_objs):
+            new_dom = IntDomain([(1, 1)], result.domain.width, result.domain.signed)
+            if new_dom != result.domain:
+                result.domain = new_dom
+                return PropagationResult.consistent([result])
+            return PropagationResult.fixed_point()
+
+        # Backward: result forced to 1 → all operands must be 1
+        if result.domain.is_singleton() and 1 in result.domain.values():
+            changed = []
+            for v in var_objs:
+                new_dom = IntDomain([(1, 1)], v.domain.width, v.domain.signed)
+                if new_dom != v.domain:
+                    if 1 not in v.domain.values():
+                        return PropagationResult.conflict()
+                    v.domain = new_dom
+                    changed.append(v)
+            if changed:
+                return PropagationResult.consistent(changed)
+
+        return PropagationResult.fixed_point()
+
+    def affected_variables(self) -> Set[str]:
+        return {self.result_var} | set(self.var_names)
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        all_one = all(assignment.get(n, 0) == 1 for n in self.var_names)
+        return assignment.get(self.result_var, 0) == (1 if all_one else 0)
+
+    def __repr__(self) -> str:
+        return f"BoolAndPropagator({self.result_var} = {' && '.join(self.var_names)})"
 
 
 class ConditionalImplicationPropagator(Propagator):

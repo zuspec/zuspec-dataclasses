@@ -152,9 +152,9 @@ def test_dma_xfer_is_compound():
 
 
 def test_data_buff_is_buffer():
-    """DataBuff inherits from Buffer."""
-    assert issubclass(DataBuff, zdc.Buffer)
-    assert issubclass(DataBuff, zdc.Struct)
+    """DataBuff inherits from Buffer Protocol — instances satisfy isinstance."""
+    assert isinstance(DataBuff(), zdc.Buffer)
+    assert zdc.Buffer in DataBuff.__mro__
 
 
 def test_dma_channel_is_resource():
@@ -206,14 +206,14 @@ class StressTest(zdc.Action[TopComponent]):
     async def activity(self):
         for i in range(self.count):
             with zdc.parallel():
-                with zdc.do(WriteData) as wr:
+                with WriteData() as wr:
                     wr.size > 16
-                await zdc.do(ReadData)
+                await ReadData()
             with zdc.select():
                 with zdc.branch(weight=70):
-                    await zdc.do(DmaXfer)
+                    await DmaXfer()
                 with zdc.branch(weight=30):
-                    await zdc.do(ReadData)
+                    await ReadData()
 
 
 from zuspec.ir.core.activity import (
@@ -253,13 +253,13 @@ def test_stress_test_parallel_contents():
     rep = StressTest.__activity__.stmts[0]
     par = rep.body[0]
     assert len(par.stmts) == 2
-    # First: with do(WriteData) as wr: wr.size > 16
+    # First: with WriteData() as wr: wr.size > 16
     wr_t = par.stmts[0]
     assert isinstance(wr_t, ActivityAnonTraversal)
     assert wr_t.action_type == 'WriteData'
     assert wr_t.label == 'wr'
     assert len(wr_t.inline_constraints) == 1
-    # Second: await do(ReadData)
+    # Second: await ReadData()
     rd_t = par.stmts[1]
     assert isinstance(rd_t, ActivityAnonTraversal)
     assert rd_t.action_type == 'ReadData'

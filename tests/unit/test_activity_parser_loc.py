@@ -43,23 +43,23 @@ class _SubB(zdc.Action[_LocCpu]):
 @zdc.dataclass
 class _CompoundA(zdc.Action[_LocCpu]):
     async def activity(self):
-        await do(_SubA)
-        await do(_SubB)
+        await _SubA()
+        await _SubB()
 
 
 @zdc.dataclass
 class _CompoundParallel(zdc.Action[_LocCpu]):
     async def activity(self):
         with zdc.parallel():
-            await do(_SubA)
-            await do(_SubB)
+            await _SubA()
+            await _SubB()
 
 
 @zdc.dataclass
 class _CompoundRepeat(zdc.Action[_LocCpu]):
     async def activity(self):
         for _i in range(3):
-            await do(_SubA)
+            await _SubA()
 
 
 # ---------------------------------------------------------------------------

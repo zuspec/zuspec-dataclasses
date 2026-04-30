@@ -43,6 +43,8 @@ class ForwardConstraintPropagator:
     def __init__(self) -> None:
         # label -> {field_name: concrete_value}
         self._values: Dict[str, Dict[str, Any]] = {}
+        # label -> action instance
+        self._actions: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Recording
@@ -57,6 +59,7 @@ class ForwardConstraintPropagator:
                    ``type(action).__name__``.
         """
         key = label or type(action).__name__
+        self._actions[key] = action
         try:
             fields = dc.fields(action)
         except TypeError:
@@ -75,6 +78,10 @@ class ForwardConstraintPropagator:
                 values[f.name] = val
         if values:
             self._values[key] = values
+
+    def get_action(self, label: str) -> Optional[Any]:
+        """Return the action instance stored under *label*, or None."""
+        return self._actions.get(label)
 
     # ------------------------------------------------------------------
     # Constraint substitution
@@ -102,6 +109,7 @@ class ForwardConstraintPropagator:
     def clear(self) -> None:
         """Discard all recorded values (e.g., at end of a sequence block)."""
         self._values.clear()
+        self._actions.clear()
 
 
 # ---------------------------------------------------------------------------

@@ -44,6 +44,46 @@ class _LegacyForwardingDecl:
     to_stage: str = ""
 
 
+def _inject_pool_post_init(cls) -> None:
+    """Inject or augment __post_init__ to auto-create ListClaimPool for pool(size=N) fields.
+
+    Must be called BEFORE dc.dataclass() processes cls so the generated __init__
+    knows to call __post_init__.
+    """
+    from typing import get_args, get_origin
+
+    # Scan raw field descriptors (before dc.dataclass wraps them)
+    pool_inits = []
+    for name, val in list(cls.__dict__.items()):
+        if isinstance(val, dc.Field) and val.metadata.get('kind') == 'pool':
+            size = val.metadata.get('size')
+            if size:
+                ann = cls.__annotations__.get(name)
+                pool_inits.append((name, size, ann))
+
+    if not pool_inits:
+        return
+
+    original_post_init = cls.__dict__.get('__post_init__')
+
+    def __post_init__(self):
+        from zuspec.dataclasses.rt.list_claim_pool import ListClaimPool
+        from typing import get_args
+        for (fname, size, ann) in pool_inits:
+            if getattr(self, fname, None) is None:
+                elem_args = get_args(ann) if ann is not None else ()
+                elem_t = elem_args[0] if elem_args else None
+                try:
+                    default_val = elem_t() if elem_t is not None else 0
+                except Exception:
+                    default_val = 0
+                setattr(self, fname, ListClaimPool(resources=[default_val] * size))
+        if original_post_init is not None:
+            original_post_init(self)
+
+    cls.__post_init__ = __post_init__
+
+
 def _resolve_annotations(cls) -> None:
     """Resolve any string annotations caused by 'from __future__ import annotations'.
 
@@ -110,6 +150,10 @@ def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
         # Resolve deferred string annotations (from __future__ import annotations)
         # before dc.dataclass processes them, so runtime code sees real type objects.
         _resolve_annotations(cls)
+
+        # Inject __post_init__ for pool(size=N) auto-initialization BEFORE
+        # dc.dataclass() processes the class (so the generated __init__ calls it).
+        _inject_pool_post_init(cls)
 
         # TODO: Add type annotations to decorated methods
         cls_annotations = cls.__annotations__
@@ -704,10 +748,11 @@ def array(depth: int, default=None) -> Any:
         depth:   Number of elements (must be a positive integer).
         default: Optional per-element reset/default value.
     """
+    fill = default if default is not None else 0
     metadata: dict = {"kind": "array", "depth": depth}
     if default is not None:
         metadata["default"] = default
-    return dc.field(default_factory=list, metadata=metadata)
+    return dc.field(default_factory=lambda: [fill] * depth, metadata=metadata)
 
 
 def const(default=None) -> Any:
@@ -902,15 +947,29 @@ class ExecComb(Exec):
 
 
 
-def proc(T):
+def proc(_method=None, *, clock_domain=None):
     """
     Marks an always-running process. The specified
     method must be `async` and take no arguments. The
     process is started when the component containing 
     it begins to run.
+
+    Args:
+        clock_domain: Optional lambda ``lambda self: self.<field>`` returning
+            the :class:`~zuspec.dataclasses.domain.ClockDomain` this process is
+            bound to.  When omitted the first ``ClockDomain`` class attribute
+            found on the component is used automatically.
     """
-    # Datamodel Mapping
-    return ExecProc(T)
+    def _make(T):
+        if clock_domain is not None:
+            T._zdc_proc_clock_domain = clock_domain
+        return ExecProc(T)
+
+    if _method is not None:
+        # Used as @zdc.proc (no parentheses)
+        return _make(_method)
+    # Used as @zdc.proc(...) (with parentheses)
+    return _make
 
 def sync(_method=None, *,
          domain=None,

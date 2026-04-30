@@ -190,9 +190,9 @@ class ComparisonReifier(Propagator):
             new_lhs = lhs_domain.intersect(IntDomain([(rhs_lo, lhs_hi)], lhs_domain.width, lhs_domain.signed))
             new_rhs = rhs_domain.intersect(IntDomain([(rhs_lo, lhs_hi)], rhs_domain.width, rhs_domain.signed))
         elif op == CmpOp.Eq:
-            inter = lhs_domain.intersect(rhs_domain)
-            new_lhs = inter
-            new_rhs = inter
+            # Use each domain's own intersect so width/signed metadata is preserved.
+            new_lhs = lhs_domain.intersect(rhs_domain)
+            new_rhs = rhs_domain.intersect(lhs_domain)
         elif op == CmpOp.NotEq:
             # Can only prune if one side is singleton
             if lhs_domain.is_singleton():
@@ -381,8 +381,8 @@ class DisjunctiveComparisonPropagator(Propagator):
             new_l = ld.intersect(IntDomain([(r_lo, l_hi)], ld.width, ld.signed))
             new_r = rd.intersect(IntDomain([(r_lo, l_hi)], rd.width, rd.signed))
         elif op == CmpOp.Eq:
-            inter = ld.intersect(rd)
-            new_l = inter; new_r = inter
+            new_l = ld.intersect(rd)
+            new_r = rd.intersect(ld)
         elif op == CmpOp.NotEq:
             if ld.is_singleton():
                 new_r = rd.copy(); new_r.remove_value(ld.intervals[0][0])

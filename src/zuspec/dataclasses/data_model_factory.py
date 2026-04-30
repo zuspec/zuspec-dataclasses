@@ -18,7 +18,7 @@ from zuspec.ir.core.stmt import (
     StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAnnAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
     StmtAssert, StmtAssume, StmtCover, StmtMatch, StmtMatchCase,
 )
-from zuspec.ir.core.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool
+from zuspec.ir.core.expr import ExprCall, ExprAttribute, ExprConstant, ExprRef, ExprBin, BinOp, AugOp, ExprRefField, TypeExprRefSelf, ExprRefPy, ExprAwait, ExprRefParam, ExprRefLocal, ExprRefUnresolved, ExprCompare, ExprSubscript, ExprBool, ExprSext, ExprZext, ExprCbit, ExprSigned
 from .types import TypeBase, Component, Extern, Lock, Memory, Struct
 
 # Import Event at runtime to avoid circular dependency
@@ -67,6 +67,10 @@ class ConversionScope:
     comp_field_indices: dict = dc.field(default_factory=dict)
     # var_name -> comp_field_idx mapping for ``async with self.comp.pool.lock() as var:``
     pool_claims: dict = dc.field(default_factory=dict)
+    # action resource field name -> comp field index (for synthesis: self.pc → ExprRefField(comp.pc))
+    resource_bindings: dict = dc.field(default_factory=dict)
+    # action resource field name -> pool size (1=single-entry, N=multi-entry regfile)
+    resource_sizes: dict = dc.field(default_factory=dict)
 
     # Action class being inlined (for instance method lookup during constraint compilation)
     action_cls: type = None
@@ -81,6 +85,15 @@ class ConversionScope:
     # Source location info for loc propagation onto IR Stmt* nodes
     src_file: Optional[str] = None      # absolute path of the Python source file
     src_start_lineno: int = 0           # 1-indexed line of the class start in the file
+    # Local pure function inlining (Phase 1)
+    # name -> ast.FunctionDef/AsyncFunctionDef for pure (no-await) local helpers
+    local_func_defs: dict = dc.field(default_factory=dict)
+    # param_name -> ast.expr  (applied in _convert_ast_expr before other Name lookups)
+    param_subs: dict = dc.field(default_factory=dict)
+    # param_name -> IR expr (takes priority over param_subs; used for module-level func inlining)
+    ir_param_subs: dict = dc.field(default_factory=dict)
+    # Extra name->object bindings added from local ``from X import Y`` stmts in methods.
+    extra_globals: dict = dc.field(default_factory=dict)
 
 
 def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types: dict):
@@ -417,7 +430,10 @@ class DataModelFactory(object):
         """Return the module-level globals for the component class in *scope*.
 
         These are used to resolve action class names encountered in method bodies.
+        Includes names imported via local ``from X import Y`` stmts (stored in
+        ``scope.extra_globals``).
         """
+        result: dict = {}
         if scope is not None and scope.component is not None:
             # scope.component may be a DataTypeComponent (with .py_type)
             # or the raw Python class itself (during early processing)
@@ -429,8 +445,10 @@ class DataModelFactory(object):
             if comp_py_type is not None:
                 mod = inspect.getmodule(comp_py_type)
                 if mod is not None:
-                    return vars(mod)
-        return {}
+                    result.update(vars(mod))
+        if scope is not None and scope.extra_globals:
+            result.update(scope.extra_globals)
+        return result
 
     def _is_action(self, t: Type) -> bool:
         """Return True if *t* is a zdc.Action[T] subclass."""
@@ -439,6 +457,25 @@ class DataModelFactory(object):
             if getattr(base, '__origin__', None) is Action:
                 return True
         return False
+
+    def _execute_local_import_from(self, node: 'ast.ImportFrom', scope: 'ConversionScope') -> None:
+        """Execute a ``from module import name`` AST node and store results in scope.extra_globals.
+
+        Used so that action class names declared via local imports inside ``@zdc.proc``
+        bodies (e.g. ``from rv32_single_cycle import RV32ISingleCycleA``) are resolvable
+        when the DMF later attempts to inline action calls.
+        """
+        try:
+            import importlib
+            module = importlib.import_module(node.module)
+            for alias in node.names:
+                obj_name = alias.name
+                local_name = alias.asname if alias.asname else alias.name
+                val = getattr(module, obj_name, None)
+                if val is not None:
+                    scope.extra_globals[local_name] = val
+        except Exception:
+            pass
 
     def _get_action_comp_type(self, t: Type):
         """Return the component type T from ``Action[T]``, or None."""
@@ -607,6 +644,7 @@ class DataModelFactory(object):
         
         # Build arguments and collect param names for scope
         args_list = []
+        defaults_list = []
         param_names = set()
         for idx, (param_name, param) in enumerate(sig.parameters.items()):
             if param_name == 'self':
@@ -615,8 +653,13 @@ class DataModelFactory(object):
             arg = Arg(arg=param_name, annotation=self._type_to_expr(annotation))
             args_list.append(arg)
             param_names.add(param_name)
-        
-        arguments = Arguments(args=args_list)
+            if param.default is not inspect.Parameter.empty:
+                dval = param.default
+                defaults_list.append(ExprConstant(value=int(dval) if isinstance(dval, (int, float, bool)) else 0))
+            else:
+                defaults_list.append(None)
+
+        arguments = Arguments(args=args_list, defaults=[d for d in defaults_list if d is not None])
         
         # Get return type
         return_type = hints.get('return')
@@ -2168,6 +2211,89 @@ class DataModelFactory(object):
 
         return '\n'.join(parts) if parts else None
 
+    # ------------------------------------------------------------------
+    # Local pure-function inlining (Phase 1)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_pure_ast(func_node) -> bool:
+        """Return True if func_node contains no ast.Await anywhere in its body."""
+        for child in ast.walk(func_node):
+            if isinstance(child, ast.Await):
+                return False
+        return True
+
+    def _make_inline_scope(self, func_def, call_args, parent_scope: ConversionScope) -> ConversionScope:
+        """Build a child ConversionScope for inlining *func_def* with *call_args*.
+
+        Parameter names are bound to the supplied AST argument nodes via
+        ``param_subs``; outer scope variables (closures) resolve through
+        the inherited ``local_vars`` / ``method_params``.
+        """
+        params = [a.arg for a in func_def.args.args
+                  if a.arg != 'self']
+        param_subs = dict(zip(params, call_args))
+        return ConversionScope(
+            component=parent_scope.component,
+            field_indices=parent_scope.field_indices.copy(),
+            method_params=parent_scope.method_params.copy(),
+            local_vars=parent_scope.local_vars.copy(),
+            regfile_bindings=parent_scope.regfile_bindings.copy(),
+            is_action_body=parent_scope.is_action_body,
+            action_result_var=parent_scope.action_result_var,
+            action_field_names=parent_scope.action_field_names,
+            action_local_prefix=parent_scope.action_local_prefix,
+            comp_field_indices=parent_scope.comp_field_indices.copy(),
+            pool_claims=parent_scope.pool_claims.copy(),
+            resource_bindings=parent_scope.resource_bindings.copy(),
+            resource_sizes=parent_scope.resource_sizes.copy(),
+            action_cls=parent_scope.action_cls,
+            is_constraint_mode=parent_scope.is_constraint_mode,
+            src_file=parent_scope.src_file,
+            src_start_lineno=parent_scope.src_start_lineno,
+            local_func_defs=parent_scope.local_func_defs.copy(),  # nested calls resolve
+            param_subs=param_subs,
+        )
+
+    def _inline_local_func_expr(self, call_node, scope: ConversionScope):
+        """Inline a pure local function call in an *expression* context.
+
+        The function body must end with a ``return <expr>`` statement.
+        Any preceding statements (e.g. local assignments) are silently
+        dropped; use ``_inline_local_func_stmt`` for void/multi-stmt bodies.
+        Returns the converted return expression, or ``None`` on failure.
+        """
+        func_def = scope.local_func_defs[call_node.func.id]
+        child = self._make_inline_scope(func_def, call_node.args, scope)
+        # Find the return statement in the body
+        for stmt in reversed(func_def.body):
+            if isinstance(stmt, ast.Return) and stmt.value is not None:
+                return self._convert_ast_expr(stmt.value, child)
+        return None  # void function used in expression context — caller handles
+
+    def _inline_local_func_stmt(self, call_node, scope: ConversionScope):
+        """Inline a pure local function call in a *statement* context.
+
+        Converts every statement in the function body and returns the
+        resulting list (or a single Stmt).  ``return`` statements are
+        dropped (their value is not used).
+        """
+        from zuspec.ir.core.stmt import StmtReturn
+        func_def = scope.local_func_defs[call_node.func.id]
+        child = self._make_inline_scope(func_def, call_node.args, scope)
+        stmts = []
+        for ast_stmt in func_def.body:
+            if isinstance(ast_stmt, ast.Return):
+                continue  # discard return value in void context
+            result = self._convert_ast_stmt(ast_stmt, child)
+            if result is None:
+                continue
+            if isinstance(result, list):
+                stmts.extend(result)
+            else:
+                stmts.append(result)
+        return stmts if len(stmts) != 1 else stmts[0]
+
     def _convert_ast_body(self, body : list, scope: ConversionScope = None) -> list:
         """Convert AST statement list to data model statements."""
         from zuspec.ir.core.base import Loc, Base
@@ -2222,10 +2348,14 @@ class DataModelFactory(object):
             action_local_prefix=scope.action_local_prefix if scope else "",
             comp_field_indices=scope.comp_field_indices if scope else {},
             pool_claims=scope.pool_claims.copy() if scope else {},
+            resource_bindings=scope.resource_bindings.copy() if scope else {},
+            resource_sizes=scope.resource_sizes.copy() if scope else {},
             action_cls=scope.action_cls if scope else None,
             is_constraint_mode=scope.is_constraint_mode if scope else False,
             src_file=scope.src_file if scope else None,
             src_start_lineno=scope.src_start_lineno if scope else 0,
+            local_func_defs=scope.local_func_defs.copy() if scope else {},
+            param_subs=scope.param_subs.copy() if scope else {},
         )
 
         for item in node.items:
@@ -2393,6 +2523,133 @@ class DataModelFactory(object):
         )
 
     # ------------------------------------------------------------------
+    # Module-level pure async function inlining
+    # ------------------------------------------------------------------
+
+    def _try_expand_pure_module_async_call(
+        self,
+        var_name: str,
+        await_node,
+        scope,
+    ):
+        """Try to expand ``var = await pure_module_func(args)`` into individual field assignments.
+
+        When a module-level ``async def`` function contains no ``await`` expressions
+        and returns a dataclass constructed with keyword arguments (e.g. ``DecodeResult(...)``),
+        this method expands the call into individual ``StmtAssign`` nodes of the form
+        ``var_fieldname = expr`` for each returned field.
+
+        This allows struct-returning helper functions like ``_decode`` to be inlined
+        combinatorially into the FSM without requiring a dedicated IR node type.
+
+        Returns a list of IR stmts on success, or None if the pattern doesn't match.
+        """
+        import asyncio
+        import textwrap
+
+        # Must be an await of a simple function call (not self.method)
+        if not isinstance(await_node, ast.Await):
+            return None
+        call_node = await_node.value
+        if not isinstance(call_node, ast.Call):
+            return None
+        func = call_node.func
+        if not isinstance(func, ast.Name):
+            return None
+        func_name = func.id
+
+        # Look up in module globals
+        py_globals = self._get_scope_globals(scope)
+        func_obj = py_globals.get(func_name)
+        if func_obj is None:
+            return None
+
+        # Must be a coroutine function or plain function
+        if not (asyncio.iscoroutinefunction(func_obj) or inspect.isfunction(func_obj)):
+            return None
+
+        # Get the AST for the function
+        try:
+            source = inspect.getsource(func_obj)
+            source = textwrap.dedent(source)
+            tree = ast.parse(source)
+        except (OSError, TypeError):
+            return None
+
+        # Find the function def node
+        func_def = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+                func_def = node
+                break
+        if func_def is None:
+            return None
+
+        # Check that body contains no await (pure combinatorial)
+        for node in ast.walk(func_def):
+            if isinstance(node, ast.Await):
+                return None
+
+        # Convert call arguments to IR in the caller's scope
+        param_names = [a.arg for a in func_def.args.args]
+        call_args_ast = call_node.args
+        ir_params: dict = {}
+        for pname, arg_ast in zip(param_names, call_args_ast):
+            ir_params[pname] = self._convert_ast_expr(arg_ast, scope)
+
+        # Build a child scope for converting the callee body
+        child_scope = ConversionScope(
+            component=scope.component if scope else None,
+            field_indices=scope.field_indices if scope else {},
+            method_params=scope.method_params if scope else set(),
+            local_vars=set(scope.local_vars) if scope else set(),
+            local_func_defs=scope.local_func_defs if scope else {},
+            src_file=scope.src_file if scope else None,
+            src_start_lineno=scope.src_start_lineno if scope else 0,
+            ir_param_subs=dict(ir_params),
+        )
+
+        # Process each statement in the function body
+        stmts = []
+        for stmt in func_def.body:
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
+                # Docstring — skip
+                continue
+
+            if (isinstance(stmt, ast.Assign)
+                    and len(stmt.targets) == 1
+                    and isinstance(stmt.targets[0], ast.Name)):
+                # Local binding: convert RHS and add to child scope's ir_param_subs
+                local_name = stmt.targets[0].id
+                ir_val = self._convert_ast_expr(stmt.value, child_scope)
+                child_scope.ir_param_subs[local_name] = ir_val
+                continue
+
+            if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Call):
+                # return StructClass(f1=e1, f2=e2, ...)
+                ret_call = stmt.value
+                for kw in ret_call.keywords:
+                    field_name = kw.arg
+                    result_field_var = f"{var_name}_{field_name}"
+                    ir_expr = self._convert_ast_expr(kw.value, child_scope)
+                    stmts.append(StmtAssign(
+                        targets=[ExprRefLocal(name=result_field_var)],
+                        value=ir_expr,
+                    ))
+                    if scope is not None:
+                        scope.local_vars.add(result_field_var)
+                break
+
+        if not stmts:
+            return None
+
+        # Add `var` itself to local_vars so downstream code can pass it to methods
+        if scope is not None:
+            scope.local_vars.add(var_name)
+
+        return stmts
+
+    # ------------------------------------------------------------------
     # Action call inlining
     # ------------------------------------------------------------------
 
@@ -2465,6 +2722,10 @@ class DataModelFactory(object):
               keywords=[ast.keyword(arg="comp", ...)]
             )
           )
+
+        Also handles single-call syntax ``await ActionCls(comp=self)`` or
+        ``await ActionCls(kwargs)`` (without a separate constructor call).  In
+        this case inner_call == outer_call (same node for both).
         """
         # Unwrap a bare Await at the top level
         if isinstance(node, ast.Await):
@@ -2479,6 +2740,10 @@ class DataModelFactory(object):
         inner_call = outer_call.func
 
         if not isinstance(inner_call, ast.Call):
+            # Single-call: ``await ActionCls(kwargs)``
+            # func is ast.Name (bare class), not a Call constructor.
+            if isinstance(inner_call, ast.Name):
+                return (inner_call.id, outer_call, outer_call)
             return None
 
         func_node = inner_call.func
@@ -2488,6 +2753,93 @@ class DataModelFactory(object):
             return None  # must be a bare name
 
         return (action_name, inner_call, outer_call)
+
+    def _extract_action_resource_bindings(
+        self, action_cls: type, comp_field_indices: dict, component=None
+    ) -> tuple:
+        """Extract resource field → component field index mapping from action's __bind__.
+
+        For each resource field on ``action_cls`` that is bound to a component field via
+        ``__bind__``, return a tuple ``(bindings, sizes)`` where:
+        - ``bindings``: action field name → component field index
+        - ``sizes``: action field name → pool size (1=single-entry, N=multi-entry)
+
+        Used to resolve ``self.resource_field`` in action body synthesis so that
+        ``self.pc`` maps directly to ``ExprRefField(comp.pc_idx)`` (single-entry) and
+        ``self.rs1.t`` maps to ``ExprSubscript(gpr, rs1_id)`` (multi-entry).
+        """
+        import dataclasses as _dc
+
+        if not _dc.is_dataclass(action_cls) or '__bind__' not in action_cls.__dict__:
+            return {}, {}
+
+        resource_field_names = {
+            f.name
+            for f in _dc.fields(action_cls)
+            if f.metadata.get('kind') == 'resource_ref'
+        }
+        if not resource_field_names:
+            return {}, {}
+
+        class _FieldRef:
+            def __init__(self, name):
+                self.name = name
+
+        class _CompProxy:
+            def __getattr__(self, name):
+                return _CompFieldRef(name)
+
+        class _CompFieldRef:
+            def __init__(self, name):
+                self.name = name
+
+        class _ActionProxy:
+            def __getattr__(self_inner, name):  # noqa: N805
+                if name == 'comp':
+                    return _CompProxy()
+                return _FieldRef(name)
+
+        bindings = {}
+        sizes = {}
+        # Build a map from component field name → pool size.
+        # component may be either a Python class or a DataTypeComponent IR node.
+        comp_field_sizes: dict = {}
+        if component is not None:
+            if hasattr(component, 'fields') and not callable(component):
+                # DataTypeComponent IR node — fields are IR Field objects with .size
+                for f in component.fields:
+                    raw_size = getattr(f, 'size', None)
+                    if raw_size is not None and raw_size > 0:
+                        comp_field_sizes[f.name] = raw_size
+            else:
+                # Python class — read pool size from dataclass field metadata
+                try:
+                    py_fields = _dc.fields(component)
+                    for pf in py_fields:
+                        raw_size = pf.metadata.get('size', None)
+                        if raw_size is not None and raw_size > 0:
+                            comp_field_sizes[pf.name] = raw_size
+                except Exception:
+                    pass
+        try:
+            result = action_cls.__dict__['__bind__'](_ActionProxy())
+            if result is None:
+                return {}, {}
+            if isinstance(result, dict):
+                pairs = result.items()
+            else:
+                pairs = result
+            for lhs, rhs in pairs:
+                if (isinstance(lhs, _FieldRef) and lhs.name in resource_field_names
+                        and isinstance(rhs, _CompFieldRef) and rhs.name in comp_field_indices):
+                    field_idx = comp_field_indices[rhs.name]
+                    bindings[lhs.name] = field_idx
+                    # Determine pool depth from comp_field_sizes (built from either IR or Python class)
+                    pool_size = comp_field_sizes.get(rhs.name, 1)
+                    sizes[lhs.name] = pool_size
+        except Exception:
+            pass
+        return bindings, sizes
 
     def _inline_action_call(
         self,
@@ -2559,13 +2911,21 @@ class DataModelFactory(object):
             ))
 
         # 3. Convert action body() with action-body scope.
+        # Use comp_field_indices from the appropriate scope level: at proc level they are
+        # in scope.field_indices; inside an activity body they are in scope.comp_field_indices.
+        _comp_fi = scope.comp_field_indices or scope.field_indices
+        resource_bindings, resource_sizes = self._extract_action_resource_bindings(
+            action_cls, _comp_fi, scope.component
+        )
         body_stmts = self._convert_action_body(
             action_cls=action_cls,
             result_var=rv,
             action_field_names=action_data_field_names,
             local_prefix=prefix,
-            comp_field_indices=scope.field_indices,
+            comp_field_indices=_comp_fi,
             outer_scope=scope,
+            resource_bindings=resource_bindings,
+            resource_sizes=resource_sizes,
         )
         result_stmts.extend(body_stmts)
 
@@ -2579,6 +2939,8 @@ class DataModelFactory(object):
         local_prefix: str,
         comp_field_indices: dict,
         outer_scope: ConversionScope,
+        resource_bindings: dict = None,
+        resource_sizes: dict = None,
     ) -> list:
         """Convert action_cls.body() to IR stmts for inlining into the parent coroutine.
 
@@ -2618,7 +2980,17 @@ class DataModelFactory(object):
             body_method = action_cls.__dict__.get('body', None)
 
         if body_method is None:
-            # No explicit body: try compiling @zdc.constraint methods as imperative logic
+            # No explicit body: check for an activity() method (root action pattern).
+            activity_method = action_cls.__dict__.get('activity', None)
+            if activity_method is not None:
+                return self._convert_activity_body(
+                    action_cls=action_cls,
+                    activity_method=activity_method,
+                    result_var=result_var,
+                    comp_field_indices=comp_field_indices,
+                    outer_scope=outer_scope,
+                )
+            # Fall back to compiling @zdc.constraint methods as imperative logic.
             return self._compile_constraint_methods_as_body(
                 action_cls, result_var, action_field_names, local_prefix,
                 comp_field_indices, outer_scope
@@ -2632,7 +3004,14 @@ class DataModelFactory(object):
         except Exception:
             return []
 
-        # Build action-body scope
+        # Build action-body scope.
+        # Include the action class's own module globals so that module-level constants
+        # (e.g. TOHOST_ADDR imported at the top of the action file) can be resolved.
+        action_module = inspect.getmodule(action_cls)
+        action_extra_globals = dict(vars(action_module)) if action_module else {}
+        if outer_scope is not None and outer_scope.extra_globals:
+            action_extra_globals.update(outer_scope.extra_globals)
+
         action_scope = ConversionScope(
             component=outer_scope.component,
             field_indices={},            # action fields accessed via sentinels, not field_indices
@@ -2644,7 +3023,10 @@ class DataModelFactory(object):
             action_field_names=action_field_names,
             action_local_prefix=local_prefix,
             comp_field_indices=comp_field_indices,
+            resource_bindings=resource_bindings or {},
+            resource_sizes=resource_sizes or {},
             action_cls=action_cls,
+            extra_globals=action_extra_globals,
         )
 
         # Walk the function def body
@@ -2654,6 +3036,60 @@ class DataModelFactory(object):
 
         func_def = func_nodes[0]
         return self._convert_ast_body(func_def.body, action_scope)
+
+    def _convert_activity_body(
+        self,
+        action_cls: type,
+        activity_method,
+        result_var: str,
+        comp_field_indices: dict,
+        outer_scope: 'ConversionScope',
+    ) -> list:
+        """Convert a root action's ``activity()`` method to IR stmts for inlining.
+
+        Used when an action has no ``body()`` but has an ``activity()`` — this is the
+        root-action pattern where the activity sequences sub-actions in a ``while True:``
+        loop.  Each ``fetch = await Fetch()`` etc. in the activity body is recursively
+        inlined via :meth:`_inline_action_call`.
+
+        The scope uses the action class's module globals (plus ``outer_scope.extra_globals``)
+        so that sub-action class names (Fetch, Decode, …) can be resolved.
+        """
+        try:
+            import textwrap
+            src = inspect.getsource(activity_method)
+            src = textwrap.dedent(src)
+            tree = ast.parse(src)
+        except Exception:
+            return []
+
+        # Build activity-body scope.
+        # Use the action class's module globals as extra_globals so stage names resolve.
+        activity_module = inspect.getmodule(action_cls)
+        activity_extra = dict(vars(activity_module)) if activity_module else {}
+        activity_extra.update(outer_scope.extra_globals)
+
+        activity_scope = ConversionScope(
+            component=outer_scope.component,
+            field_indices={},
+            method_params=set(),
+            local_vars=set(outer_scope.local_vars),
+            regfile_bindings={},
+            is_action_body=True,
+            action_result_var=result_var,
+            action_field_names=set(),  # root action has no data fields
+            action_local_prefix=(result_var + "_") if result_var else "",
+            comp_field_indices=comp_field_indices,
+            action_cls=action_cls,
+            extra_globals=activity_extra,
+        )
+
+        func_nodes = [n for n in ast.walk(tree) if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef))]
+        if not func_nodes:
+            return []
+
+        func_def = func_nodes[0]
+        return self._convert_ast_body(func_def.body, activity_scope)
 
     def _compile_constraint_methods_as_body(
         self,
@@ -2672,6 +3108,11 @@ class DataModelFactory(object):
         """
         import textwrap
 
+        _comp_fi = outer_scope.comp_field_indices or outer_scope.field_indices
+        resource_bindings, resource_sizes = self._extract_action_resource_bindings(
+            action_cls, _comp_fi, outer_scope.component
+        )
+
         action_scope = ConversionScope(
             component=outer_scope.component,
             field_indices={},
@@ -2683,6 +3124,8 @@ class DataModelFactory(object):
             action_field_names=action_field_names,
             action_local_prefix=local_prefix,
             comp_field_indices=comp_field_indices,
+            resource_bindings=resource_bindings,
+            resource_sizes=resource_sizes,
             action_cls=action_cls,
             is_constraint_mode=True,
         )
@@ -2792,6 +3235,12 @@ class DataModelFactory(object):
 
     def _convert_ast_stmt(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Stmt]:
         """Convert an AST statement to a data model statement."""
+
+        # Execute local ``from module import name`` stmts and add to scope.extra_globals
+        # so that action class names (e.g. RV32ISingleCycleA, Fetch) can be resolved later.
+        if isinstance(node, ast.ImportFrom) and scope is not None and node.module:
+            self._execute_local_import_from(node, scope)
+            return None
 
         def _leading_comment(n) -> Optional[str]:
             """Collect the block of plain comment lines immediately above n.lineno."""
@@ -2903,6 +3352,12 @@ class DataModelFactory(object):
                     )
                     if inlined is not None:
                         return inlined
+            # Check for void call to a local pure helper: ``W(rd, result)``
+            if (isinstance(node.value, ast.Call) and
+                    isinstance(node.value.func, ast.Name) and
+                    scope is not None and
+                    node.value.func.id in scope.local_func_defs):
+                return self._inline_local_func_stmt(node.value, scope)
             expr = self._convert_ast_expr(node.value, scope)
             if expr is not None:
                 return StmtExpr(expr=expr)
@@ -2956,6 +3411,15 @@ class DataModelFactory(object):
                     )
                     if inlined is not None:
                         return inlined
+                # Try to expand a module-level pure async function call into field assignments:
+                # ``dec = await _decode(instr)`` → ``dec_opcode = …, dec_rd = …, …``
+                expanded = self._try_expand_pure_module_async_call(
+                    var_name=node.targets[0].id,
+                    await_node=node.value,
+                    scope=scope,
+                )
+                if expanded is not None:
+                    return expanded
             # Lower tuple-unpack: ``a, b, ... = f(...)`` → temp struct + field extracts.
             # Special case: ``a, b = await self.comp.regfile.read_all(i1, i2)``
             # → ``a = CompName_regfile_get(comp, i1); b = CompName_regfile_get(comp, i2)``
@@ -3094,6 +3558,12 @@ class DataModelFactory(object):
             )
         elif isinstance(node, (ast.AsyncWith, ast.With)):
             return self._convert_async_with(node, scope)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Local function definition: capture pure (no-await) helpers in scope
+            # for later call-site inlining.  Async defs with await are Phase 2.
+            if scope is not None and self._is_pure_ast(node):
+                scope.local_func_defs[node.name] = node
+            return None  # never emit a stmt for a local def
         return None
 
     def _convert_ast_expr(self, node : ast.AST, scope: ConversionScope = None) -> Optional[Any]:
@@ -3150,6 +3620,40 @@ class DataModelFactory(object):
                     except Exception:
                         pass
 
+            # Inline a pure local helper used in expression context: ``R(rs1)``
+            if (isinstance(node.func, ast.Name) and scope is not None and
+                    node.func.id in scope.local_func_defs):
+                inlined = self._inline_local_func_expr(node, scope)
+                if inlined is not None:
+                    return inlined
+
+            # Recognise ``zdc.sext / zext / cbit / signed`` and emit typed IR nodes.
+            if (isinstance(node.func, ast.Attribute) and
+                    isinstance(node.func.value, ast.Name) and
+                    node.func.value.id == 'zdc' and
+                    node.func.attr in ('sext', 'zext', 'cbit', 'signed')):
+                attr = node.func.attr
+                converted_args = [self._convert_ast_expr(a, scope) for a in node.args]
+                if attr == 'sext' and len(converted_args) == 2:
+                    bits_arg = converted_args[1]
+                    bits = bits_arg.value if isinstance(bits_arg, ExprConstant) and isinstance(bits_arg.value, int) else None
+                    if bits is not None:
+                        return ExprSext(value=converted_args[0], bits=bits)
+                    # bits not a compile-time constant — fall back to tagged ExprCall
+                    return ExprCall(func=ExprRefUnresolved(name='zdc.sext'), args=converted_args)
+                if attr == 'zext' and len(converted_args) == 2:
+                    bits_arg = converted_args[1]
+                    bits = bits_arg.value if isinstance(bits_arg, ExprConstant) and isinstance(bits_arg.value, int) else None
+                    if bits is not None:
+                        return ExprZext(value=converted_args[0], bits=bits)
+                    return ExprCall(func=ExprRefUnresolved(name='zdc.zext'), args=converted_args)
+                if attr == 'cbit' and len(converted_args) == 1:
+                    return ExprCbit(value=converted_args[0])
+                if attr == 'signed' and len(converted_args) == 1:
+                    return ExprSigned(value=converted_args[0])
+                # Unknown arity — fall back to tagged ExprCall
+                return ExprCall(func=ExprRefUnresolved(name=f'zdc.{attr}'), args=converted_args)
+
             return ExprCall(
                 func=self._convert_ast_expr(node.func, scope),
                 args=[self._convert_ast_expr(a, scope) for a in node.args]
@@ -3184,6 +3688,18 @@ class DataModelFactory(object):
                 if isinstance(value_expr, _ExprActionSelf):
                     if attr_name == 'comp':
                         return _ExprActionComp()
+                    # Resource field: single-entry pools (size=1) resolve directly to the
+                    # component field so that subsequent `.t` strips to the scalar register.
+                    # Multi-entry pools (size>1) fall through to action_field_names so that
+                    # the `.t` handler below can produce ExprSubscript(pool, claim_id).
+                    if scope.resource_bindings and attr_name in scope.resource_bindings:
+                        pool_size = scope.resource_sizes.get(attr_name, 1) if scope.resource_sizes else 1
+                        if pool_size <= 1:
+                            return ExprRefField(
+                                base=TypeExprRefSelf(),
+                                index=scope.resource_bindings[attr_name],
+                            )
+                        # Multi-entry: fall through to action_field_names below
                     # Action data field access → locals->result_var.field
                     if attr_name in scope.action_field_names:
                         return ExprAttribute(
@@ -3193,6 +3709,34 @@ class DataModelFactory(object):
                     # Unknown action attribute — emit unresolved
                     return ExprRefUnresolved(name=attr_name)
 
+                # Strip '.t' on resource/buffer references in action-body scope.
+                # '.t' is the runtime "unwrap" accessor on ListClaim (resource) and
+                # BufferInstance (flow) objects.
+                # For multi-entry pools, self.claim.t → ExprSubscript(pool_field, claim_id).
+                # For single-entry pools and other refs, it is a transparent no-op.
+                if attr_name == 't' and isinstance(
+                    value_expr, (ExprRefField, ExprAttribute)
+                ):
+                    if (isinstance(value_expr, ExprAttribute)
+                            and isinstance(value_expr.value, ExprRefLocal)
+                            and scope is not None
+                            and scope.resource_sizes
+                            and value_expr.attr in scope.resource_sizes
+                            and scope.resource_sizes[value_expr.attr] > 1):
+                        claim_name = value_expr.attr
+                        id_expr = ExprAttribute(
+                            value=ExprRefLocal(name=scope.action_result_var),
+                            attr=f'{claim_name}_id',
+                        )
+                        return ExprSubscript(
+                            value=ExprRefField(
+                                base=TypeExprRefSelf(),
+                                index=scope.resource_bindings[claim_name],
+                            ),
+                            slice=id_expr,
+                        )
+                    return value_expr
+
             # Handle self.field -> ExprRefField
             if isinstance(value_expr, TypeExprRefSelf) and scope and attr_name in scope.field_indices:
                 return ExprRefField(
@@ -3200,6 +3744,18 @@ class DataModelFactory(object):
                     index=scope.field_indices[attr_name]
                 )
             
+            # Try to evaluate attribute access on a module-level name as a constant
+            # (e.g. MyEnum.VALUE, or ClassName.CONST).  This handles IntEnum members
+            # and any other class-level integer constants used in constraint bodies.
+            if isinstance(value_expr, ExprRefUnresolved):
+                py_globals = self._get_scope_globals(scope)
+                if py_globals:
+                    base_val = py_globals.get(value_expr.name)
+                    if base_val is not None and hasattr(base_val, attr_name):
+                        attr_val = getattr(base_val, attr_name)
+                        if isinstance(attr_val, int) and not isinstance(attr_val, bool):
+                            return ExprConstant(value=int(attr_val))
+
             # For other cases, use ExprAttribute
             return ExprAttribute(
                 value=value_expr,
@@ -3213,7 +3769,16 @@ class DataModelFactory(object):
                 if scope and scope.is_action_body:
                     return _ExprActionSelf()
                 return TypeExprRefSelf()
-            
+
+            # IR param subs (for module-level async function inlining): return pre-compiled IR.
+            if scope and name in scope.ir_param_subs:
+                return scope.ir_param_subs[name]
+
+            # Local pure-function inlining: substitute param with the supplied
+            # AST argument node and convert recursively.
+            if scope and name in scope.param_subs:
+                return self._convert_ast_expr(scope.param_subs[name], scope)
+
             # Handle method parameter reference — checked before field_indices
             # so that a parameter can shadow a same-named component field.
             if scope and name in scope.method_params:
