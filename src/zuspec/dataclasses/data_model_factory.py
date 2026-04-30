@@ -67,6 +67,10 @@ class ConversionScope:
     comp_field_indices: dict = dc.field(default_factory=dict)
     # var_name -> comp_field_idx mapping for ``async with self.comp.pool.lock() as var:``
     pool_claims: dict = dc.field(default_factory=dict)
+    # action resource field name -> comp field index (for synthesis: self.pc → ExprRefField(comp.pc))
+    resource_bindings: dict = dc.field(default_factory=dict)
+    # action resource field name -> pool size (1=single-entry, N=multi-entry regfile)
+    resource_sizes: dict = dc.field(default_factory=dict)
 
     # Action class being inlined (for instance method lookup during constraint compilation)
     action_cls: type = None
@@ -640,6 +644,7 @@ class DataModelFactory(object):
         
         # Build arguments and collect param names for scope
         args_list = []
+        defaults_list = []
         param_names = set()
         for idx, (param_name, param) in enumerate(sig.parameters.items()):
             if param_name == 'self':
@@ -648,8 +653,13 @@ class DataModelFactory(object):
             arg = Arg(arg=param_name, annotation=self._type_to_expr(annotation))
             args_list.append(arg)
             param_names.add(param_name)
-        
-        arguments = Arguments(args=args_list)
+            if param.default is not inspect.Parameter.empty:
+                dval = param.default
+                defaults_list.append(ExprConstant(value=int(dval) if isinstance(dval, (int, float, bool)) else 0))
+            else:
+                defaults_list.append(None)
+
+        arguments = Arguments(args=args_list, defaults=[d for d in defaults_list if d is not None])
         
         # Get return type
         return_type = hints.get('return')
@@ -2235,6 +2245,8 @@ class DataModelFactory(object):
             action_local_prefix=parent_scope.action_local_prefix,
             comp_field_indices=parent_scope.comp_field_indices.copy(),
             pool_claims=parent_scope.pool_claims.copy(),
+            resource_bindings=parent_scope.resource_bindings.copy(),
+            resource_sizes=parent_scope.resource_sizes.copy(),
             action_cls=parent_scope.action_cls,
             is_constraint_mode=parent_scope.is_constraint_mode,
             src_file=parent_scope.src_file,
@@ -2336,6 +2348,8 @@ class DataModelFactory(object):
             action_local_prefix=scope.action_local_prefix if scope else "",
             comp_field_indices=scope.comp_field_indices if scope else {},
             pool_claims=scope.pool_claims.copy() if scope else {},
+            resource_bindings=scope.resource_bindings.copy() if scope else {},
+            resource_sizes=scope.resource_sizes.copy() if scope else {},
             action_cls=scope.action_cls if scope else None,
             is_constraint_mode=scope.is_constraint_mode if scope else False,
             src_file=scope.src_file if scope else None,
@@ -2740,6 +2754,93 @@ class DataModelFactory(object):
 
         return (action_name, inner_call, outer_call)
 
+    def _extract_action_resource_bindings(
+        self, action_cls: type, comp_field_indices: dict, component=None
+    ) -> tuple:
+        """Extract resource field → component field index mapping from action's __bind__.
+
+        For each resource field on ``action_cls`` that is bound to a component field via
+        ``__bind__``, return a tuple ``(bindings, sizes)`` where:
+        - ``bindings``: action field name → component field index
+        - ``sizes``: action field name → pool size (1=single-entry, N=multi-entry)
+
+        Used to resolve ``self.resource_field`` in action body synthesis so that
+        ``self.pc`` maps directly to ``ExprRefField(comp.pc_idx)`` (single-entry) and
+        ``self.rs1.t`` maps to ``ExprSubscript(gpr, rs1_id)`` (multi-entry).
+        """
+        import dataclasses as _dc
+
+        if not _dc.is_dataclass(action_cls) or '__bind__' not in action_cls.__dict__:
+            return {}, {}
+
+        resource_field_names = {
+            f.name
+            for f in _dc.fields(action_cls)
+            if f.metadata.get('kind') == 'resource_ref'
+        }
+        if not resource_field_names:
+            return {}, {}
+
+        class _FieldRef:
+            def __init__(self, name):
+                self.name = name
+
+        class _CompProxy:
+            def __getattr__(self, name):
+                return _CompFieldRef(name)
+
+        class _CompFieldRef:
+            def __init__(self, name):
+                self.name = name
+
+        class _ActionProxy:
+            def __getattr__(self_inner, name):  # noqa: N805
+                if name == 'comp':
+                    return _CompProxy()
+                return _FieldRef(name)
+
+        bindings = {}
+        sizes = {}
+        # Build a map from component field name → pool size.
+        # component may be either a Python class or a DataTypeComponent IR node.
+        comp_field_sizes: dict = {}
+        if component is not None:
+            if hasattr(component, 'fields') and not callable(component):
+                # DataTypeComponent IR node — fields are IR Field objects with .size
+                for f in component.fields:
+                    raw_size = getattr(f, 'size', None)
+                    if raw_size is not None and raw_size > 0:
+                        comp_field_sizes[f.name] = raw_size
+            else:
+                # Python class — read pool size from dataclass field metadata
+                try:
+                    py_fields = _dc.fields(component)
+                    for pf in py_fields:
+                        raw_size = pf.metadata.get('size', None)
+                        if raw_size is not None and raw_size > 0:
+                            comp_field_sizes[pf.name] = raw_size
+                except Exception:
+                    pass
+        try:
+            result = action_cls.__dict__['__bind__'](_ActionProxy())
+            if result is None:
+                return {}, {}
+            if isinstance(result, dict):
+                pairs = result.items()
+            else:
+                pairs = result
+            for lhs, rhs in pairs:
+                if (isinstance(lhs, _FieldRef) and lhs.name in resource_field_names
+                        and isinstance(rhs, _CompFieldRef) and rhs.name in comp_field_indices):
+                    field_idx = comp_field_indices[rhs.name]
+                    bindings[lhs.name] = field_idx
+                    # Determine pool depth from comp_field_sizes (built from either IR or Python class)
+                    pool_size = comp_field_sizes.get(rhs.name, 1)
+                    sizes[lhs.name] = pool_size
+        except Exception:
+            pass
+        return bindings, sizes
+
     def _inline_action_call(
         self,
         result_var: Optional[str],
@@ -2810,13 +2911,21 @@ class DataModelFactory(object):
             ))
 
         # 3. Convert action body() with action-body scope.
+        # Use comp_field_indices from the appropriate scope level: at proc level they are
+        # in scope.field_indices; inside an activity body they are in scope.comp_field_indices.
+        _comp_fi = scope.comp_field_indices or scope.field_indices
+        resource_bindings, resource_sizes = self._extract_action_resource_bindings(
+            action_cls, _comp_fi, scope.component
+        )
         body_stmts = self._convert_action_body(
             action_cls=action_cls,
             result_var=rv,
             action_field_names=action_data_field_names,
             local_prefix=prefix,
-            comp_field_indices=scope.field_indices,
+            comp_field_indices=_comp_fi,
             outer_scope=scope,
+            resource_bindings=resource_bindings,
+            resource_sizes=resource_sizes,
         )
         result_stmts.extend(body_stmts)
 
@@ -2830,6 +2939,8 @@ class DataModelFactory(object):
         local_prefix: str,
         comp_field_indices: dict,
         outer_scope: ConversionScope,
+        resource_bindings: dict = None,
+        resource_sizes: dict = None,
     ) -> list:
         """Convert action_cls.body() to IR stmts for inlining into the parent coroutine.
 
@@ -2912,6 +3023,8 @@ class DataModelFactory(object):
             action_field_names=action_field_names,
             action_local_prefix=local_prefix,
             comp_field_indices=comp_field_indices,
+            resource_bindings=resource_bindings or {},
+            resource_sizes=resource_sizes or {},
             action_cls=action_cls,
             extra_globals=action_extra_globals,
         )
@@ -2995,6 +3108,11 @@ class DataModelFactory(object):
         """
         import textwrap
 
+        _comp_fi = outer_scope.comp_field_indices or outer_scope.field_indices
+        resource_bindings, resource_sizes = self._extract_action_resource_bindings(
+            action_cls, _comp_fi, outer_scope.component
+        )
+
         action_scope = ConversionScope(
             component=outer_scope.component,
             field_indices={},
@@ -3006,6 +3124,8 @@ class DataModelFactory(object):
             action_field_names=action_field_names,
             action_local_prefix=local_prefix,
             comp_field_indices=comp_field_indices,
+            resource_bindings=resource_bindings,
+            resource_sizes=resource_sizes,
             action_cls=action_cls,
             is_constraint_mode=True,
         )
@@ -3568,6 +3688,18 @@ class DataModelFactory(object):
                 if isinstance(value_expr, _ExprActionSelf):
                     if attr_name == 'comp':
                         return _ExprActionComp()
+                    # Resource field: single-entry pools (size=1) resolve directly to the
+                    # component field so that subsequent `.t` strips to the scalar register.
+                    # Multi-entry pools (size>1) fall through to action_field_names so that
+                    # the `.t` handler below can produce ExprSubscript(pool, claim_id).
+                    if scope.resource_bindings and attr_name in scope.resource_bindings:
+                        pool_size = scope.resource_sizes.get(attr_name, 1) if scope.resource_sizes else 1
+                        if pool_size <= 1:
+                            return ExprRefField(
+                                base=TypeExprRefSelf(),
+                                index=scope.resource_bindings[attr_name],
+                            )
+                        # Multi-entry: fall through to action_field_names below
                     # Action data field access → locals->result_var.field
                     if attr_name in scope.action_field_names:
                         return ExprAttribute(
@@ -3576,6 +3708,34 @@ class DataModelFactory(object):
                         )
                     # Unknown action attribute — emit unresolved
                     return ExprRefUnresolved(name=attr_name)
+
+                # Strip '.t' on resource/buffer references in action-body scope.
+                # '.t' is the runtime "unwrap" accessor on ListClaim (resource) and
+                # BufferInstance (flow) objects.
+                # For multi-entry pools, self.claim.t → ExprSubscript(pool_field, claim_id).
+                # For single-entry pools and other refs, it is a transparent no-op.
+                if attr_name == 't' and isinstance(
+                    value_expr, (ExprRefField, ExprAttribute)
+                ):
+                    if (isinstance(value_expr, ExprAttribute)
+                            and isinstance(value_expr.value, ExprRefLocal)
+                            and scope is not None
+                            and scope.resource_sizes
+                            and value_expr.attr in scope.resource_sizes
+                            and scope.resource_sizes[value_expr.attr] > 1):
+                        claim_name = value_expr.attr
+                        id_expr = ExprAttribute(
+                            value=ExprRefLocal(name=scope.action_result_var),
+                            attr=f'{claim_name}_id',
+                        )
+                        return ExprSubscript(
+                            value=ExprRefField(
+                                base=TypeExprRefSelf(),
+                                index=scope.resource_bindings[claim_name],
+                            ),
+                            slice=id_expr,
+                        )
+                    return value_expr
 
             # Handle self.field -> ExprRefField
             if isinstance(value_expr, TypeExprRefSelf) and scope and attr_name in scope.field_indices:

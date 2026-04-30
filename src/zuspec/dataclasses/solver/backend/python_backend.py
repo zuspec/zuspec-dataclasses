@@ -40,6 +40,7 @@ class PythonSolverBackend:
             _solve_constraint_system,
             _apply_solution,
             RandomizationError,
+            randomize_bound_cached,
         )
         from ..frontend.constraint_system_builder import (
             ConstraintSystemBuilder,
@@ -51,23 +52,23 @@ class PythonSolverBackend:
             cached = _class_cache.get(cls)
             if cached is not None:
                 struct_type, template_system = cached
-                # If the cached system was built without bound values and this
-                # object has non-rand fields that might be referenced in
-                # constraints, rebuild with the object so constants are folded.
                 if _has_bound_object_fields(obj, struct_type):
-                    builder = ConstraintSystemBuilder()
-                    template_system = builder.build_from_struct(struct_type, obj=obj)
+                    # Hot path: use cached assignment when bound values match.
+                    randomize_bound_cached(obj, struct_type, seed, timeout_ms)
+                    return
             else:
                 struct_type = _extract_struct_type(obj)
-                builder = ConstraintSystemBuilder()
                 if _has_bound_object_fields(obj, struct_type):
-                    # Build instance-specific (not cacheable) constraint system
-                    template_system = builder.build_from_struct(struct_type, obj=obj)
+                    # Cache the struct_type but not the system (instance-specific).
+                    _class_cache[cls] = (struct_type, None)
+                    randomize_bound_cached(obj, struct_type, seed, timeout_ms)
+                    return
                 else:
+                    builder = ConstraintSystemBuilder()
                     template_system = builder.build_from_struct(struct_type)
                     _class_cache[cls] = (struct_type, template_system)
 
-            # Deep-copy the constraint system so each solve gets fresh domains
+            # Non-bound path: use class-level cached system.
             constraint_system = template_system.copy()
 
             result = _solve_constraint_system(constraint_system, seed, timeout_ms)
@@ -84,6 +85,7 @@ class PythonSolverBackend:
             ) from exc
         except Exception as exc:
             raise RandomizationError(f"Randomization failed: {exc}") from exc
+
 
     def randomize_with(
         self,

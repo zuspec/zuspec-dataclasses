@@ -6,6 +6,7 @@ import dataclasses
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.solver.api import randomize, randomize_with, RandomizationError
+from zuspec.dataclasses.types import ClaimPool
 
 
 # ---------------------------------------------------------------------------
@@ -204,21 +205,118 @@ class TestActionConstraintSolver:
 
     def test_backend_caches_action_constraint_system(self):
         """Solver backend caches the constraint system for each action class."""
-        import weakref
+        from zuspec.dataclasses.solver.backend.registry import get_backend
         from zuspec.dataclasses.solver.backend import python_backend
 
-        # Clear any prior cache entry for this class
-        python_backend._class_cache.pop(BoundedAction, None)
+        active = get_backend()
 
-        action = _make_action(BoundedAction)
-        randomize(action)  # first call — builds and caches
+        if active.name == "native":
+            # Native backend uses _CLASS_CACHE in zuspec.solver.backend
+            import zuspec.solver.backend as native_be
+            native_be._CLASS_CACHE.pop(BoundedAction, None)
+            action = _make_action(BoundedAction)
+            randomize(action)
+            assert BoundedAction in native_be._CLASS_CACHE, (
+                "Action class not found in native backend _CLASS_CACHE after randomize"
+            )
+            cached_entry = native_be._CLASS_CACHE[BoundedAction]
+            randomize(action)
+            assert native_be._CLASS_CACHE[BoundedAction] is cached_entry, (
+                "Native backend cache was replaced on second randomize call"
+            )
+        else:
+            # Python backend uses _class_cache
+            python_backend._class_cache.pop(BoundedAction, None)
+            action = _make_action(BoundedAction)
+            randomize(action)
+            assert BoundedAction in python_backend._class_cache, (
+                "Action class not found in backend _class_cache after randomize"
+            )
+            cached_system = python_backend._class_cache[BoundedAction]
+            randomize(action)
+            assert python_backend._class_cache[BoundedAction] is cached_system, (
+                "Backend cache was replaced on second randomize call"
+            )
 
-        assert BoundedAction in python_backend._class_cache, (
-            "Action class not found in backend _class_cache after randomize"
+
+# ---------------------------------------------------------------------------
+# Resource pool value (.t) constraint — component with GPR pool
+# ---------------------------------------------------------------------------
+
+@zdc.dataclass
+class _GprComp(zdc.Component):
+    gpr: ClaimPool = zdc.pool(
+        default_factory=lambda: ClaimPool.fromList([10, 20, 30, 40])
+    )
+
+
+@zdc.dataclass
+class _RsValAction(zdc.Action[_GprComp]):
+    rs1: zdc.Resource[zdc.u32] = zdc.share()
+    output_val: zdc.u32 = zdc.rand()
+
+    def __bind__(self):
+        return (
+            (self.rs1, self.comp.gpr),
         )
-        cached_system = python_backend._class_cache[BoundedAction]
 
-        randomize(action)  # second call — must use cache (same object)
-        assert python_backend._class_cache[BoundedAction] is cached_system, (
-            "Backend cache was replaced on second randomize call"
+    @zdc.constraint
+    def c_val(self):
+        assert self.output_val == self.rs1.t
+
+
+def _make_rs_val_action(comp):
+    action = object.__new__(_RsValAction)
+    for f in dataclasses.fields(_RsValAction):
+        object.__setattr__(action, f.name,
+            f.default if f.default is not dataclasses.MISSING else None)
+    object.__setattr__(action, 'comp', comp)
+    return action
+
+
+class TestResourcePoolValueConstraint:
+    """End-to-end tests for @constraint using resource.t (pool slot value)."""
+
+    def test_output_val_equals_pool_slot(self):
+        """output_val must equal gpr[rs1.id] after randomize."""
+        comp = _GprComp()
+        pool_values = list(comp.gpr.resources)
+        action = _make_rs_val_action(comp)
+        randomize(action)
+        expected = pool_values[action._zdc_resource_hints['rs1']]
+        assert action.output_val == expected, (
+            f"output_val={action.output_val!r} but pool[rs1.id={action._zdc_resource_hints['rs1']}]={expected!r}"
+        )
+
+    def test_pool_value_cache_invalidated_on_change(self):
+        """Changing pool slot values between calls must produce updated results."""
+        from zuspec.dataclasses.solver._core_solve import (
+            _USED_BOUND_PATHS, _BOUND_ASSIGN_CACHE, _USED_POOL_VALUES,
+        )
+        # Clear any stale cache entries for this class
+        _USED_BOUND_PATHS.pop(_RsValAction, None)
+        _BOUND_ASSIGN_CACHE.clear()
+        _USED_POOL_VALUES.pop(_RsValAction, None)
+
+        # First solve with pool=[100, 200, 300, 400]
+        comp1 = _GprComp()
+        comp1.gpr.resources[:] = [100, 200, 300, 400]
+        action1 = _make_rs_val_action(comp1)
+        randomize(action1)
+        rs1_id_1 = action1._zdc_resource_hints['rs1']
+        expected1 = comp1.gpr.resources[rs1_id_1]
+        assert action1.output_val == expected1, (
+            f"Call 1: output_val={action1.output_val} != pool[{rs1_id_1}]={expected1}"
+        )
+
+        # Second solve with different pool values; cache must not return stale result
+        comp2 = _GprComp()
+        comp2.gpr.resources[:] = [500, 600, 700, 800]
+        action2 = _make_rs_val_action(comp2)
+        randomize(action2)
+        rs1_id_2 = action2._zdc_resource_hints['rs1']
+        expected2 = comp2.gpr.resources[rs1_id_2]
+        assert action2.output_val == expected2, (
+            f"Call 2 (pool=[500,600,700,800]): output_val={action2.output_val} "
+            f"but expected pool[{rs1_id_2}]={expected2} — stale cache not invalidated"
         )

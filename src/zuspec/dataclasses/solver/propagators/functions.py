@@ -388,3 +388,252 @@ class UserFunctionPropagator(Propagator):
     def __repr__(self) -> str:
         inputs_str = ", ".join(self.input_vars)
         return f"UserFunctionPropagator({self.result_var} = {self.func_name}({inputs_str}))"
+
+
+class SextPropagator(Propagator):
+    """Propagator for zdc.sext(value, bits) — sign-extend from bits-wide source.
+
+    Forward:  given value_var domain and bits constant, constrain result_var.
+    Backward: given result_var domain, constrain value_var.
+
+    bits is always a compile-time constant per the synthesizable-subset rules.
+    """
+
+    def __init__(self, result_var: str, value_var: str, bits: int):
+        self.result_var = result_var
+        self.value_var = value_var
+        self.bits = bits
+        self._mask = (1 << bits) - 1
+        self._sign_bit = 1 << (bits - 1)
+
+    @staticmethod
+    def _sext(val: int, bits: int) -> int:
+        mask = (1 << bits) - 1
+        val = val & mask
+        if val & (1 << (bits - 1)):
+            return val - (1 << bits)
+        return val
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        result = variables[self.result_var]
+        value_var = variables[self.value_var]
+        changed = set()
+
+        input_domain = value_var.domain
+        if not isinstance(input_domain, IntDomain):
+            return PropagationResult(PropagationStatus.FIXED_POINT, changed)
+
+        # Forward: enumerate input values and compute sext results
+        possible_results = set()
+        for val in input_domain.values():
+            possible_results.add(self._sext(val, self.bits))
+
+        if possible_results:
+            sorted_r = sorted(possible_results)
+            intervals = []
+            start = end = sorted_r[0]
+            for v in sorted_r[1:]:
+                if v == end + 1:
+                    end = v
+                else:
+                    intervals.append((start, end))
+                    start = end = v
+            intervals.append((start, end))
+
+            new_domain = IntDomain(intervals, width=result.domain.width,
+                                   signed=result.domain.signed)
+            intersected = result.domain.intersect(new_domain)
+            if intersected.is_empty():
+                return PropagationResult(PropagationStatus.CONFLICT, changed)
+            if intersected != result.domain:
+                result.domain = intersected
+                changed.add(result)
+
+        # Backward: filter input values whose sext is not in result domain
+        valid_results = set(result.domain.values())
+        valid_inputs = [v for v in input_domain.values()
+                        if self._sext(v, self.bits) in valid_results]
+        if not valid_inputs:
+            return PropagationResult(PropagationStatus.CONFLICT, changed)
+
+        sorted_i = sorted(valid_inputs)
+        intervals = []
+        start = end = sorted_i[0]
+        for v in sorted_i[1:]:
+            if v == end + 1:
+                end = v
+            else:
+                intervals.append((start, end))
+                start = end = v
+        intervals.append((start, end))
+
+        new_input = IntDomain(intervals, width=input_domain.width,
+                              signed=input_domain.signed)
+        intersected = input_domain.intersect(new_input)
+        if intersected.is_empty():
+            return PropagationResult(PropagationStatus.CONFLICT, changed)
+        if intersected != input_domain:
+            value_var.domain = intersected
+            changed.add(value_var)
+
+        status = PropagationStatus.FIXED_POINT if not changed else PropagationStatus.CONSISTENT
+        return PropagationResult(status, changed)
+
+    def affected_variables(self) -> Set[str]:
+        return {self.result_var, self.value_var}
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        if self.result_var not in assignment or self.value_var not in assignment:
+            return False
+        return assignment[self.result_var] == self._sext(assignment[self.value_var], self.bits)
+
+    def __repr__(self) -> str:
+        return f"SextPropagator({self.result_var} = sext({self.value_var}, {self.bits}))"
+
+
+class CbitPropagator(Propagator):
+    """Propagator for zdc.cbit(expr) — reify a boolean to 0/1.
+
+    result_var ∈ {0, 1} and equals 1 iff inner_var != 0.
+    Useful when the inner expression is already a VariableRef (e.g. a comparison
+    result stored in a temp variable).
+    """
+
+    def __init__(self, result_var: str, inner_var: str):
+        self.result_var = result_var
+        self.inner_var = inner_var
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        result = variables[self.result_var]
+        inner = variables[self.inner_var]
+        changed = set()
+
+        inner_domain = inner.domain
+        if not isinstance(inner_domain, IntDomain):
+            return PropagationResult(PropagationStatus.FIXED_POINT, changed)
+
+        # Forward: narrow result domain based on what inner can produce
+        possible = set()
+        for v in inner_domain.values():
+            possible.add(1 if v else 0)
+
+        sorted_p = sorted(possible)
+        intervals = [(v, v) for v in sorted_p]
+        new_domain = IntDomain(intervals, width=result.domain.width,
+                               signed=result.domain.signed)
+        intersected = result.domain.intersect(new_domain)
+        if intersected.is_empty():
+            return PropagationResult(PropagationStatus.CONFLICT, changed)
+        if intersected != result.domain:
+            result.domain = intersected
+            changed.add(result)
+
+        # Backward: narrow inner domain based on result
+        if result.domain.is_singleton():
+            result_val = result.domain.min_val
+            if result_val == 1:
+                # result=1 → inner must be non-zero; exclude 0 from inner domain
+                if inner_domain.min_val == 0:
+                    new_inner = IntDomain([(1, inner_domain.max_val)],
+                                         width=inner_domain.width,
+                                         signed=inner_domain.signed)
+                    if new_inner.is_empty():
+                        return PropagationResult(PropagationStatus.CONFLICT, changed)
+                    inner.domain = new_inner
+                    changed.add(inner)
+            elif result_val == 0:
+                # result=0 → inner must be zero
+                new_inner = IntDomain([(0, 0)], width=inner_domain.width,
+                                      signed=inner_domain.signed)
+                intersected_inner = inner_domain.intersect(new_inner)
+                if intersected_inner.is_empty():
+                    return PropagationResult(PropagationStatus.CONFLICT, changed)
+                if intersected_inner != inner_domain:
+                    inner.domain = intersected_inner
+                    changed.add(inner)
+
+        status = PropagationStatus.FIXED_POINT if not changed else PropagationStatus.CONSISTENT
+        return PropagationResult(status, changed)
+
+    def affected_variables(self) -> Set[str]:
+        return {self.result_var, self.inner_var}
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        if self.result_var not in assignment or self.inner_var not in assignment:
+            return False
+        expected = 1 if assignment[self.inner_var] else 0
+        return assignment[self.result_var] == expected
+
+    def __repr__(self) -> str:
+        return f"CbitPropagator({self.result_var} = cbit({self.inner_var}))"
+
+
+class SignedViewPropagator(Propagator):
+    """Propagator for zdc.signed(val) — treat a value as signed 32-bit.
+
+    This is a transparent wrapper: result_var == signed_view(inner_var).
+    Forward propagation maps the unsigned domain to signed integers;
+    backward restricts the inner domain accordingly.
+    """
+
+    def __init__(self, result_var: str, inner_var: str, width: int = 32):
+        self.result_var = result_var
+        self.inner_var = inner_var
+        self.width = width
+        self._mask = (1 << width) - 1
+        self._sign_bit = 1 << (width - 1)
+        self._mod = 1 << width
+
+    def _to_signed(self, val: int) -> int:
+        val = val & self._mask
+        if val >= self._sign_bit:
+            return val - self._mod
+        return val
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        result = variables[self.result_var]
+        inner = variables[self.inner_var]
+        changed = set()
+
+        inner_domain = inner.domain
+        if not isinstance(inner_domain, IntDomain):
+            return PropagationResult(PropagationStatus.FIXED_POINT, changed)
+
+        possible = set()
+        for v in inner_domain.values():
+            possible.add(self._to_signed(v))
+
+        if possible:
+            sorted_p = sorted(possible)
+            intervals = []
+            start = end = sorted_p[0]
+            for v in sorted_p[1:]:
+                if v == end + 1:
+                    end = v
+                else:
+                    intervals.append((start, end))
+                    start = end = v
+            intervals.append((start, end))
+
+            new_domain = IntDomain(intervals, width=result.domain.width,
+                                   signed=True)
+            intersected = result.domain.intersect(new_domain)
+            if intersected.is_empty():
+                return PropagationResult(PropagationStatus.CONFLICT, changed)
+            if intersected != result.domain:
+                result.domain = intersected
+                changed.add(result)
+
+        status = PropagationStatus.FIXED_POINT if not changed else PropagationStatus.CONSISTENT
+        return PropagationResult(status, changed)
+
+    def affected_variables(self) -> Set[str]:
+        return {self.result_var, self.inner_var}
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
+        if self.result_var not in assignment or self.inner_var not in assignment:
+            return False
+        return assignment[self.result_var] == self._to_signed(assignment[self.inner_var])
+
+    def __repr__(self) -> str:
+        return f"SignedViewPropagator({self.result_var} = signed({self.inner_var}))"

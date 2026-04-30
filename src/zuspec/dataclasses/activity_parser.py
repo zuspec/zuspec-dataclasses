@@ -155,6 +155,8 @@ class ActivityParser:
             ir = self._parse_if(node)
         elif isinstance(node, ast.Match):
             ir = self._parse_match(node)
+        elif isinstance(node, ast.While):
+            ir = self._parse_while(node)
         else:
             raise ActivityParseError(
                 f"Unsupported activity statement type: {type(node).__name__} "
@@ -495,6 +497,11 @@ class ActivityParser:
         if isinstance(pattern, ast.MatchOr):
             return {"type": "or", "patterns": [self._parse_match_pattern(p) for p in pattern.patterns]}
         return {"type": "unknown", "dump": ast.dump(pattern)}
+
+    def _parse_while(self, node: ast.While) -> ActivityWhileDo:
+        condition = self._parse_expr(node.test)
+        body = self._parse_body(node.body)
+        return ActivityWhileDo(condition=condition, body=body, loc=self._loc(node))
 
     # ------------------------------------------------------------------
     # Select / branch parsing

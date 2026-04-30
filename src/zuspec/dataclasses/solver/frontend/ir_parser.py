@@ -74,6 +74,15 @@ class IRExpressionParser:
         # Resource pool map: field_name -> pool object (for .t ITE expansion).
         self.resource_pools: Dict[str, object] = {}
 
+        # Set of lock() resource field names whose .t is a write-target variable
+        # (not an ITE-chain read over current pool values).
+        self._lock_fields: set = set()
+
+        # Set of lock write-target variable names that were actually referenced
+        # in at least one parsed constraint (e.g. "pc.t", "rd_reg.t").
+        # Populated lazily by _parse_attribute when it resolves a lock .t access.
+        self._referenced_lock_writes: set = set()
+
         # Tracks which pool-value tuples were actually referenced during parsing.
         # Populated lazily in _build_pool_ite.
         # After build_from_struct(), each entry is a (field_name, values_tuple) pair
@@ -124,6 +133,15 @@ class IRExpressionParser:
         corresponding ``<field>.id`` variable.
         """
         self.resource_pools[field_name] = pool
+
+    def register_lock_field(self, field_name: str):
+        """Mark a resource field as lock() so its .t access resolves to a
+        write-target variable rather than an ITE chain over current pool values.
+
+        Must be called after :meth:`register_variable` has registered both the
+        ``<field>.id`` and ``<field>.t`` variables.
+        """
+        self._lock_fields.add(field_name)
     
     def parse(self, expr: Expr, source_location: Optional[SourceLocation] = None) -> Constraint:
         """
@@ -429,15 +447,33 @@ class IRExpressionParser:
                     value=self.bound_values[var_name],
                     source_location=self.current_source
                 )
-            # Handle resource .t access: self.rs1.t → ITE chain over pool values.
-            if attr_name == 't' and base_name is not None and base_name in self.resource_pools:
-                return self._build_pool_ite(base_name)
+            # Handle resource .t access: lock fields → write-target variable,
+            # share fields → ITE chain over current pool values.
+            if attr_name == 't' and base_name is not None:
+                if base_name in self._lock_fields:
+                    write_var = self.variable_map.get(f"{base_name}.t")
+                    if write_var is None:
+                        raise ParseError(
+                            f"No write variable for lock field '{base_name}': "
+                            f"expected '{base_name}.t' in variable_map"
+                        )
+                    self._referenced_lock_writes.add(f"{base_name}.t")
+                    return VariableRefConstraint(
+                        variable=write_var,
+                        source_location=self.current_source
+                    )
+                if base_name in self.resource_pools:
+                    return self._build_pool_ite(base_name)
             raise ParseError(
                 f"Unknown variable: {var_name}. "
                 f"Available variables: {list(self.variable_map.keys())}"
             )
 
         variable = self.variable_map[var_name]
+        # Track lock-field write references even when the variable was
+        # pre-registered in variable_map by _extract_resource_id_vars.
+        if attr_name == 't' and base_name is not None and base_name in self._lock_fields:
+            self._referenced_lock_writes.add(var_name)
         return VariableRefConstraint(
             variable=variable,
             source_location=self.current_source
@@ -1774,6 +1810,60 @@ class IRExpressionParser:
             source_location=self.current_source
         )
     
+    def _try_const_eval(self, constraint: Constraint) -> Optional[int]:
+        """Recursively evaluate *constraint* as a compile-time constant.
+
+        Returns an integer value (0 for False, non-zero for True) if every
+        leaf in the tree is a :class:`ConstantConstraint`, otherwise returns
+        ``None``.
+        """
+        from ..core.constraints import (
+            ConstantConstraint, BoolOpConstraint, CompareConstraint,
+            UnaryOpConstraint,
+        )
+        from zuspec.ir.core.expr import BoolOp, CmpOp, UnaryOp
+
+        if isinstance(constraint, ConstantConstraint):
+            return int(constraint.value) if constraint.value is not None else None
+
+        if isinstance(constraint, UnaryOpConstraint):
+            val = self._try_const_eval(constraint.operand)
+            if val is None:
+                return None
+            if constraint.op == UnaryOp.Not:
+                return int(not val)
+            if constraint.op == UnaryOp.USub:
+                return -val
+            return val
+
+        if isinstance(constraint, BoolOpConstraint):
+            vals = [self._try_const_eval(v) for v in constraint.values]
+            if any(v is None for v in vals):
+                return None
+            if constraint.op == BoolOp.And:
+                return int(all(vals))
+            if constraint.op == BoolOp.Or:
+                return int(any(vals))
+            return None
+
+        if isinstance(constraint, CompareConstraint):
+            lv = self._try_const_eval(constraint.left)
+            rv = self._try_const_eval(constraint.right)
+            if lv is None or rv is None:
+                return None
+            ops = {
+                CmpOp.Eq: lv == rv,
+                CmpOp.NotEq: lv != rv,
+                CmpOp.Lt: lv < rv,
+                CmpOp.LtE: lv <= rv,
+                CmpOp.Gt: lv > rv,
+                CmpOp.GtE: lv >= rv,
+            }
+            result = ops.get(constraint.op)
+            return int(result) if result is not None else None
+
+        return None
+
     def _parse_if_statement(self, stmt: StmtIf) -> List[Constraint]:
         """
         Parse if statement (conditional constraints).
@@ -1793,7 +1883,32 @@ class IRExpressionParser:
         """
         # Parse condition
         condition = self.parse(stmt.test, self.current_source)
-        
+
+        # Constant-fold when the condition is a known boolean value (bound values).
+        # This avoids nested ImplicationConstraints that cannot be reified by the
+        # compiler's _compile_implication (which returns None, not a bool variable).
+        cond_const = self._try_const_eval(condition)
+        if cond_const is not None:
+            active_stmts = stmt.body if cond_const else stmt.orelse
+            inactive_stmts = stmt.orelse if cond_const else stmt.body
+            # Parse the inactive branch solely to populate used_bound_paths so
+            # that the solver's cache key covers variables referenced in both
+            # branches.  If the first solve takes the else-branch, the then-
+            # branch's bound paths (e.g. mem.t.load_data) must still appear in
+            # _USED_BOUND_PATHS; otherwise a later solve that takes the then-
+            # branch would collide with a stale cache entry.
+            # We save and restore _referenced_lock_writes so that parsing the
+            # inactive branch does not accidentally enable write-back for lock
+            # resources that should only be written when the condition is met.
+            saved_lock_writes = set(self._referenced_lock_writes)
+            for s in inactive_stmts:
+                self.parse_statement(s)
+            self._referenced_lock_writes = saved_lock_writes
+            result = []
+            for s in active_stmts:
+                result.extend(self.parse_statement(s))
+            return result
+
         # Parse then-branch
         then_constraints = []
         for then_stmt in stmt.body:
@@ -1922,20 +2037,41 @@ class IRExpressionParser:
                     source_location=self.current_source,
                 )
 
-            # Parse body statements, wrapping each in an implication
-            for body_stmt in case.body:
-                if isinstance(body_stmt, StmtMatch):
-                    # Nested match: inherit antecedent
-                    result.extend(self._parse_match_statement(body_stmt, antecedent))
-                else:
-                    body_constraints = self.parse_statement(body_stmt)
-                    for bc in body_constraints:
-                        result.append(ImplicationConstraint(
-                            condition=antecedent,
-                            then_constraint=bc,
-                            else_constraint=None,
-                            source_location=self.current_source,
-                        ))
+            # Parse body statements, wrapping each in an implication.
+            # If antecedent is a compile-time constant, fold immediately.
+            antecedent_const = self._try_const_eval(antecedent)
+            # For skipped (constant-False) arms, parse body statements anyway
+            # to populate used_bound_paths, but save/restore _referenced_lock_writes
+            # so that lock write-targets from inactive arms don't trigger write-back.
+            if antecedent_const is not None and not antecedent_const:
+                saved_lock_writes = set(self._referenced_lock_writes)
+                for body_stmt in case.body:
+                    if isinstance(body_stmt, StmtMatch):
+                        self._parse_match_statement(body_stmt, None)
+                    else:
+                        self.parse_statement(body_stmt)
+                self._referenced_lock_writes = saved_lock_writes
+            else:
+                for body_stmt in case.body:
+                    if isinstance(body_stmt, StmtMatch):
+                        if antecedent_const:
+                            # constant True — nested match with no outer condition
+                            result.extend(self._parse_match_statement(body_stmt, None))
+                        else:
+                            # Nested match: inherit antecedent
+                            result.extend(self._parse_match_statement(body_stmt, antecedent))
+                    else:
+                        body_constraints = self.parse_statement(body_stmt)
+                        for bc in body_constraints:
+                            if antecedent_const:
+                                result.append(bc)   # constant True — no wrapping
+                            else:
+                                result.append(ImplicationConstraint(
+                                    condition=antecedent,
+                                    then_constraint=bc,
+                                    else_constraint=None,
+                                    source_location=self.current_source,
+                                ))
 
             # Accumulate pattern condition for wildcard negation (skip guard)
             if not isinstance(case.pattern, PatternAs):

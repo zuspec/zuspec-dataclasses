@@ -19,6 +19,9 @@ from .relational import (
 from .implication import (
     ImplicationPropagator,
     ConditionalImplicationPropagator,
+    BoolNotPropagator,
+    BoolOrPropagator,
+    BoolAndPropagator,
 )
 from .set_membership import (
     InSetPropagator,
@@ -42,6 +45,9 @@ from .functions import (
     CountOnesPropagator,
     Clog2Propagator,
     UserFunctionPropagator,
+    SextPropagator,
+    CbitPropagator,
+    SignedViewPropagator,
 )
 
 __all__ = [
@@ -83,4 +89,7 @@ __all__ = [
     "CountOnesPropagator",
     "Clog2Propagator",
     "UserFunctionPropagator",
+    "SextPropagator",
+    "CbitPropagator",
+    "SignedViewPropagator",
 ]

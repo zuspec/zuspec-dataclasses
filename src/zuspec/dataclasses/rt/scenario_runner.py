@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Optional, Type
 
 from .action_context import ActionContext
 from .activity_runner import ActivityRunner
+from .compiled_scenario import CompiledScenario, ScenarioCompiler
 from .pool_resolver import PoolResolver
 from .action_registry import ActionRegistry
 from .icl_table import ICLTable
@@ -51,11 +52,37 @@ class ScenarioRunner:
         self._registry = ActionRegistry.build(comp)
         self._icl_table = ICLTable.build(self._registry)
         self._structural_solver = StructuralSolver(self._icl_table, seed=self._seed, registry=self._registry)
+        # Lazy-compile cache: action_type → CompiledScenario or None
+        self._compiled_scenarios: dict = {}
 
     async def run(
         self, action_type: Type, timeout_s: float = 30.0, **kwargs
     ) -> Any:
         """Traverse *action_type* once against the component tree."""
+        # Lazy-compile on first call for this action type
+        if action_type not in self._compiled_scenarios:
+            compiler = ScenarioCompiler()
+            self._compiled_scenarios[action_type] = compiler.compile(
+                action_type, self._comp, self._resolver
+            )
+
+        compiled: Optional[CompiledScenario] = self._compiled_scenarios[action_type]
+        if compiled is not None:
+            # Fast path: pre-compiled scenario — no framework overhead per cycle
+            try:
+                async with asyncio.timeout(timeout_s):
+                    result = await compiled.run(tracer=self._tracer)
+            except asyncio.TimeoutError:
+                raise DeadlockError(
+                    f"Scenario did not complete within {timeout_s}s — "
+                    f"possible deadlock in resource acquisition"
+                )
+            self._seed = (
+                self._seed * 6364136223846793005 + 1442695040888963407
+            ) & 0xFFFF_FFFF_FFFF_FFFF
+            return result
+
+        # Slow path: full activity runner (for complex / non-compilable activities)
         ctx = ActionContext(
             action=None,
             comp=self._comp,

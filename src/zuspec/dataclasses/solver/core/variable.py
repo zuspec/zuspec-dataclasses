@@ -7,9 +7,10 @@ from .domain import Domain
 
 class VarKind(Enum):
     """Variable kind enumeration"""
-    RAND = "rand"      # Regular random variable
-    RANDC = "randc"    # Random-cyclic variable
-    STATE = "state"    # Non-random state variable
+    RAND = "rand"        # Regular random variable
+    RANDC = "randc"      # Random-cyclic variable
+    STATE = "state"      # Non-random state variable
+    WITNESS = "witness"  # Constraint-local existential witness (never written back to object)
 
 
 class RandCState:

@@ -54,10 +54,12 @@ class BitAndPropagator(_BitwiseTernary):
         if not all([r, a, b]):
             return PropagationResult.fixed_point()
         changed = set()
-        new_hi = min(a.domain.max_val, b.domain.max_val)
-        ch, conf = _tighten(r, r.domain.min_val, new_hi)
-        if conf: return PropagationResult.conflict()
-        if ch: changed.add(r)
+        # The bound r <= min(a, b) only holds for non-negative values.
+        if a.domain.min_val >= 0 and b.domain.min_val >= 0:
+            new_hi = min(a.domain.max_val, b.domain.max_val)
+            ch, conf = _tighten(r, r.domain.min_val, new_hi)
+            if conf: return PropagationResult.conflict()
+            if ch: changed.add(r)
         res = _singleton_result(variables, self.result_var, self.lhs_var,
                                 self.rhs_var, lambda x, y: x & y)
         if res.is_conflict(): return res
@@ -143,8 +145,54 @@ class FloorDivPropagator(_BitwiseTernary):
         if res.is_consistent(): changed.update(res.changed_vars)
         return PropagationResult.consistent(changed) if changed else PropagationResult.fixed_point()
 
-    def is_satisfied(self, assignment):
+
+class BitInvertPropagator(Propagator):
+    """r = ~operand  (Python bitwise NOT: ~x == -(x+1)).
+
+    Forward:  result_domain = [~operand_hi, ~operand_lo]   (range inversion)
+    Backward: operand_domain = [~result_hi, ~result_lo]
+    """
+
+    def __init__(self, result_var: str, operand_var: str):
+        self.result_var = result_var
+        self.operand_var = operand_var
+
+    def affected_variables(self) -> Set[str]:
+        return {self.result_var, self.operand_var}
+
+    def propagate(self, variables: Dict[str, Variable]) -> PropagationResult:
+        r = variables.get(self.result_var)
+        op = variables.get(self.operand_var)
+        if not all([r, op]):
+            return PropagationResult.fixed_point()
+
+        changed = set()
+
+        # Forward: ~[lo, hi] = [~hi, ~lo]
+        fwd_lo = ~op.domain.max_val
+        fwd_hi = ~op.domain.min_val
+        new_dom = IntDomain([(fwd_lo, fwd_hi)], r.domain.width, r.domain.signed)
+        intersected = r.domain.intersect(new_dom)
+        if intersected.is_empty():
+            return PropagationResult.conflict()
+        if intersected != r.domain:
+            r.domain = intersected
+            changed.add(r)
+
+        # Backward: ~[r_lo, r_hi] = [~r_hi, ~r_lo]
+        bwd_lo = ~r.domain.max_val
+        bwd_hi = ~r.domain.min_val
+        new_dom = IntDomain([(bwd_lo, bwd_hi)], op.domain.width, op.domain.signed)
+        intersected = op.domain.intersect(new_dom)
+        if intersected.is_empty():
+            return PropagationResult.conflict()
+        if intersected != op.domain:
+            op.domain = intersected
+            changed.add(op)
+
+        return PropagationResult.consistent(changed) if changed else PropagationResult.fixed_point()
+
+    def is_satisfied(self, assignment: Dict[str, int]) -> bool:
         if not all(v in assignment for v in self.affected_variables()):
             return False
-        b = assignment[self.rhs_var]
-        return b != 0 and assignment[self.result_var] == (assignment[self.lhs_var] // b)
+        return assignment[self.result_var] == ~assignment[self.operand_var]

@@ -152,9 +152,9 @@ def test_dma_xfer_is_compound():
 
 
 def test_data_buff_is_buffer():
-    """DataBuff inherits from Buffer."""
-    assert issubclass(DataBuff, zdc.Buffer)
-    assert issubclass(DataBuff, zdc.Struct)
+    """DataBuff inherits from Buffer Protocol — instances satisfy isinstance."""
+    assert isinstance(DataBuff(), zdc.Buffer)
+    assert zdc.Buffer in DataBuff.__mro__
 
 
 def test_dma_channel_is_resource():
