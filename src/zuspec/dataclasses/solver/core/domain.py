@@ -318,13 +318,57 @@ class EnumDomain(Domain):
         """Returns a copy of this domain"""
         return EnumDomain(self._values, self.enum_type)
 
-    def intersect(self, other: 'EnumDomain') -> 'EnumDomain':
-        """Returns intersection of this domain with another"""
-        return EnumDomain(self._values & other._values, self.enum_type)
+    @property
+    def _intervals(self) -> list:
+        """Compatibility with IntDomain internal API."""
+        return [(v, v) for v in sorted(self._values)]
 
-    def union(self, other: 'EnumDomain') -> 'EnumDomain':
-        """Returns union of this domain with another"""
-        return EnumDomain(self._values | other._values, self.enum_type)
+    @property
+    def intervals(self) -> list:
+        """Compatibility with IntDomain: return sorted (val, val) pairs."""
+        return self._intervals
+
+    @property
+    def width(self) -> int:
+        """Compatibility with IntDomain: infer bit-width from max value."""
+        if not self._values:
+            return 1
+        max_val = max(self._values)
+        return max(1, max_val.bit_length())
+
+    @property
+    def signed(self) -> bool:
+        """Compatibility with IntDomain: enums are unsigned."""
+        return False
+
+    @property
+    def min(self) -> int:
+        return min(self._values) if self._values else 0
+
+    @property
+    def max(self) -> int:
+        return max(self._values) if self._values else 0
+
+    def intersect(self, other: 'Domain') -> 'EnumDomain':
+        """Returns intersection of this domain with another.
+
+        Handles both EnumDomain and IntDomain operands.
+        """
+        if isinstance(other, EnumDomain):
+            return EnumDomain(self._values & other._values, self.enum_type)
+        # IntDomain: convert its values to a set for intersection
+        other_values = set(other.values())
+        return EnumDomain(self._values & other_values, self.enum_type)
+
+    def union(self, other: 'Domain') -> 'EnumDomain':
+        """Returns union of this domain with another.
+
+        Handles both EnumDomain and IntDomain operands.
+        """
+        if isinstance(other, EnumDomain):
+            return EnumDomain(self._values | other._values, self.enum_type)
+        other_values = set(other.values())
+        return EnumDomain(self._values | other_values, self.enum_type)
 
     def remove_value(self, val: int) -> bool:
         """

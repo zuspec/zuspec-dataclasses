@@ -49,6 +49,10 @@ class IRExpressionParser:
         # e.g. {'next_.domain_A': 3, 'prev.domain_A': 2}
         # Used to constant-fold bound field references in constraints.
         self.bound_values: Dict[str, int] = {}
+
+        # Layer 3/4: list-valued bound fields (for ExprIn collection form).
+        # Maps dotted path (e.g. 'comp.in_pads') to a list of int values.
+        self.list_values: Dict[str, list] = {}
         
         # Source location for error reporting
         self.current_source: Optional[SourceLocation] = None
@@ -75,7 +79,15 @@ class IRExpressionParser:
         evaluated by the solver when the flow-object fields are already known.
         """
         self.bound_values[path] = value
-    
+
+    def register_list_value(self, path: str, values: list):
+        """Register a list of int values for a bound collection field (Layer 3).
+
+        Used by constraint_system_builder to expose lists like comp.in_pads so
+        that ExprIn with an ExprAttribute container can be evaluated at solve time.
+        """
+        self.list_values[path] = values
+
     def parse(self, expr: Expr, source_location: Optional[SourceLocation] = None) -> Constraint:
         """
         Parse an IR expression into a solver constraint.
@@ -469,7 +481,13 @@ class IRExpressionParser:
         )
 
     def _extract_value_set(self, container: Expr) -> set:
-        """Extract a set of integer values from a range-list container."""
+        """Extract a set of integer values from a container expression.
+
+        Handles two cases:
+          ExprRangeList  -- range-list form (e.g. x in [0, 1, 2])
+          ExprAttribute  -- collection-reference form (e.g. x in comp.in_pads);
+                           resolved via list_values registered in Layer 3.
+        """
         if isinstance(container, ExprRangeList):
             result = set()
             for r in container.ranges:
@@ -481,7 +499,6 @@ class IRExpressionParser:
                     raise ParseError(f"Range lower bound must be a constant, got {lo_expr!r}")
                 lo = int(lo_expr.value)
                 if hi_expr is None:
-                    # Single value
                     result.add(lo)
                 else:
                     if not isinstance(hi_expr, ExprConstant):
@@ -489,7 +506,37 @@ class IRExpressionParser:
                     hi = int(hi_expr.value)
                     result.update(range(lo, hi + 1))
             return result
-        raise ParseError(f"Value set extraction not yet implemented for {container.__class__.__name__}")
+
+        # Layer 4: collection-reference form — walk the ExprAttribute chain to
+        # a dotted path, then look it up in list_values.
+        if isinstance(container, ExprAttribute):
+            path = self._attr_chain_to_path(container)
+            if path is not None and path in self.list_values:
+                return set(self.list_values[path])
+            raise ParseError(
+                f"Collection '{path}' not found in registered list_values. "
+                f"Available: {list(self.list_values.keys())}"
+            )
+
+        raise ParseError(f"Value set extraction not implemented for {container.__class__.__name__}")
+
+    def _attr_chain_to_path(self, expr: Expr) -> Optional[str]:
+        """Convert an ExprAttribute chain to a dotted path string.
+
+        ExprAttribute(ExprAttribute(TypeExprRefSelf, 'comp'), 'in_pads')
+        -> 'comp.in_pads'
+
+        Returns None if the chain does not start from TypeExprRefSelf.
+        """
+        from zuspec.ir.core.expr import TypeExprRefSelf
+        parts = []
+        node = expr
+        while isinstance(node, ExprAttribute):
+            parts.append(node.attr)
+            node = node.value
+        if not isinstance(node, TypeExprRefSelf):
+            return None
+        return '.'.join(reversed(parts))
     
     def _parse_call(self, expr: ExprCall) -> Constraint:
         """
@@ -1163,6 +1210,32 @@ class IRExpressionParser:
                 break
 
         if not element_vars:
+            # Struct-typed array: look for keys like 'array_name[0].field' in variable_map.
+            # Build temporary bindings 'iter_var.field' -> variable_map['array_name[i].field']
+            # so that body expressions ExprAttribute(ExprRefLocal(iter_var), 'field') resolve
+            # to the correct per-element solver variable.
+            prefix0 = f"{array_name}[0]."
+            struct_fields = [k[len(prefix0):] for k in self.variable_map if k.startswith(prefix0)]
+            if struct_fields:
+                n_elems = 0
+                while any(f"{array_name}[{n_elems}].{fld}" in self.variable_map for fld in struct_fields):
+                    n_elems += 1
+                constraints = []
+                for i in range(n_elems):
+                    # Temporarily bind 'iter_var.field' for each struct field at element i
+                    temp_bindings = {}
+                    for fld in struct_fields:
+                        src_key = f"{array_name}[{i}].{fld}"
+                        if src_key in self.variable_map:
+                            temp_bindings[f"{iter_var}.{fld}"] = self.variable_map[src_key]
+                    self.variable_map.update(temp_bindings)
+                    self.loop_variables[iter_var] = i
+                    for body_stmt in stmt.body:
+                        constraints.extend(self.parse_statement(body_stmt))
+                    del self.loop_variables[iter_var]
+                    for k in temp_bindings:
+                        del self.variable_map[k]
+                return constraints
             raise ParseError(f"foreach: no array elements found for '{array_name}'")
 
         # Expand constraints.  For each element at index i:

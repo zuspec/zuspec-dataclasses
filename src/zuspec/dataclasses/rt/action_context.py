@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .tracer import Tracer
     from .structural_solver import StructuralSolver
     from .forward_constraint_propagator import ForwardConstraintPropagator
+    from .coverage_model import PssCoverageModel
 
 
 @dc.dataclass(kw_only=True)
@@ -57,3 +58,6 @@ class ActionContext:
 
     check_contracts: bool = False
     """When True, evaluate @constraint.requires before body() and @constraint.ensures after."""
+
+    coverage_model: Optional["PssCoverageModel"] = None
+    """When set, covergroup values are sampled after body/activity execution."""

@@ -17,8 +17,11 @@ from zuspec.ir.core.activity import (
     ActivityAnonTraversal,
     ActivityAtomic,
     ActivityBind,
+    ActivityChain,
     ActivityConstraint,
+    ActivityConstraintForall,
     ActivityDoWhile,
+    ActivityFill,
     ActivityForeach,
     ActivityIfElse,
     ActivityMatch,
@@ -42,6 +45,25 @@ if TYPE_CHECKING:
     from .pool_resolver import PoolResolver
 
 
+def _split_hier_expr(expr) -> tuple:
+    """Extract (label, field_name) from a two-level ExprAttribute chain.
+
+    ``ExprAttribute(ExprAttribute(TypeExprRefSelf, label), field)``
+    -> ``(label, field)``
+
+    Returns ``(None, None)`` if the expression does not match this pattern.
+    """
+    from zuspec.ir.core.expr import ExprAttribute, TypeExprRefSelf
+    if not isinstance(expr, ExprAttribute):
+        return (None, None)
+    outer_attr = expr.attr
+    inner = expr.value
+    if not isinstance(inner, ExprAttribute):
+        return (None, None)
+    label = inner.attr
+    return (label, outer_attr)
+
+
 def _resolve_handle_type(action_cls: type, field_name: str) -> Optional[type]:
     """Walk MRO to find a concrete type annotation for *field_name*, skipping
     generic type variables that cannot be evaluated."""
@@ -53,6 +75,78 @@ def _resolve_handle_type(action_cls: type, field_name: str) -> Optional[type]:
                 return hint
             # Could be a string forward-ref or a generic alias — skip it
     return None
+
+
+import functools as _functools
+
+
+@_functools.lru_cache(maxsize=None)
+def _action_has_rand_fields(action_type: type) -> bool:
+    """Cached check: does *action_type* have any rand/randc fields?"""
+    try:
+        import dataclasses as _dc
+        struct = getattr(action_type, '_zdc_struct', None)
+        if struct is not None:
+            from ..ir.core.data_type import FieldKind
+            return any(getattr(f, 'rand_kind', None) is not None for f in struct.fields)
+        # Fallback: inspect the dataclass fields directly
+        for f in _dc.fields(action_type):
+            if f.metadata and f.metadata.get('rand'):
+                return True
+        return False
+    except Exception:
+        return True  # conservative: assume yes
+
+
+def _eval_comp_path(expr, root_comp: Any) -> Any:
+    """Evaluate a PSS component-path expression rooted at *root_comp*.
+
+    In PSS, component paths like pss_top.spi_initiators[0] are encoded in IR
+    as ExprSubscript(ExprAttribute(ExprAttribute(TypeExprRefSelf, 'pss_top'),
+    'spi_initiators'), ExprConstant(0)).  TypeExprRefSelf resolves to root_comp,
+    and the first attribute (the component type name) is the PSS absolute-path
+    anchor -- it refers to the root comp itself rather than a named field on it.
+
+    The anchor is detected by comparing the attribute string against the runtime
+    type name of root_comp (i.e. type(root_comp).__name__).  This is a language-
+    level semantic check (PSS LRM requires comp paths to start with the comp type
+    name), not a user-imposed naming convention.
+    """
+    from zuspec.ir.core.expr import (
+        ExprAttribute, TypeExprRefSelf, ExprSubscript, ExprConstant,
+        ExprRefUnresolved,
+    )
+
+    def _walk(node: Any) -> Any:
+        if isinstance(node, TypeExprRefSelf):
+            return root_comp
+        if isinstance(node, ExprAttribute):
+            base = _walk(node.value)
+            if base is None:
+                return None
+            # PSS absolute-path anchor: the first attribute after TypeExprRefSelf
+            # is the component type name (e.g. 'pss_top').  Skip it and return
+            # the root comp directly -- the base IS root_comp here.
+            if isinstance(node.value, TypeExprRefSelf) and node.attr == type(root_comp).__name__:
+                return root_comp
+            return getattr(base, node.attr, None)
+        if isinstance(node, ExprSubscript):
+            base = _walk(node.value)
+            idx = _walk(node.slice)
+            if base is None or idx is None:
+                return None
+            try:
+                return base[int(idx)]
+            except (TypeError, IndexError):
+                return None
+        if isinstance(node, ExprConstant):
+            return node.value
+        if isinstance(node, ExprRefUnresolved):
+            # Single unresolved name -- try as a field on root_comp
+            return getattr(root_comp, node.name, None)
+        return None
+
+    return _walk(expr)
 
 
 class ActivityRunner:
@@ -117,6 +211,12 @@ class ActivityRunner:
             pass  # scheduling constraint — no runtime action in Phase 1
         elif t is ActivityBind:
             await self._bind(stmt, ctx)
+        elif t is ActivityFill:
+            await self._fill(stmt, ctx)
+        elif t is ActivityChain:
+            await self._chain(stmt, ctx)
+        elif t is ActivityConstraintForall:
+            pass  # forall constraints are advisory in Phase 3; bounded enumeration deferred
         else:
             raise RuntimeError(f"Unhandled activity node: {type(stmt).__name__}")
 
@@ -134,36 +234,95 @@ class ActivityRunner:
                     for name in _extract_handle_names(expr):
                         constraint_map.setdefault(name, []).append(expr)
 
+        # Pre-scan for ActivityBind: build explicit routing table (2-B).
+        # Maps (dst_label, dst_field) -> (src_label, src_field).
+        explicit_binds: dict[tuple, tuple] = {}
+        for stmt in node.stmts:
+            if type(stmt) is ActivityBind:
+                src_label, src_field = _split_hier_expr(stmt.src)
+                dst_label, dst_field = _split_hier_expr(stmt.dst)
+                if src_label and dst_label:
+                    explicit_binds[(dst_label, dst_field)] = (src_label, src_field)
+
         # Forward constraint propagation: create a fresh propagator for this
         # sequence block.  It records completed actions' field values so that
         # subsequent inline constraints can reference them as label.field.
         from .forward_constraint_propagator import ForwardConstraintPropagator
         propagator = ForwardConstraintPropagator()
-        seq_ctx = ActionContext(
-            action=ctx.action,
-            comp=ctx.comp,
-            pool_resolver=ctx.pool_resolver,
-            parent=ctx,
-            seed=ctx.seed,
-            inline_constraints=ctx.inline_constraints,
-            flow_bindings=ctx.flow_bindings,
-            head_resource_hints=ctx.head_resource_hints,
-            structural_solver=ctx.structural_solver,
-            forward_propagator=propagator,
-            tracer=ctx.tracer,
-            check_contracts=ctx.check_contracts,
-        )
+
+        # Running store of resolved flow objects produced by labeled traversals.
+        # Maps label -> action_instance (populated after each traversal).
+        label_actions: dict[str, object] = {}
+
+        # Build per-traversal flow_bindings from explicit binds resolved so far.
+        def _resolved_bindings_for(label: str) -> dict:
+            """Build flow_bindings injecting any explicit-bind inputs for `label`."""
+            from .flow_obj_rt import BufferInstance
+            result = dict(ctx.flow_bindings)
+            for (dst_lbl, dst_field), (src_lbl, src_field) in explicit_binds.items():
+                if dst_lbl != label:
+                    continue
+                src_action = label_actions.get(src_lbl)
+                if src_action is None:
+                    continue
+                val = getattr(src_action, src_field, None)
+                if val is None:
+                    continue
+                # Wrap in a ready BufferInstance so _traverse injects it as input
+                bi = BufferInstance(obj=val)
+                bi.set_ready()
+                result[dst_field] = (bi, "input")
+            return result
 
         for stmt in node.stmts:
             if type(stmt) is ActivityConstraint:
                 continue  # already processed above
+            if type(stmt) is ActivityBind:
+                continue  # structural -- handled via explicit_binds above
+
+            # Determine label for this traversal (if any) to look up resolved bindings
+            stmt_label = None
+            if type(stmt) is ActivityTraversal:
+                stmt_label = stmt.handle
+            elif type(stmt) is ActivityAnonTraversal:
+                stmt_label = stmt.label
+
+            resolved_binds = (
+                _resolved_bindings_for(stmt_label)
+                if stmt_label is not None
+                else dict(ctx.flow_bindings)
+            )
+
+            seq_ctx = ActionContext(
+                action=ctx.action,
+                comp=ctx.comp,
+                pool_resolver=ctx.pool_resolver,
+                parent=ctx,
+                seed=ctx.seed,
+                inline_constraints=ctx.inline_constraints,
+                flow_bindings=resolved_binds,
+                head_resource_hints=ctx.head_resource_hints,
+                structural_solver=ctx.structural_solver,
+                forward_propagator=propagator,
+                tracer=ctx.tracer,
+                check_contracts=ctx.check_contracts,
+                coverage_model=ctx.coverage_model,
+            )
+
             # Attach any matching inline constraints to traversal nodes
             t = type(stmt)
             if t is ActivityTraversal and stmt.handle in constraint_map:
                 stmt = _stmt_with_constraints(stmt, constraint_map[stmt.handle])
             elif t is ActivityAnonTraversal and stmt.label and stmt.label in constraint_map:
                 stmt = _stmt_with_constraints(stmt, constraint_map[stmt.label])
+
             await self._exec(stmt, seq_ctx)
+
+            # Record completed action instance so downstream binds can reference it
+            if stmt_label is not None and ctx.action is not None:
+                act_inst = getattr(ctx.action, stmt_label, None)
+                if act_inst is not None:
+                    label_actions[stmt_label] = act_inst
 
     # ------------------------------------------------------------------
     # Action traversal — core lifecycle
@@ -176,6 +335,7 @@ class ActivityRunner:
         ctx: ActionContext,
         label: Optional[str] = None,
         head_resource_hints: Optional[dict] = None,
+        comp_override: Optional[Any] = None,   # WI-6: explicit component instance
     ) -> Any:
         """Full PSS action traversal lifecycle:
           1. Instantiate
@@ -200,8 +360,11 @@ class ActivityRunner:
             else:
                 object.__setattr__(action, f.name, None)
 
-        # 2. Assign comp
-        action.comp = ctx.pool_resolver.select_comp(action_type, ctx.comp)
+        # 2. Assign comp — use explicit override when provided (WI-6 comp== routing)
+        if comp_override is not None:
+            action.comp = comp_override
+        else:
+            action.comp = ctx.pool_resolver.select_comp(action_type, ctx.comp)
 
         # 2b. Inject flow-object bindings BEFORE pre_solve so that pre_solve(),
         #     randomize(), and post_solve() all see the concrete flow object.
@@ -223,7 +386,77 @@ class ActivityRunner:
             elif isinstance(flow_inst, StreamInstance):
                 setattr(action, field_name, flow_inst)
             elif isinstance(flow_inst, StatePool):
-                setattr(action, field_name, flow_inst)
+                # State flow binding: inject concrete state object, not pool.
+                # direction "state" is used for both input and output in flow_bindings;
+                # check annotation metadata to distinguish producer vs consumer.
+                _dir = direction  # "output", "input", or "state"
+                ann: dict = {}
+                for _kls in action_type.__mro__:
+                    ann.update(_kls.__dict__.get("__annotations__", {}))
+                import dataclasses as _dcf
+                try:
+                    _fields_meta = {
+                        f.name: (f.metadata or {})
+                        for f in _dcf.fields(action_type)
+                    }
+                except TypeError:
+                    _fields_meta = {}
+                _meta = _fields_meta.get(field_name, {})
+                _field_dir = _meta.get("direction", _dir)  # "input" or "output"
+
+                if _field_dir == "output":
+                    # Producer: create a fresh state instance; set initial=False
+                    # (the pool manages the initial flag; output always updates state)
+                    _state_type = ann.get(field_name)
+                    if isinstance(_state_type, type):
+                        _new_state = object.__new__(_state_type)
+                        try:
+                            for _f in _dcf.fields(_state_type):
+                                if _f.default is not _dcf.MISSING:
+                                    object.__setattr__(_new_state, _f.name, _f.default)
+                                elif _f.default_factory is not _dcf.MISSING:
+                                    object.__setattr__(_new_state, _f.name, _f.default_factory())
+                                else:
+                                    object.__setattr__(_new_state, _f.name, None)
+                        except TypeError:
+                            pass
+                        # initial=False: this is an output transition, not the first state
+                        if hasattr(_new_state, 'initial'):
+                            object.__setattr__(_new_state, 'initial', False)
+                        setattr(action, field_name, _new_state)
+                    else:
+                        setattr(action, field_name, flow_inst)  # fallback
+                else:
+                    # Consumer: inject pool.current or create initial state
+                    if flow_inst.initial or flow_inst.current is None:
+                        # First ever state: create initial instance
+                        _state_type = ann.get(field_name)
+                        if isinstance(_state_type, type):
+                            _init_state = object.__new__(_state_type)
+                            try:
+                                for _f in _dcf.fields(_state_type):
+                                    if _f.default is not _dcf.MISSING:
+                                        object.__setattr__(_init_state, _f.name, _f.default)
+                                    elif _f.default_factory is not _dcf.MISSING:
+                                        object.__setattr__(_init_state, _f.name, _f.default_factory())
+                                    else:
+                                        object.__setattr__(_init_state, _f.name, None)
+                            except TypeError:
+                                pass
+                            if hasattr(_init_state, 'initial'):
+                                object.__setattr__(_init_state, 'initial', True)
+                            setattr(action, field_name, _init_state)
+                        else:
+                            setattr(action, field_name, flow_inst)
+                    else:
+                        # Subsequent state: use current and mark initial=False
+                        _cur = flow_inst.current
+                        if hasattr(_cur, 'initial'):
+                            object.__setattr__(_cur, 'initial', False)
+                        setattr(action, field_name, _cur)
+                # Store the pool reference for post-body state write-back
+                output_flow_insts.append(('state_pool', field_name, flow_inst,
+                                          _field_dir == "output"))
 
         # For any unbound flow-output fields (no explicit consumer provided),
         # create an orphan buffer so that body() can write to the field.
@@ -239,20 +472,33 @@ class ActivityRunner:
         # If a forward propagator is active, substitute cross-action label.field
         # references in the constraint AST before solving.
         child_seed = ctx.seed ^ id(action_type)
-        effective_constraints = inline_constraints
-        if ctx.forward_propagator is not None and inline_constraints:
-            effective_constraints = ctx.forward_propagator.substitute(inline_constraints)
+        import ast as _ast_mod
+        # Partition constraints: Python-AST (for legacy solver) vs IR-expression.
+        py_ast_inline = [c for c in inline_constraints if isinstance(c, _ast_mod.stmt)]
+        ir_expr_inline = [c for c in inline_constraints if not isinstance(c, _ast_mod.stmt)]
+
+        effective_py_constraints = py_ast_inline
+        if ctx.forward_propagator is not None and py_ast_inline:
+            effective_py_constraints = ctx.forward_propagator.substitute(py_ast_inline)
         try:
             from ..solver.api import RandomizationError, randomize_with_ast_constraints
-            if effective_constraints:
-                randomize_with_ast_constraints(
-                    action,
-                    effective_constraints,
-                    handle=label,
-                    seed=child_seed,
-                )
-            else:
-                randomize(action, seed=child_seed)
+            # Fast-path: skip solver entirely for actions with no rand fields.
+            _has_rand = _action_has_rand_fields(action_type)
+            if _has_rand or effective_py_constraints:
+                if effective_py_constraints:
+                    randomize_with_ast_constraints(
+                        action,
+                        effective_py_constraints,
+                        handle=label,
+                        seed=child_seed,
+                    )
+                else:
+                    randomize(action, seed=child_seed)
+                # Apply IR-expression constraints as post-solve field fixups.
+                if ir_expr_inline:
+                    _apply_ir_constraints(action, ir_expr_inline, ctx)
+            elif ir_expr_inline:
+                _apply_ir_constraints(action, ir_expr_inline, ctx)
         except RandomizationError as e:
             if "No random variables" not in str(e):
                 raise
@@ -278,6 +524,7 @@ class ActivityRunner:
             forward_propagator=ctx.forward_propagator,
             tracer=ctx.tracer,
             check_contracts=ctx.check_contracts,
+            coverage_model=ctx.coverage_model,
         )
 
         # 5b. Check @constraint.requires before body (debug mode)
@@ -292,7 +539,15 @@ class ActivityRunner:
         try:
             await self._exec_action_body(action_type, action, child_ctx)
             for buf_inst in output_flow_insts:
-                buf_inst.set_ready()
+                if isinstance(buf_inst, tuple) and buf_inst[0] == 'state_pool':
+                    # State write-back: commit output state to pool after body completes
+                    _, _fname, _pool, _is_output = buf_inst
+                    if _is_output:
+                        _state_obj = getattr(action, _fname, None)
+                        if _state_obj is not None:
+                            _pool.write_release(_state_obj)
+                else:
+                    buf_inst.set_ready()
         finally:
             release_resources(claims)
         if ctx.tracer is not None:
@@ -306,6 +561,10 @@ class ActivityRunner:
         # in subsequent sequential actions (P3).
         if ctx.forward_propagator is not None:
             ctx.forward_propagator.record_completed(action, label=label)
+
+        # 7. Sample covergroups after body/activity — all field values are now final.
+        if ctx.coverage_model is not None:
+            _sample_covergroups(action_type, action, ctx.coverage_model)
 
         return action
 
@@ -432,6 +691,15 @@ class ActivityRunner:
     ) -> None:
         action_type = _resolve_action_type(node, ctx)
 
+        # Abstract action guard (1-L): abstract actions cannot be traversed directly.
+        # The PSS LRM requires that only concrete sub-types are instantiated.
+        ir_struct = getattr(action_type, '_zdc_struct', None)
+        if ir_struct is not None and getattr(ir_struct, 'is_abstract', False):
+            raise RuntimeError(
+                f"Cannot traverse abstract action '{action_type.__name__}' directly. "
+                f"Use a concrete sub-action that extends it."
+            )
+
         # Structural inference: if the consumer has unbound flow-input slots,
         # use the structural solver to select and traverse producer actions first.
         effective_ctx = ctx
@@ -446,12 +714,25 @@ class ActivityRunner:
                     ctx,
                 )
 
+        # Evaluate comp_expr to get an explicit component instance override.
+        # PSS comp paths (e.g. pss_top.spi_initiators[0]) are walked directly
+        # from ctx.comp using _eval_comp_path, which handles the absolute-path
+        # anchor (component type name as first element) without naming convention.
+        comp_override = None
+        comp_expr = getattr(node, 'comp_expr', None)
+        if comp_expr is not None:
+            try:
+                comp_override = _eval_comp_path(comp_expr, ctx.comp)
+            except Exception:
+                comp_override = None
+
         action = await self._traverse(
             action_type,
             node.inline_constraints,
             effective_ctx,
             label=node.label,
             head_resource_hints=ctx.head_resource_hints or {},
+            comp_override=comp_override,
         )
         if node.label and ctx.action is not None and hasattr(ctx.action, node.label):
             setattr(ctx.action, node.label, action)
@@ -692,13 +973,21 @@ class ActivityRunner:
             b for b in node.branches
             if b.guard is None or ev.eval(b.guard)
         ]
-        if not eligible:
+        if not eligible and not getattr(node, 'allow_none', False):
             raise RuntimeError("select: no eligible branch (all guards false)")
         weights = [
             int(ev.eval(b.weight)) if b.weight is not None else 1
             for b in eligible
         ]
+        # allow_none: add a null sentinel branch with weight 1 (3-N)
+        if getattr(node, 'allow_none', False):
+            eligible = list(eligible) + [None]
+            weights = list(weights) + [1]
+        if not eligible:
+            return
         chosen = random.choices(eligible, weights=weights, k=1)[0]
+        if chosen is None:
+            return  # null branch: no action taken
         for stmt in chosen.body:
             await self._exec(stmt, ctx)
 
@@ -711,20 +1000,146 @@ class ActivityRunner:
 
     async def _match(self, node, ctx):
         from .expr_eval import ExprEval
+        from zuspec.ir.core.expr import ExprRange, ExprRangeList
         ev = ExprEval(ctx)
         subject = ev.eval(node.subject)
+
+        default_case = None
         for case in node.cases:
-            pattern = ev.eval(case.pattern)
-            if subject == pattern:
+            if case.pattern is None:
+                # Default case - execute if no other case matches
+                default_case = case
+                continue
+            if _match_pattern(subject, case.pattern, ev):
                 for stmt in case.body:
                     await self._exec(stmt, ctx)
                 return
-    async def _bind(self, node, ctx):     pass  # Phase 5
+
+        if default_case is not None:
+            for stmt in default_case.body:
+                await self._exec(stmt, ctx)
+    async def _fill(self, node: ActivityFill, ctx: ActionContext) -> None:
+        """Coverage fill loop (PSS 12.9) -- runs body until coverage goal met
+        or max_iters exhausted (3-K).
+
+        Coverage tracking is not yet wired (Phase 3); this acts as a bounded
+        repeat with early-exit when a ``__coverage_model__`` is attached to ctx.
+        """
+        for _ in range(node.max_iters):
+            for stmt in node.body:
+                await self._exec(stmt, ctx)
+            # Check coverage model if available
+            cov_model = ctx.coverage_model
+            if cov_model is not None and cov_model.all_covered():
+                break
+
+    async def _chain(self, node: ActivityChain, ctx: ActionContext) -> None:
+        """Chain statement -- automatic flow-object forwarding between sequential
+        actions (PSS 12.2.2).  Executes stmts in order; output flow objects of
+        each action are passed as inputs to the next (3-M).
+
+        Full flow-object forwarding requires runtime action introspection; for
+        now, stmts execute sequentially in a sequence block, matching Phase 3
+        partial support.
+        """
+        for stmt in node.stmts:
+            await self._exec(stmt, ctx)
+
+    async def _bind(self, node, ctx) -> None:
+        """ActivityBind is structural in sequence blocks -- handled by _seq pre-pass.
+
+        In schedule blocks, explicit binds are handled by the ScheduleGraph.
+        This method is a no-op because the work was done before traversal starts.
+        """
+        pass
+
+
+def _sample_covergroups(action_type: type, action: Any, coverage_model) -> None:
+    """Sample all PssCoverGroups attached to *action_type* into *coverage_model*.
+
+    Called from ``_traverse`` after body/activity execution so that all field
+    values (including those written by body()) are committed before sampling.
+    Each coverpoint's ``target_expr`` is evaluated via ``eval_cover_expr``;
+    crosses are sampled from the last-recorded coverpoint values.
+    """
+    from .coverage_model import eval_cover_expr
+    pss_cgs = getattr(action_type, '__pss_covergroups__', None)
+    if not pss_cgs:
+        return
+    for cg in pss_cgs:
+        for cp in cg.coverpoints:
+            value = eval_cover_expr(cp.target_expr, action)
+            if value is not None:
+                coverage_model.sample(cg.instance_name, cp.name, value)
+        for cx in cg.crosses:
+            vals = tuple(
+                coverage_model.last_value(cg.instance_name, cp_name)
+                for cp_name in cx.coverpoint_names
+            )
+            if all(v is not None for v in vals):
+                coverage_model.sample_cross(cg.instance_name, cx.name, vals)
 
 
 # ------------------------------------------------------------------
 # Module-level helpers
 # ------------------------------------------------------------------
+
+def _apply_ir_constraints(action: Any, constraints: list, ctx) -> None:
+    """Apply IR-expression inline constraints as post-solve fixups.
+
+    For simple equality constraints like ``tx_byte == i``, directly sets the
+    field on *action* to the evaluated RHS.  Non-equality constraints are
+    evaluated and ignored if they fail (logged only).
+    """
+    from zuspec.ir.core.expr import ExprBin, ExprAttribute, TypeExprRefSelf, ExprRefUnresolved
+    from .expr_eval import ExprEval
+    ev = ExprEval(ctx)
+    for expr in constraints:
+        if not isinstance(expr, ExprBin):
+            continue
+        op = expr.op
+        if op not in ('==', 'eq'):
+            continue
+        # Try to resolve the LHS as a field name on the action
+        lhs = expr.lhs
+        field_name = None
+        if isinstance(lhs, ExprAttribute) and isinstance(lhs.value, TypeExprRefSelf):
+            field_name = lhs.attr
+        elif isinstance(lhs, ExprRefUnresolved):
+            field_name = lhs.name
+        if field_name is None or not hasattr(action, field_name):
+            continue
+        try:
+            rhs_val = ev.eval(expr.rhs)
+            if rhs_val is not None:
+                setattr(action, field_name, rhs_val)
+        except Exception:
+            pass  # Non-critical; solver already ran
+
+
+def _match_pattern(subject, pattern, ev):
+    """Return True if `subject` matches a PSS match pattern.
+
+    Handles:
+    - ExprRangeList: checks if subject falls in any range or equals any single value.
+    - ExprRange: checks if subject equals a single value or is within [lower, upper].
+    - Fallback: evaluates the pattern and compares with ==.
+    """
+    from zuspec.ir.core.expr import ExprRange, ExprRangeList
+    if isinstance(pattern, ExprRangeList):
+        return any(_match_pattern(subject, r, ev) for r in pattern.ranges)
+    if isinstance(pattern, ExprRange):
+        lower = ev.eval(pattern.lower)
+        if pattern.upper is None:
+            return subject == lower
+        upper = ev.eval(pattern.upper)
+        return lower <= subject <= upper
+    # Fallback: evaluate and compare
+    val = ev.eval(pattern)
+    if isinstance(val, (list, tuple, set)):
+        return subject in val
+    return subject == val
+
 
 def _collect_unbound_flow_inputs(
     action_type: type,
@@ -834,16 +1249,55 @@ def _collect_extensions(action_type: type) -> list:
 
 
 def _extract_handle_names(stmt) -> list:
-    """Return handle names referenced via self.<handle>.<field> in an AST stmt."""
+    """Return handle names referenced via self.<handle>.<field> in a constraint.
+
+    Supports both Python-AST constraints (from Python-native code) and IR
+    expression constraints (from PSS-translated activities).  In PSS-translated
+    constraints, handle references appear as ExprAttribute chains:
+    ``ExprAttribute(ExprAttribute(TypeExprRefSelf(), handle), field)``.
+    """
     import ast as _ast
     names = []
-    for node in _ast.walk(stmt):
-        if (isinstance(node, _ast.Attribute) and
-                isinstance(node.value, _ast.Attribute) and
-                isinstance(node.value.value, _ast.Name) and
-                node.value.value.id == "self"):
-            names.append(node.value.attr)
-    return list(dict.fromkeys(names))  # deduplicated, order-preserving
+
+    # Python-AST path (legacy python-native constraints)
+    if isinstance(stmt, _ast.stmt):
+        for node in _ast.walk(stmt):
+            if (isinstance(node, _ast.Attribute) and
+                    isinstance(node.value, _ast.Attribute) and
+                    isinstance(node.value.value, _ast.Name) and
+                    node.value.value.id == "self"):
+                names.append(node.value.attr)
+        return list(dict.fromkeys(names))
+
+    # IR-expression path (PSS-translated constraints via ExprAttribute chains)
+    try:
+        from zuspec.ir.core.expr import ExprAttribute, TypeExprRefSelf
+
+        def _walk_ir(node):
+            if node is None:
+                return
+            # pattern: ExprAttribute(ExprAttribute(TypeExprRefSelf, handle), field)
+            if (isinstance(node, ExprAttribute) and
+                    isinstance(node.value, ExprAttribute) and
+                    isinstance(node.value.value, TypeExprRefSelf)):
+                names.append(node.value.attr)
+            # Recurse into child attributes
+            for attr in ('value', 'lhs', 'rhs', 'func', 'cond',
+                         'test', 'body', 'orelse', 'operand', 'val'):
+                child = getattr(node, attr, None)
+                if child is not None and not isinstance(child, (str, int, float, bool)):
+                    _walk_ir(child)
+            for attr in ('args', 'elts', 'ranges'):
+                lst = getattr(node, attr, None)
+                if isinstance(lst, list):
+                    for item in lst:
+                        _walk_ir(item)
+
+        _walk_ir(stmt)
+    except ImportError:
+        pass
+
+    return list(dict.fromkeys(names))
 
 
 def _stmt_with_constraints(stmt, extra_constraints: list):

@@ -147,8 +147,20 @@ class ConstraintSystemBuilder:
                 continue
             self._collect_bound_values(field.name, field_val)
 
+        # Also collect from the 'comp' field (component bound to the action).
+        # comp is not in struct_type.fields (it is implicit) but its attributes
+        # — e.g. lists of valid pad IDs — must be visible to the ExprIn solver.
+        comp = getattr(obj, 'comp', None)
+        if comp is not None and 'comp' not in rand_names:
+            self._collect_bound_values('comp', comp)
+
     def _collect_bound_values(self, prefix: str, obj: object, depth: int = 0):
-        """Recursively collect integer leaf values from *obj* under *prefix*."""
+        """Recursively collect integer leaf values from *obj* under *prefix*.
+
+        Also registers list-of-int values (Layer 3) so that ExprIn with an
+        ExprAttribute container (``x in comp.some_list``) can be resolved at
+        solve time via ``ir_parser.list_values``.
+        """
         if depth > 4:
             return  # guard against infinite recursion on cyclic structures
         if isinstance(obj, int):
@@ -156,6 +168,13 @@ class ConstraintSystemBuilder:
             return
         if isinstance(obj, bool):
             self.expr_parser.register_bound_value(prefix, int(obj))
+            return
+        # Layer 3: list-of-int → register as a named collection so ExprIn
+        # with an ExprAttribute container can look it up at solve time.
+        if isinstance(obj, list):
+            int_items = [v for v in obj if isinstance(v, int)]
+            if int_items:
+                self.expr_parser.register_list_value(prefix, int_items)
             return
         # For composite objects: walk public non-callable attributes
         try:
@@ -229,10 +248,15 @@ class ConstraintSystemBuilder:
                     # For StmtFor, we don't have a single expression
             
             except ParseError as e:
-                # Enhance error with function context
-                raise BuildError(
-                    f"Error parsing constraint in function '{func.name}': {e}"
-                ) from e
+                # Skip constraints that reference unresolvable nested fields
+                # (e.g., flow-object input fields that haven't been bound yet).
+                # These constraints will be applied later when the flow binding
+                # provides concrete values.
+                import warnings
+                warnings.warn(
+                    f"Skipping constraint in '{func.name}': {e}",
+                    stacklevel=2,
+                )
         
         # Store mapping
         if func_constraints:

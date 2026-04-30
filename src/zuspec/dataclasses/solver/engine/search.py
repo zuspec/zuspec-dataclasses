@@ -217,17 +217,25 @@ class BacktrackingSearch:
         if result.status == PropagationStatus.CONFLICT:
             return None  # UNSAT
 
-        # Build the full variable dict for backtracking state:
-        # includes all engine variables (temp bool vars, consts, etc.)
-        # so they are properly saved/restored on backtrack.
+        # Build the full variable dict for backtracking state.
         all_vars = dict(self.engine.variables)
-        # Merge in the rand variables (they may already be in engine.variables)
         all_vars.update(variables)
 
-        # Create search state with all variables but only decision vars assigned
-        state = SearchState(all_vars, decision_vars=set(variables.keys()))
+        # Fast path: if propagation already reduced every decision variable to a
+        # singleton domain, we can read off the assignment without any search.
+        assignment = {}
+        all_singletons = True
+        for vname in variables:
+            v = all_vars.get(vname)
+            if v is None or v.domain.size() != 1:
+                all_singletons = False
+                break
+            assignment[vname] = next(iter(v.domain.values()))
+        if all_singletons:
+            return assignment
 
-        # Run backtracking search
+        # Slow path: backtracking search.
+        state = SearchState(all_vars, decision_vars=set(variables.keys()))
         solution = self._search(state)
 
         if solution:

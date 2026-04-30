@@ -25,7 +25,21 @@ from ._core_solve import (
 )
 
 # Back-end registry — used by randomize()
-from .backend.registry import get_backend
+from .backend.registry import get_backend as _get_backend_raw
+
+# Cache the backend lookup: avoid repeated os.environ + backend list scan
+# on every randomize() call.  This is safe because the backend does not
+# change at runtime in normal use.
+_BACKEND_CACHE = None
+
+def get_backend(name=None):
+    global _BACKEND_CACHE
+    if name is None and _BACKEND_CACHE is not None:
+        return _BACKEND_CACHE
+    result = _get_backend_raw(name)
+    if name is None:
+        _BACKEND_CACHE = result
+    return result
 
 
 def randomize(obj: Any, 

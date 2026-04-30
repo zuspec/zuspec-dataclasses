@@ -43,8 +43,12 @@ class ResourceFieldInfo(NamedTuple):
     field_type: type # the Resource subclass
 
 
-def get_resource_fields(action_type: type) -> list[ResourceFieldInfo]:
-    """Return all lock/share fields declared on *action_type*."""
+import functools as _functools
+
+
+@_functools.lru_cache(maxsize=None)
+def get_resource_fields(action_type: type) -> list:
+    """Return all lock/share fields declared on *action_type* (cached per class)."""
     try:
         fields = dc.fields(action_type)
     except TypeError:
@@ -82,6 +86,10 @@ async def acquire_resources(
     if not resource_fields:
         return []
 
+    # Per-field filter predicates optionally set by action.pre_solve() via
+    # the _resource_filters dict: maps field_name -> callable(resource, index) -> bool.
+    action_filters: dict = getattr(action, '_resource_filters', {})
+
     entries = []
     for fi in resource_fields:
         pool = ctx.pool_resolver.resolve_pool(action, fi.name)
@@ -97,7 +105,15 @@ async def acquire_resources(
     claims: list[tuple] = []
     for pool, fi, instance_id in entries:
         filter_fn: Optional[Any] = None
-        if instance_id is not None:
+        user_filter = action_filters.get(fi.name)
+        if user_filter is not None:
+            # Per-field filter from _resource_filters (e.g. set by post_solve from a
+            # PSS constraint x in comp.valid_list).  This is authoritative: it
+            # specifies exactly which resource satisfies the constraint, so it takes
+            # precedence over the BindingSolver's instance_id hint (which was a random
+            # AllDifferent pre-allocation that may not respect the filter domain).
+            filter_fn = user_filter
+        elif instance_id is not None:
             filter_fn = lambda _r, i, _iid=instance_id: i == _iid
         if fi.claim == "lock":
             claim = await pool.lock(filter=filter_fn)

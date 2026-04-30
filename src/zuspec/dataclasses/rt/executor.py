@@ -27,9 +27,18 @@ def _pss_message(severity: int, fmt: str, *args) -> None:
     """PSS message() builtin — prints fmt (with optional printf-style args)."""
     print(fmt % args if args else fmt)
 
+
+def _pss_print(fmt: str, *args) -> None:
+    """PSS print() builtin (std_pkg) -- printf-style output to stdout."""
+    # Interpret C-style escape sequences (PSS uses printf semantics)
+    text = (fmt % args if args else fmt).encode('raw_unicode_escape').decode('unicode_escape')
+    print(text, end='')
+
+
 # Map PSS builtin function names to Python callables.
 _PSS_BUILTINS: dict[str, Any] = {
     'message': _pss_message,
+    'print':   _pss_print,
 }
 
 # PSS std_pkg severity constants (message_verbosity_e).
@@ -178,6 +187,11 @@ class Executor:
                 base = self.evaluate_expr(target.value)
                 index = self.evaluate_expr(target.slice)
                 base[int(index)] = value
+            elif isinstance(target, ExprAttribute):
+                # Handle attribute assignment on any base incl. subscripts
+                # e.g. spi[0].intf_idx = 0  where base evaluates to spi[0]
+                base = self.evaluate_expr(target.value)
+                setattr(base, target.attr, value)
             else:
                 field_path = self.get_field_path(target)
                 self._write_signal(field_path, value)
@@ -621,10 +635,30 @@ class ObjectExecutor(Executor):
             return _PSS_BUILTINS[name]
         return _PSS_CONSTANTS.get(name)
 
+    # PSS collection method → Python list/dict method mapping
+    _PSS_LIST_METHODS: dict = {
+        'push_back':  lambda lst, v: lst.append(v) or None,
+        'pop_back':   lambda lst: lst.pop(),
+        'push_front': lambda lst, v: (lst.insert(0, v), None)[-1],
+        'pop_front':  lambda lst: lst.pop(0),
+        'size':       lambda lst: len(lst),
+        'empty':      lambda lst: len(lst) == 0,
+        'clear':      lambda lst: lst.clear() or None,
+        'delete':     lambda lst, i: lst.pop(i),
+    }
+
     def _read_signal(self, field_path: str) -> Any:
-        """Read an attribute from the target object, supporting dotted paths."""
+        """Read an attribute from the target object, supporting dotted paths.
+
+        PSS collection methods (push_back, size, etc.) are transparently
+        mapped to their Python equivalents when the intermediate object is a list.
+        """
         obj = self.component
-        for part in field_path.split('.'):
+        parts = field_path.split('.')
+        for idx, part in enumerate(parts):
+            if isinstance(obj, list) and part in self._PSS_LIST_METHODS:
+                _fn = self._PSS_LIST_METHODS[part]
+                return lambda *args, fn=_fn, b=obj: fn(b, *args)
             obj = getattr(obj, part, 0)
         return obj
 

@@ -19,6 +19,37 @@ from .lock_rt import LockRT
 from .event_rt import EventRT
 from ._bundle_proxy import BundleProxy
 
+# Module-level cache for per-class introspection results that are stable
+# across instances (field lists, type hints, class attribute scans).
+@functools.lru_cache(maxsize=None)
+def _cached_dc_fields(cls):
+    """Cached dataclasses.fields() per class."""
+    return dc.fields(cls)
+
+@functools.lru_cache(maxsize=None)
+def _cached_type_hints(cls):
+    """Cached get_type_hints() per class, avoiding repeated importlib work."""
+    try:
+        from typing import get_type_hints as _gth
+        return _gth(cls, include_extras=True)
+    except Exception:
+        return {}
+
+@functools.lru_cache(maxsize=None)
+def _cached_exec_attrs(cls):
+    """Cached scan for ExecProc/ExecSync/ExecComb attrs (determines has_eval)."""
+    procs = []
+    has_eval = False
+    for attr_name in dir(cls):
+        attr = getattr(cls, attr_name, None)
+        if isinstance(attr, ExecProc):
+            procs.append((attr_name, attr))
+        elif callable(attr) and getattr(attr, '_zdc_async_pipeline', False):
+            procs.append((attr_name, ExecProc(attr)))
+        elif isinstance(attr, (ExecSync, ExecComb)):
+            has_eval = True
+    return procs, has_eval
+
 if TYPE_CHECKING:
     from .. import Event
     from .tracer import Tracer, Thread
@@ -875,18 +906,10 @@ class ObjFactory(ObjFactoryP):
         if parent is None:
             comp._impl.set_timebase(timebase)
 
-        # Discover @process and @zdc.pipeline decorated methods
-        # Note: @sync and @comb methods are discovered through datamodel, not here
-        has_eval = False
-        for attr_name in dir(type(comp)):
-            attr = getattr(type(comp), attr_name, None)
-            if isinstance(attr, ExecProc):
-                comp._impl.add_proc(attr_name, attr)
-            elif callable(attr) and getattr(attr, '_zdc_async_pipeline', False):
-                # Wrap the bare async pipeline method in ExecProc for uniform handling
-                comp._impl.add_proc(attr_name, ExecProc(attr))
-            elif isinstance(attr, (ExecSync, ExecComb)):
-                has_eval = True
+        # Discover @process and @zdc.pipeline decorated methods (result cached per class).
+        procs, has_eval = _cached_exec_attrs(type(comp))
+        for attr_name, attr in procs:
+            comp._impl.add_proc(attr_name, attr)
         
         # Initialize evaluation infrastructure if component has sync/comb processes
         if has_eval:
@@ -895,8 +918,8 @@ class ObjFactory(ObjFactoryP):
         # Initialize instance fields that require parent context before discovering children
         ObjFactory.__init_instance_fields__(comp)
 
-        # Build child components first (bottom-up)
-        for f in dc.fields(comp):
+        # Build child components first (bottom-up, fields cached per class).
+        for f in _cached_dc_fields(type(comp)):
             fo = getattr(comp, f.name)
             if isinstance(fo, Component):
                 ObjFactory.__comp_build__(fo, comp, f.name, timebase)
@@ -1117,12 +1140,9 @@ class ObjFactory(ObjFactoryP):
         """
         import typing as _typing
         # Resolve string annotations (PEP 563 / from __future__ import annotations)
-        try:
-            _hints = _typing.get_type_hints(type(comp))
-        except Exception:
-            _hints = {}
+        _hints = _cached_type_hints(type(comp))
 
-        for f in dc.fields(comp):
+        for f in _cached_dc_fields(type(comp)):
             kind = f.metadata.get('kind') if f.metadata else None
             if kind not in ('bundle', 'mirror', 'monitor'):
                 continue

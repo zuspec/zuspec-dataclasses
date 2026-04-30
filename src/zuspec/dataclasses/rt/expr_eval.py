@@ -62,9 +62,38 @@ class ExprEval:
                 ExprRefField as _ERF,
                 ExprBin as _EB,
                 ExprUnary as _EU,
+                ExprAttribute as _EA,
+                TypeExprRefSelf as _SELF,
+                ExprRefUnresolved as _ERU,
+                ExprCompare as _ECmp,
+                ExprSubscript as _ES,
             )
             if isinstance(expr, _EC):
                 return expr.value
+            if isinstance(expr, _SELF):
+                return self._ctx.action
+            if isinstance(expr, _EA):
+                # e.g. ExprAttribute(self, 'size') -> self.size
+                base = self.eval(expr.value)
+                if base is not None:
+                    return getattr(base, expr.attr, None)
+                return None
+            if isinstance(expr, _ES):
+                # e.g. ExprSubscript(items, 0) -> items[0]
+                base = self.eval(expr.value)
+                idx = self.eval(expr.slice)
+                if base is not None and idx is not None:
+                    try:
+                        return base[int(idx)]
+                    except (TypeError, IndexError, KeyError):
+                        return None
+                return None
+            if isinstance(expr, _ERU):
+                # Unresolved reference: look up by name on the action
+                action = self._ctx.action
+                if action is not None and hasattr(action, expr.name):
+                    return getattr(action, expr.name)
+                return None
             if isinstance(expr, _ERF):
                 action = self._ctx.action
                 if action is not None:
@@ -84,6 +113,17 @@ class ExprEval:
                 if expr.op == '-':
                     return -val
                 return val
+            if isinstance(expr, _ECmp):
+                lhs = self.eval(expr.lhs)
+                rhs = self.eval(expr.rhs)
+                op = expr.op
+                if op in ('==', 'eq'): return lhs == rhs
+                if op in ('!=', 'ne'): return lhs != rhs
+                if op in ('<',  'lt'): return lhs < rhs
+                if op in ('>',  'gt'): return lhs > rhs
+                if op in ('<=', 'le'): return lhs <= rhs
+                if op in ('>=', 'ge'): return lhs >= rhs
+                return None
         except ImportError:
             pass
 
