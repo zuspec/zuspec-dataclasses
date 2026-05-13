@@ -33,6 +33,7 @@ Version: 2026.1 (January 2026)
    runtime
    checker
    pipeline-api
+   domains
 
 .. toctree::
    :maxdepth: 2

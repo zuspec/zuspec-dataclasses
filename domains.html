@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Clock and Reset Domains &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Interface Protocols" href="interface_protocols.html" />
+    <link rel="prev" title="Pipeline API" href="pipeline-api.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="clock-and-reset-domains">
+<span id="domains"></span><h1>Clock and Reset Domains<a class="headerlink" href="#clock-and-reset-domains" title="Link to this heading">¶</a></h1>
+<p>Domains are the mechanism by which <code class="docutils literal notranslate"><span class="pre">zuspec.dataclasses</span></code> propagates clock and
+reset information through a component hierarchy <strong>without explicit CLK/RST
+wiring</strong>.  Every component that contains <code class="docutils literal notranslate"><span class="pre">&#64;zdc.sync</span></code> logic should derive from
+<code class="xref py py-class docutils literal notranslate"><span class="pre">SyncComponent</span></code>; the framework then connects the
+right clock and reset automatically at elaboration time.</p>
+<section id="conceptual-overview">
+<h2>Conceptual overview<a class="headerlink" href="#conceptual-overview" title="Link to this heading">¶</a></h2>
+<p>Every model has an implicit <strong>time domain</strong> (the <code class="docutils literal notranslate"><span class="pre">Component</span></code> base).  Digital
+logic typically also belongs to a <strong>clock domain</strong> and a <strong>reset domain</strong>.
+Designs closer to implementation may additionally declare a <strong>power domain</strong>
+(reserved for future elaboration passes).</p>
+<p>Domains bind top-down by default: a child component inherits its parent’s
+clock and reset domain unless explicitly overridden.</p>
+</section>
+<section id="quick-start-single-clock-design">
+<h2>Quick start — single-clock design<a class="headerlink" href="#quick-start-single-clock-design" title="Link to this heading">¶</a></h2>
+<p>The simplest case: one clock, one reset, automatic propagation.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;32-bit counter — clock and reset are inherited.&quot;&quot;&quot;</span>
+    <span class="n">count</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">reset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span>          <span class="c1"># fires on the inherited clock_domain</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">tick</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Board-level top.  Declares the concrete clock and reset.&quot;&quot;&quot;</span>
+    <span class="n">CLK</span><span class="p">:</span>   <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">RST_N</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+
+    <span class="n">clock_domain</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">clock_domain</span><span class="p">(</span>
+        <span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">CLK</span><span class="p">,</span>
+        <span class="n">reset</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">RST_N</span><span class="p">,</span>
+        <span class="n">period</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;sys_clk&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">counter</span><span class="p">:</span> <span class="n">Counter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">()</span>   <span class="c1"># inherits clock_domain / reset_domain</span>
+</pre></div>
+</div>
+<p>No <code class="docutils literal notranslate"><span class="pre">__bind__</span></code> needed for the counter — domain flows automatically.</p>
+<p>For designs without physical clock/reset ports (simulation-only or after
+domain resolution) use bare class-level declarations:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+    <span class="n">clock_domain</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ClockDomain</span><span class="p">(</span><span class="n">period</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;sys_clk&quot;</span><span class="p">)</span>
+    <span class="n">reset_domain</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ResetDomain</span><span class="p">(</span><span class="n">style</span><span class="o">=</span><span class="s2">&quot;none&quot;</span><span class="p">)</span>   <span class="c1"># reset-free</span>
+    <span class="n">counter</span><span class="p">:</span> <span class="n">Counter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="named-multi-clock-domains">
+<h2>Named (multi-clock) domains<a class="headerlink" href="#named-multi-clock-domains" title="Link to this heading">¶</a></h2>
+<p>Declare extra <code class="docutils literal notranslate"><span class="pre">ClockDomain</span></code> class variables for each additional clock.
+Bind <code class="docutils literal notranslate"><span class="pre">&#64;zdc.sync</span></code> methods to a specific domain using <code class="docutils literal notranslate"><span class="pre">domain=</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClassVar</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DualClock</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+    <span class="n">fast_clk</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">ClockDomain</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ClockDomain</span><span class="p">(</span>
+        <span class="n">period</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;fast_clk&quot;</span>
+    <span class="p">)</span>
+
+    <span class="n">slow_count</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit32</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">fast_count</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit32</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span>                               <span class="c1"># fires on default clock_domain</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">slow_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">slow_count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">fast_clk</span><span class="p">)</span>  <span class="c1"># fires on fast_clk only</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fast_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fast_count</span> <span class="o">+=</span> <span class="mi">1</span>
+</pre></div>
+</div>
+<p>The default (bare <code class="docutils literal notranslate"><span class="pre">&#64;zdc.sync</span></code>) domain is always <code class="docutils literal notranslate"><span class="pre">clock_domain</span></code>, inherited
+from the parent if not overridden on the component.</p>
+</section>
+<section id="derived-domains-and-zdc-super">
+<h2>Derived domains and <code class="docutils literal notranslate"><span class="pre">zdc.super()</span></code><a class="headerlink" href="#derived-domains-and-zdc-super" title="Link to this heading">¶</a></h2>
+<p>Express PLL or clock-divider relationships with
+<code class="xref py py-class docutils literal notranslate"><span class="pre">DerivedClockDomain</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ClockGen</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+    <span class="c1"># Divide the parent-inherited clock by 4.</span>
+    <span class="n">fast_clk</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">DerivedClockDomain</span><span class="p">(</span>
+        <span class="n">source</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">super</span><span class="p">(),</span>   <span class="c1"># relative to inherited clock_domain</span>
+        <span class="n">div</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;fast_div4&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="xref py py-func docutils literal notranslate"><span class="pre">super()</span></code> is an alias for
+<code class="xref py py-class docutils literal notranslate"><span class="pre">InheritedDomain</span></code> — it expresses “derive from
+whatever domain my parent provides”.  You can also use a lambda to derive
+from a named sibling domain:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">fast_clk</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">DerivedClockDomain</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">pll_out</span><span class="p">,</span>  <span class="c1"># sibling domain on same component</span>
+    <span class="n">mul</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="domain-binding-in-bind">
+<h2>Domain binding in <code class="docutils literal notranslate"><span class="pre">__bind__</span></code><a class="headerlink" href="#domain-binding-in-bind" title="Link to this heading">¶</a></h2>
+<p>Override a child component’s domain from the parent’s <code class="docutils literal notranslate"><span class="pre">__bind__</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+    <span class="n">fast_clk</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="n">zdc</span><span class="o">.</span><span class="n">ClockDomain</span><span class="p">]</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ClockDomain</span><span class="p">(</span>
+        <span class="n">period</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;fast_clk&quot;</span>
+    <span class="p">)</span>
+    <span class="n">normal</span><span class="p">:</span> <span class="n">Worker</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">()</span>   <span class="c1"># stays on default clock_domain</span>
+    <span class="n">fast</span><span class="p">:</span>   <span class="n">Worker</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">()</span>   <span class="c1"># will be moved to fast_clk</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fast</span><span class="o">.</span><span class="n">clock_domain</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">fast_clk</span><span class="p">,</span>
+        <span class="p">}</span>
+</pre></div>
+</div>
+<p>After elaboration <code class="docutils literal notranslate"><span class="pre">fast</span></code> ticks only when <code class="docutils literal notranslate"><span class="pre">fast_clk</span></code> is driven; <code class="docutils literal notranslate"><span class="pre">normal</span></code>
+ticks only when the default <code class="docutils literal notranslate"><span class="pre">clock_domain</span></code> is driven.  The same syntax works
+for <code class="docutils literal notranslate"><span class="pre">reset_domain</span></code> overrides.</p>
+</section>
+<section id="sdc-output">
+<h2>SDC output<a class="headerlink" href="#sdc-output" title="Link to this heading">¶</a></h2>
+<p>Generate <a class="reference external" href="https://en.wikipedia.org/wiki/Synopsys_Design_Constraints">Synopsys Design Constraints</a> (Tcl/SDC) from
+an elaborated design:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.dataclasses.sdc_emit</span><span class="w"> </span><span class="kn">import</span> <span class="n">emit_sdc</span>
+
+<span class="k">async</span> <span class="k">with</span> <span class="n">zdc</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">Top</span><span class="p">)</span> <span class="k">as</span> <span class="n">top</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">emit_sdc</span><span class="p">(</span><span class="n">top</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>Example output:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># ---- Clock definitions ----</span>
+<span class="n">create_clock</span> <span class="o">-</span><span class="n">name</span> <span class="p">{</span><span class="n">sys_clk</span><span class="p">}</span> <span class="o">-</span><span class="n">period</span> <span class="mf">10.000</span>
+
+<span class="c1"># ---- Derived / generated clocks ----</span>
+<span class="n">create_generated_clock</span> <span class="o">-</span><span class="n">name</span> <span class="p">{</span><span class="n">fast_div4</span><span class="p">}</span> <span class="o">-</span><span class="n">source</span> <span class="p">[</span><span class="n">get_clocks</span> <span class="p">{</span><span class="n">sys_clk</span><span class="p">}]</span> <span class="o">-</span><span class="n">divide_by</span> <span class="mi">4</span>
+
+<span class="c1"># ---- False paths (CDC crossings &amp; reset sequencing) ----</span>
+<span class="c1"># CDC crossing: slow_clk → fast_clk</span>
+<span class="n">set_false_path</span> <span class="o">-</span><span class="kn">from</span><span class="w"> </span><span class="p">[</span><span class="n">get_clocks</span> <span class="p">{</span><span class="n">slow_clk</span><span class="p">}]</span> <span class="o">-</span><span class="n">to</span>   <span class="p">[</span><span class="n">get_clocks</span> <span class="p">{</span><span class="n">fast_clk</span><span class="p">}]</span>
+</pre></div>
+</div>
+<p><code class="xref py py-func docutils literal notranslate"><span class="pre">emit_sdc()</span></code> is a convenience wrapper.
+<code class="xref py py-class docutils literal notranslate"><span class="pre">SDCEmitPass</span></code> provides finer control:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">p</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">SDCEmitPass</span><span class="p">()</span>
+<span class="n">p</span><span class="o">.</span><span class="n">visit</span><span class="p">(</span><span class="n">top</span><span class="p">)</span>
+<span class="n">text</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">sdc_text</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="cdc-primitives">
+<h2>CDC primitives<a class="headerlink" href="#cdc-primitives" title="Link to this heading">¶</a></h2>
+<p>Use these classes for known-safe clock-domain crossings.  They suppress the
+corresponding <code class="docutils literal notranslate"><span class="pre">set_false_path</span></code> in SDC output automatically.</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">zdc.TwoFFSync</span></code></dt><dd><p>Synthesizable two-flip-flop synchronizer for single-bit CDC crossings.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">zdc.AsyncFIFO</span></code></dt><dd><p>Structural placeholder for multi-bit asynchronous FIFOs.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">&#64;zdc.cdc_unchecked(reason)</span></code></dt><dd><p>Marks a class or field as a known-safe crossing that should be excluded
+from CDC analysis.</p>
+</dd>
+</dl>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">cdc_unchecked</span><span class="p">(</span><span class="s2">&quot;Gray-coded counter — safe by construction&quot;</span><span class="p">)</span>
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GraySyncBus</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span> <span class="o">...</span>
+</pre></div>
+</div>
+</section>
+<section id="migration-guide-from-explicit-clk-rst-to-domains">
+<h2>Migration guide — from explicit CLK/RST to domains<a class="headerlink" href="#migration-guide-from-explicit-clk-rst-to-domains" title="Link to this heading">¶</a></h2>
+<p><strong>Before</strong> (explicit wiring):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">CLK</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">RST</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">count</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">()</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">CLK</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">RST</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">tick</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">RST</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">CLK</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">RST</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">counter</span><span class="p">:</span> <span class="n">Counter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__bind__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">counter</span><span class="o">.</span><span class="n">CLK</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">CLK</span><span class="p">),</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">counter</span><span class="o">.</span><span class="n">RST</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">RST</span><span class="p">),</span>
+        <span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>After</strong> (domain-based):</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+    <span class="n">reset_domain</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ResetDomain</span><span class="p">(</span><span class="n">style</span><span class="o">=</span><span class="s2">&quot;sync&quot;</span><span class="p">)</span>
+    <span class="n">count</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit32</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">reset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">sync</span>            <span class="c1"># auto clock + reset via inherited domain</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">tick</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>  <span class="c1"># reset handled by SyncComponent infrastructure</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Top</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+    <span class="n">CLK</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">RST</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">bit</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">input</span><span class="p">()</span>
+    <span class="n">clock_domain</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">clock_domain</span><span class="p">(</span>
+        <span class="n">clock</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">CLK</span><span class="p">,</span>
+        <span class="n">reset</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">RST</span><span class="p">,</span>
+        <span class="n">period</span><span class="o">=</span><span class="n">zdc</span><span class="o">.</span><span class="n">Time</span><span class="o">.</span><span class="n">ns</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">counter</span><span class="p">:</span> <span class="n">Counter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">()</span>   <span class="c1"># no __bind__ needed</span>
+</pre></div>
+</div>
+<p>Key changes:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Counter</span></code> inherits from <code class="docutils literal notranslate"><span class="pre">SyncComponent</span></code> instead of <code class="docutils literal notranslate"><span class="pre">Component</span></code>.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">CLK</span></code> / <code class="docutils literal notranslate"><span class="pre">RST</span></code> ports are removed from <code class="docutils literal notranslate"><span class="pre">Counter</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&#64;zdc.sync</span></code> becomes bare (no <code class="docutils literal notranslate"><span class="pre">clock=</span></code> / <code class="docutils literal notranslate"><span class="pre">reset=</span></code> lambdas).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reset=0</span></code> on output fields provides the reset value; the framework
+injects <code class="docutils literal notranslate"><span class="pre">if</span> <span class="pre">self.rst:</span> <span class="pre">self.count</span> <span class="pre">=</span> <span class="pre">0</span></code> at synthesis time.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Top.__bind__</span></code> no longer needs to wire CLK/RST.</p></li>
+</ol>
+</section>
+<section id="power-domains-future">
+<h2>Power domains (future)<a class="headerlink" href="#power-domains-future" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">zdc.PowerDomain</span></code> is a stub annotation for upcoming UPF/CPF power-aware
+elaboration passes.  Declare at class level to name the power domain:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">AlwaysOn</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">SyncComponent</span><span class="p">):</span>
+    <span class="n">pwr_domain</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">PowerDomain</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;always_on&quot;</span><span class="p">,</span> <span class="n">always_on</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Power-domain analysis is not yet implemented.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pragmas.html">Pragma Comments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pipeline-api.html">Pipeline API</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Clock and Reset Domains</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#conceptual-overview">Conceptual overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quick-start-single-clock-design">Quick start — single-clock design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#named-multi-clock-domains">Named (multi-clock) domains</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#derived-domains-and-zdc-super">Derived domains and <code class="docutils literal notranslate"><span class="pre">zdc.super()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#domain-binding-in-bind">Domain binding in <code class="docutils literal notranslate"><span class="pre">__bind__</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sdc-output">SDC output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cdc-primitives">CDC primitives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#migration-guide-from-explicit-clk-rst-to-domains">Migration guide — from explicit CLK/RST to domains</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#power-domains-future">Power domains (future)</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Interface Protocols (NEW in 2026.1):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="interface_protocols.html">Interface Protocols</a></li>
+<li class="toctree-l1"><a class="reference internal" href="split_transactions.html">Split Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="migration_callable_to_protocol.html">Migration: Callable → IfProtocol</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="pipeline-api.html" title="previous chapter">Pipeline API</a></li>
+      <li>Next: <a href="interface_protocols.html" title="next chapter">Interface Protocols</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2022-2026, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/domains.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
