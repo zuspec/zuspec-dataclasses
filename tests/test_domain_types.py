@@ -5,6 +5,7 @@ import zuspec.dataclasses as zdc
 from zuspec.dataclasses.domain import (
     ClockDomain, DerivedClockDomain, InheritedDomain,
     ResetDomain, SoftwareResetDomain, HardwareResetDomain,
+    ResetPolarity, ResetStyle,
     ClockPort, ClockBind, ResetBind, clock_port, clock_bind, reset_bind,
 )
 from zuspec.ir.core.data_type import DataTypeComponent
@@ -64,14 +65,14 @@ class TestDerivedClockDomain:
 class TestResetDomain:
     def test_defaults(self):
         r = ResetDomain()
-        assert r.polarity == "active_low"
-        assert r.style == "sync"
+        assert r.polarity == ResetPolarity.ACTIVE_LOW
+        assert r.style == ResetStyle.SYNC
         assert r.release_after is None
 
     def test_active_high_async(self):
         r = ResetDomain(polarity="active_high", style="async")
-        assert r.polarity == "active_high"
-        assert r.style == "async"
+        assert r.polarity == ResetPolarity.ACTIVE_HIGH
+        assert r.style == ResetStyle.ASYNC
 
     def test_software_reset_domain(self):
         hw = ResetDomain()
@@ -169,6 +170,156 @@ class TestPublicAPI:
         "ResetDomain", "SoftwareResetDomain", "HardwareResetDomain",
         "ClockPort", "ClockBind", "ResetBind",
         "clock_port", "clock_bind", "reset_bind",
+        # Phase 1 additions
+        "super", "PowerDomain", "reset_domain",
+        # Phase 2 additions
+        "SyncComponent",
     ])
     def test_importable_from_zdc(self, name):
         assert hasattr(zdc, name), f"zdc.{name} not found"
+
+
+# ---------------------------------------------------------------------------
+# T8  zdc.super() — parent-domain sentinel
+# ---------------------------------------------------------------------------
+
+class TestSuperSentinel:
+    def test_returns_inherited_domain(self):
+        from zuspec.dataclasses.domain import InheritedDomain
+        s = zdc.super()
+        assert isinstance(s, InheritedDomain)
+
+    def test_each_call_returns_new_instance(self):
+        a = zdc.super()
+        b = zdc.super()
+        assert a is not b
+
+    def test_used_in_derived_clock_domain(self):
+        from zuspec.dataclasses.domain import InheritedDomain
+        d = zdc.DerivedClockDomain(source=zdc.super(), div=4)
+        assert isinstance(d.source, InheritedDomain)
+        assert d.div == 4
+
+
+# ---------------------------------------------------------------------------
+# T9  PowerDomain
+# ---------------------------------------------------------------------------
+
+class TestPowerDomain:
+    def test_defaults(self):
+        pd = zdc.PowerDomain()
+        assert pd.name is None
+        assert pd.always_on is False
+
+    def test_named_domain(self):
+        pd = zdc.PowerDomain(name="always_on", always_on=True)
+        assert pd.name == "always_on"
+        assert pd.always_on is True
+
+
+# ---------------------------------------------------------------------------
+# T10  reset_domain() factory
+# ---------------------------------------------------------------------------
+
+class TestResetDomainFactory:
+    def test_returns_descriptor(self):
+        from zuspec.dataclasses.domain import _ResetDomainField
+        f = zdc.reset_domain(reset=lambda s: s.rst_n)
+        assert isinstance(f, _ResetDomainField)
+
+    def test_default_polarity(self):
+        from zuspec.dataclasses.domain import _ResetDomainField
+        f = zdc.reset_domain()
+        assert f._polarity == ResetPolarity.ACTIVE_LOW
+        assert f._style == ResetStyle.SYNC
+
+    def test_active_high_async(self):
+        from zuspec.dataclasses.domain import _ResetDomainField
+        f = zdc.reset_domain(polarity="active_high", style="async")
+        assert f._polarity == ResetPolarity.ACTIVE_HIGH
+        assert f._style == ResetStyle.ASYNC
+
+    def test_reset_lambda_stored(self):
+        lam = lambda s: s.rst_n
+        f = zdc.reset_domain(reset=lam)
+        assert f.reset_lambda is lam
+
+
+# ---------------------------------------------------------------------------
+# T11  clock_domain() factory — name parameter
+# ---------------------------------------------------------------------------
+
+class TestClockDomainFactory:
+    def test_name_parameter(self):
+        from zuspec.dataclasses.domain import _ClockDomainField
+        f = zdc.clock_domain(clock=lambda s: s.CLK, name="sys_clk",
+                             period=zdc.Time.ns(10))
+        assert isinstance(f, _ClockDomainField)
+        assert f._name == "sys_clk"
+        assert f._period is not None
+
+
+# ---------------------------------------------------------------------------
+# T12  SyncComponent base class
+# ---------------------------------------------------------------------------
+
+class TestSyncComponent:
+    def test_inherits_component(self):
+        assert issubclass(zdc.SyncComponent, zdc.Component)
+
+    def test_has_clock_domain(self):
+        from zuspec.dataclasses.domain import ClockDomain
+        assert isinstance(zdc.SyncComponent.clock_domain, ClockDomain)
+
+    def test_has_reset_domain(self):
+        from zuspec.dataclasses.domain import ResetDomain
+        assert isinstance(zdc.SyncComponent.reset_domain, ResetDomain)
+
+    def test_subclass_overrides_reset_style(self):
+        from zuspec.dataclasses.domain import ResetDomain
+
+        @zdc.dataclass
+        class NoReset(zdc.SyncComponent):
+            reset_domain = zdc.ResetDomain(style="none")
+            count: zdc.bit32 = zdc.output(reset=0)
+
+        assert NoReset.reset_domain.style == ResetStyle.NONE
+        # Parent class should be unchanged
+        assert zdc.SyncComponent.reset_domain.style == ResetStyle.SYNC
+
+    def test_rst_property_no_pin(self):
+        """rst returns False when no matching reset pin exists."""
+        import asyncio
+
+        @zdc.dataclass
+        class SimpleSync(zdc.SyncComponent):
+            count: zdc.bit32 = zdc.output(reset=0)
+
+            @zdc.sync
+            def _inc(self):
+                self.count = self.count + 1
+
+        async def run():
+            async with zdc.simulate(SimpleSync) as c:
+                assert c.rst is False
+
+        asyncio.run(run())
+
+    def test_sync_without_explicit_clock(self):
+        """@zdc.sync on SyncComponent works without explicit clock/reset args."""
+        import asyncio
+
+        @zdc.dataclass
+        class FreeCounter(zdc.SyncComponent):
+            count: zdc.bit32 = zdc.output(reset=0)
+
+            @zdc.sync
+            def _inc(self):
+                self.count = self.count + 1
+
+        async def run():
+            async with zdc.simulate(FreeCounter) as c:
+                await c.domain.tick(5)
+                assert c.count == 5
+
+        asyncio.run(run())

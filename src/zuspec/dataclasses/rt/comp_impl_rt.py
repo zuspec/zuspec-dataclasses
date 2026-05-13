@@ -38,6 +38,7 @@ class CompImplRT(object):
     _signal_widths : Dict[str, int] = dc.field(default_factory=dict)  # signal -> width for tracing
     _deferred_writes : Dict[str, Any] = dc.field(default_factory=dict)
     _sensitivity : Dict[str, Set] = dc.field(default_factory=dict)  # signal -> set of comb processes
+    _always_comb_indices : Set = dc.field(default_factory=set)  # comb processes sensitive to all signals
     _sync_processes : List = dc.field(default_factory=list)
     _comb_processes : List = dc.field(default_factory=list)
     _eval_initialized : bool = dc.field(default=False)
@@ -46,6 +47,8 @@ class CompImplRT(object):
     _proc_cycle_count: int = dc.field(default=0)
     _proc_cycle_waiters: list = dc.field(default_factory=list)
     _action_infra: Optional["ActionInfra"] = dc.field(default=None)
+    # Child components that share this component's clock domain (populated at build time)
+    _domain_children: list = dc.field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -65,6 +68,7 @@ class CompImplRT(object):
         if hasattr(self, '_eval_initialized') and self._eval_initialized:
             # Check if this field is an output
             from ..decorators import Output
+            from .obj_factory import SignalDescriptor
             
             for field in dc.fields(comp):
                 if field.name == name:
@@ -75,6 +79,11 @@ class CompImplRT(object):
                         # Also update the actual field
                         object.__setattr__(comp, name, value)
                         return
+                    # If this field has a SignalDescriptor, let object.__setattr__ invoke it
+                    # so that signal_write gets the correct old_value for change detection.
+                    desc = type(comp).__dict__.get(name)
+                    if isinstance(desc, SignalDescriptor):
+                        break  # fall through to object.__setattr__ below
                     # For all other component fields, keep _signal_values in sync
                     # so that @zdc.sync processes can read the latest value.
                     self._signal_values[name] = value
@@ -147,12 +156,16 @@ class CompImplRT(object):
         # Build sensitivity map (signal_name -> set of comb process indices)
         for idx, comb_func in enumerate(self._comb_processes):
             sensitivity = comb_func.metadata.get('sensitivity', [])
-            for signal_ref in sensitivity:
-                signal_name = self._get_signal_name(signal_ref, comp)
-                if signal_name:
-                    if signal_name not in self._sensitivity:
-                        self._sensitivity[signal_name] = set()
-                    self._sensitivity[signal_name].add(idx)
+            if not sensitivity:
+                # No explicit sensitivity: treat as always_comb — re-evaluate on any signal change.
+                self._always_comb_indices.add(idx)
+            else:
+                for signal_ref in sensitivity:
+                    signal_name = self._get_signal_name(signal_ref, comp)
+                    if signal_name:
+                        if signal_name not in self._sensitivity:
+                            self._sensitivity[signal_name] = set()
+                        self._sensitivity[signal_name].add(idx)
         
         # Initialize signal values from component fields.
         # Include underscore-prefixed user fields (e.g. mailbox registers) but
@@ -184,6 +197,8 @@ class CompImplRT(object):
             self._eval_mode = EvalMode.COMB_EVAL
             self._execute_function(comp, comb_func)
             self._eval_mode = EvalMode.IDLE
+        # Clear any pending evaluations that were self-triggered during initial run
+        self._pending_eval.clear()
     
     def _get_signal_name(self, expr, comp):
         """Extract signal name/path from an expression.
@@ -252,14 +267,17 @@ class CompImplRT(object):
         """
         self._init_eval(comp)
         
+        # Use stored width if available (pre-populated from descriptors); fall back to argument.
+        actual_width = self._signal_widths.get(name, width)
+        
         # Mask value to declared width to match hardware overflow semantics.
-        if width > 0 and isinstance(value, int):
-            mask = (1 << width) - 1
+        if actual_width > 0 and isinstance(value, int):
+            mask = (1 << actual_width) - 1
             value = value & mask
 
         # Store width for tracing
         if name not in self._signal_widths:
-            self._signal_widths[name] = width
+            self._signal_widths[name] = actual_width
         
         if self._eval_mode == EvalMode.SYNC_EVAL:
             # Deferred write - store for later
@@ -284,6 +302,8 @@ class CompImplRT(object):
                 for proc_idx in self._sensitivity[name]:
                     if proc_idx not in self._pending_eval:
                         self._pending_eval.add(proc_idx)
+            # Do NOT schedule always_comb processes in COMB_EVAL mode:
+            # they are already running and manage their outputs directly.
             
             # If this is an output signal and value changed, notify parent
             if old_value != value and self._parent is not None:
@@ -331,6 +351,13 @@ class CompImplRT(object):
                             # The timebase can schedule even when not running
                             self._schedule_comb_eval(comp, proc_idx, tb)
                             events_scheduled = True
+                
+                # Schedule always_comb processes (no explicit sensitivity list)
+                for proc_idx in self._always_comb_indices:
+                    if proc_idx not in self._pending_eval:
+                        self._pending_eval.add(proc_idx)
+                        self._schedule_comb_eval(comp, proc_idx, tb)
+                        events_scheduled = True
                 
                 # If we scheduled events and timebase is not running, advance it
                 # This allows synchronous evaluation of comb processes
@@ -580,7 +607,7 @@ class CompImplRT(object):
                 value = self._eval_state.read(field.name)
                 object.__setattr__(comp, field.name, value)
 
-    def domain_clock_edge(self, comp: Component):
+    def domain_clock_edge(self, comp: Component, calling_domain=None):
         """Process a domain clock tick — triggers domain-bound sync methods.
 
         Domain-bound sync methods are those whose ``metadata['clock']`` is
@@ -589,6 +616,16 @@ class CompImplRT(object):
 
         Uses the same deferred-write execution path as ``_schedule_sync_eval``
         so that testbench writes (``c.enable = 1``) are visible to the sync body.
+
+        Propagates the clock edge recursively to all domain children (child
+        components that inherit this component's clock domain).
+
+        Args:
+            calling_domain: The :class:`~zuspec.dataclasses.domain.ClockDomain`
+                instance that triggered this edge (``None`` = inherited/default
+                domain).  Methods with ``@zdc.sync(domain=lambda s: s.fast_clk)``
+                fire *only* when ``calling_domain`` matches their resolved domain.
+                Bare ``@zdc.sync`` methods fire on any domain tick.
         """
         self._init_eval(comp)
 
@@ -597,25 +634,46 @@ class CompImplRT(object):
             self.start_all_processes(comp)
 
         for sync_func in self._sync_processes:
-            if sync_func.metadata.get('clock') is None:
-                self._eval_mode = EvalMode.SYNC_EVAL
-                self._execute_function(comp, sync_func)
-                self._eval_mode = EvalMode.IDLE
+            if sync_func.metadata.get('clock') is not None:
+                continue  # legacy clock-expression path — not our concern
 
-                for sig_name, val in self._deferred_writes.items():
-                    old_value = self._signal_values.get(sig_name)
-                    self._signal_values[sig_name] = val
+            # Domain-aware filtering: if the method declares an explicit
+            # domain= lambda, resolve it and compare against calling_domain.
+            method_domain_fn = sync_func.metadata.get('domain')
+            if method_domain_fn is not None:
+                try:
+                    method_domain = method_domain_fn(comp)
+                except Exception:
+                    method_domain = None
+                # Fire only when the calling domain matches the method's domain.
+                if method_domain is not calling_domain:
+                    continue
+            elif calling_domain is not None:
+                # Bare @zdc.sync is bound to the component's resolved clock domain
+                # (set at elaboration time, potentially overridden by __bind__).
+                comp_resolved = getattr(comp, '_zdc_resolved_clock_domain', None)
+                comp_default = comp_resolved if comp_resolved is not None else getattr(type(comp), 'clock_domain', None)
+                if calling_domain is not comp_default:
+                    continue
 
-                    if old_value != val:
-                        width = self._signal_widths.get(sig_name, 32)
-                        self._notify_signal_tracer(comp, sig_name, old_value, val, width)
+            self._eval_mode = EvalMode.SYNC_EVAL
+            self._execute_function(comp, sync_func)
+            self._eval_mode = EvalMode.IDLE
 
-                    if old_value != val and sig_name in self._signal_bindings:
-                        width = self._signal_widths.get(sig_name, 32)
-                        for t_comp, t_sig in self._signal_bindings[sig_name]:
-                            t_comp._impl.signal_write(t_comp, t_sig, val, width)
+            for sig_name, val in self._deferred_writes.items():
+                old_value = self._signal_values.get(sig_name)
+                self._signal_values[sig_name] = val
 
-                self._deferred_writes.clear()
+                if old_value != val:
+                    width = self._signal_widths.get(sig_name, 32)
+                    self._notify_signal_tracer(comp, sig_name, old_value, val, width)
+
+                if old_value != val and sig_name in self._signal_bindings:
+                    width = self._signal_widths.get(sig_name, 32)
+                    for t_comp, t_sig in self._signal_bindings[sig_name]:
+                        t_comp._impl.signal_write(t_comp, t_sig, val, width)
+
+            self._deferred_writes.clear()
 
         # Flush committed values back to the component's Python attributes.
         # Include underscore-prefixed fields (mailbox registers etc.) but
@@ -627,6 +685,21 @@ class CompImplRT(object):
                 object.__setattr__(comp, sig_name, val)
             except Exception:
                 pass
+
+        # Propagate clock edge to domain children (top-down domain inheritance).
+        # For each child, check whether a domain override was applied (Phase 5).
+        # If calling_domain is None (legacy/undifferentiated tick), propagate to all children.
+        # Otherwise only propagate to children whose resolved domain matches calling_domain.
+        for child in self._domain_children:
+            if hasattr(child, '_impl') and child._impl is not None:
+                if calling_domain is None:
+                    child._impl.domain_clock_edge(child, None)
+                else:
+                    child_resolved = child.__dict__.get('_zdc_resolved_clock_domain')
+                    if child_resolved is not None and child_resolved is not calling_domain:
+                        pass  # child has a different domain override — skip
+                    else:
+                        child._impl.domain_clock_edge(child, calling_domain)
 
         # Advance proc-cycle waiters — each domain tick = one @proc cycle.
         # Futures are resolved here synchronously; the event loop will wake

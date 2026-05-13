@@ -41,6 +41,7 @@ from zuspec.ir.core.activity import (
     ActivitySuper,
     ActivityTraversal,
     ActivityWhileDo,
+    JoinKind,
     JoinSpec,
     MatchCase,
     SelectBranch,
@@ -558,15 +559,15 @@ class ActivityParser:
         for kw in call.keywords:
             if kw.arg == "join_branch":
                 label = kw.value.value if isinstance(kw.value, ast.Constant) else None
-                return JoinSpec(kind="branch", branch_label=label)
+                return JoinSpec(kind=JoinKind.BRANCH, branch_label=label)
             if kw.arg == "join_none" and isinstance(kw.value, ast.Constant) and kw.value.value:
-                return JoinSpec(kind="none")
+                return JoinSpec(kind=JoinKind.NONE)
             if kw.arg == "join_select":
                 count = self._parse_expr(kw.value)
-                return JoinSpec(kind="select", count=count)
+                return JoinSpec(kind=JoinKind.SELECT, count=count)
             if kw.arg == "join_first":
                 count = self._parse_expr(kw.value)
-                return JoinSpec(kind="first", count=count)
+                return JoinSpec(kind=JoinKind.FIRST, count=count)
         return None
 
     # ------------------------------------------------------------------

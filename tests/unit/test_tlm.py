@@ -10,7 +10,6 @@ def test_tlm_channel():
         async def _send(self):
             for i in range(16):
                 await self.p.put(i)
-                await self.wait(zdc.Time.ns(10))
 
     @zdc.dataclass
     class Cons(zdc.Component):
@@ -58,7 +57,6 @@ def test_tlm_channel_struct():
             for i in range(8):
                 txn = Transaction(addr=0x1000 + i*4, data=i*0x11, write=(i % 2 == 0))
                 await self.p.put(txn)
-                await self.wait(zdc.Time.ns(10))
 
     @zdc.dataclass
     class Consumer(zdc.Component):

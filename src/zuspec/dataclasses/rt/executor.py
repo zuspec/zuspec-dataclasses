@@ -518,6 +518,9 @@ class Executor:
                 return (int(base) >> low) & mask
             else:
                 index = self.evaluate_expr(expr.slice)
+                # Integer base: bit-select semantics (e.g. _counter[22] → bit 22)
+                if isinstance(base, int):
+                    return (base >> int(index)) & 1
                 return base[int(index)]
 
         # Handle phase2 expressions

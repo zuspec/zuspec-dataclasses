@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses as dc
-from typing import Any, Callable, Optional
+import enum
+from typing import Any, Callable, Optional, Union
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +148,28 @@ class InheritedDomain:
     Pass as the ``source`` of a :class:`DerivedClockDomain` when the derived
     domain should be relative to the parent's default domain rather than to a
     named peer domain on this component.
+
+    Prefer the public alias :func:`super` when writing domain declarations::
+
+        fast_clk = zdc.DerivedClockDomain(source=zdc.super(), div=2)
     """
     pass
+
+
+def super() -> InheritedDomain:  # noqa: A001 — shadows builtin intentionally in zdc namespace
+    """Return the *parent-inherited domain* sentinel.
+
+    Use as the ``source`` of a :class:`DerivedClockDomain` to express that the
+    derived domain is relative to the domain provided by the parent component::
+
+        @zdc.dataclass
+        class ClockDivider(zdc.Component):
+            fast_clk = zdc.DerivedClockDomain(source=zdc.super(), div=2)
+
+    At the top of the hierarchy (no parent), the component's own primary
+    ``clock_domain`` is used as the source.
+    """
+    return InheritedDomain()
 
 
 @dc.dataclass
@@ -175,21 +196,56 @@ class DerivedClockDomain(ClockDomain):
 # Reset domain types
 # ---------------------------------------------------------------------------
 
+class ResetPolarity(enum.Enum):
+    """Active polarity of a hardware reset signal."""
+    ACTIVE_LOW  = "active_low"
+    ACTIVE_HIGH = "active_high"
+
+
+class ResetStyle(enum.Enum):
+    """Timing style for a hardware reset domain."""
+    SYNC  = "sync"
+    ASYNC = "async"
+    NONE  = "none"
+
+
+def _coerce_polarity(v: Union[str, ResetPolarity, None]) -> ResetPolarity:
+    if v is None:
+        return ResetPolarity.ACTIVE_LOW
+    if isinstance(v, ResetPolarity):
+        return v
+    return ResetPolarity(v)
+
+
+def _coerce_style(v: Union[str, ResetStyle, None]) -> ResetStyle:
+    if v is None:
+        return ResetStyle.SYNC
+    if isinstance(v, ResetStyle):
+        return v
+    return ResetStyle(v)
+
+
 @dc.dataclass
 class ResetDomain:
     """Hardware reset domain.
 
-    :param polarity: ``"active_low"`` (default, signal name ``rst_n``) or
-        ``"active_high"`` (signal name ``rst``).
-    :param style: ``"sync"`` (default) — reset is sampled at the clock edge;
-        ``"async"`` — reset takes effect immediately regardless of clock;
-        ``"none"`` — no reset logic generated (reset-free design).
+    :param polarity: :class:`ResetPolarity` (or ``"active_low"`` / ``"active_high"``
+        for backward compatibility; default ``ResetPolarity.ACTIVE_LOW``).
+    :param style: :class:`ResetStyle` (or ``"sync"`` / ``"async"`` / ``"none"``
+        for backward compatibility; default ``ResetStyle.SYNC``).
     :param release_after: Another :class:`ResetDomain` that must be released
         first.  Used by :class:`SDCEmitPass` to order reset de-assertion.
     """
-    polarity:      str  = "active_low"   # "active_low" | "active_high"
-    style:         str  = "sync"         # "sync" | "async" | "none"
+    polarity:      ResetPolarity = dc.field(default=ResetPolarity.ACTIVE_LOW)
+    style:         ResetStyle    = dc.field(default=ResetStyle.SYNC)
     release_after: Optional["ResetDomain"] = None
+
+    def __post_init__(self) -> None:
+        # Accept legacy string values so existing code keeps working.
+        if not isinstance(self.polarity, ResetPolarity):
+            object.__setattr__(self, "polarity", _coerce_polarity(self.polarity))
+        if not isinstance(self.style, ResetStyle):
+            object.__setattr__(self, "style", _coerce_style(self.style))
 
 
 @dc.dataclass
@@ -226,6 +282,135 @@ class HardwareResetDomain(ResetDomain):
             errors : zdc.b32 = zdc.reg(reset=0)
     """
     pass
+
+
+# ---------------------------------------------------------------------------
+# Power domain type (stub — elaboration/synthesis-only)
+# ---------------------------------------------------------------------------
+
+@dc.dataclass
+class PowerDomain:
+    """Power domain annotation (stub for future power-aware elaboration).
+
+    Declare at class level on a component to express that the component
+    belongs to a named power domain::
+
+        @zdc.dataclass
+        class AlwaysOn(zdc.SyncComponent):
+            pwr_domain = zdc.PowerDomain(name="always_on")
+            ...
+
+    :param name: Human-readable domain name used in UPF/CPF output.
+    :param always_on: ``True`` if the domain is never switched off.
+    """
+    name:       Optional[str] = None
+    always_on:  bool = False
+
+
+@dc.dataclass
+class _ZdcDomainRef:
+    """Internal marker returned when a domain attribute is accessed on a component
+    instance inside ``__bind__``.
+
+    Allows the bind parser to distinguish::
+
+        (self.child.clock_domain, self.fast_clk)   # domain override
+
+    from ordinary port-to-port pairs.
+
+    Attributes:
+        owner:  The child component instance that owns the domain.
+        kind:   ``"clock"`` or ``"reset"``.
+        domain: The current :class:`ClockDomain` / :class:`ResetDomain` object
+                (before the override is applied).
+    """
+    owner:  Any
+    kind:   str    # "clock" | "reset"
+    domain: Any    # ClockDomain | ResetDomain
+
+    def __hash__(self):
+        return id(self)
+
+    def __eq__(self, other):
+        return self is other
+
+
+# ---------------------------------------------------------------------------
+# reset_domain() factory (port-bound reset domain)
+# ---------------------------------------------------------------------------
+
+class _ResetDomainField:
+    """Descriptor returned by :func:`reset_domain`.
+
+    Lazily creates a :class:`ResetDomain` instance per component instance,
+    storing optional port lambdas for use by the synthesis pass.
+
+    Markers:
+        _zdc_reset_domain_field: True — recognised by the synthesis pass.
+    """
+
+    _zdc_reset_domain_field: bool = True
+
+    def __init__(
+        self,
+        *,
+        reset: Optional[Callable] = None,
+        polarity: Union[str, ResetPolarity] = ResetPolarity.ACTIVE_LOW,
+        style: Union[str, ResetStyle] = ResetStyle.SYNC,
+    ) -> None:
+        self._reset = reset
+        self._polarity = _coerce_polarity(polarity)
+        self._style = _coerce_style(style)
+        self._attr_name: str = ""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._attr_name = name
+
+    def __get__(self, obj, objtype=None) -> "ResetDomain | _ResetDomainField":
+        if obj is None:
+            return self
+        inst_key = f"_rdf_inst_{self._attr_name}"
+        rd = obj.__dict__.get(inst_key)
+        if rd is None or not isinstance(rd, ResetDomain):
+            rd = ResetDomain(polarity=self._polarity, style=self._style)
+            obj.__dict__[inst_key] = rd
+        return rd
+
+    def __set__(self, obj, value: "ResetDomain") -> None:
+        if isinstance(value, _ResetDomainField):
+            return
+        inst_key = f"_rdf_inst_{self._attr_name}"
+        obj.__dict__[inst_key] = value
+
+    @property
+    def reset_lambda(self) -> Optional[Callable]:
+        return self._reset
+
+
+def reset_domain(
+    *,
+    reset: Optional[Callable] = None,
+    polarity: Union[str, ResetPolarity] = ResetPolarity.ACTIVE_LOW,
+    style: Union[str, ResetStyle] = ResetStyle.SYNC,
+) -> "_ResetDomainField":
+    """Declare a :class:`ResetDomain` field bound to an explicit reset port.
+
+    Use when the component has a physical reset input port and you want to
+    attach a :class:`ResetDomain` to it (analogous to :func:`clock_domain` for
+    clocks)::
+
+        @zdc.dataclass
+        class MyTop(zdc.Component):
+            rst_n : zdc.bit = zdc.input()
+            rst_domain = zdc.reset_domain(reset=lambda s: s.rst_n,
+                                          polarity=zdc.ResetPolarity.ACTIVE_LOW)
+
+    Args:
+        reset:    Lambda ``lambda self: self.rst_n`` returning the reset signal.
+        polarity: :class:`ResetPolarity` or legacy string ``"active_low"``/``"active_high"``.
+        style:    :class:`ResetStyle` or legacy string ``"sync"``/``"async"``/``"none"``.
+    """
+    return _ResetDomainField(reset=reset, polarity=polarity, style=style)
 
 
 # ---------------------------------------------------------------------------
@@ -344,10 +529,12 @@ class _ClockDomainField:
         clock: Optional[Callable] = None,
         reset: Optional[Callable] = None,
         period: Optional[Any] = None,
+        name: Optional[str] = None,
     ) -> None:
         self._clock = clock
         self._reset = reset
         self._period = period
+        self._name = name
         self._attr_name: str = ""
 
     def __set_name__(self, owner: type, name: str) -> None:
@@ -359,7 +546,7 @@ class _ClockDomainField:
         inst_key = f"_cdf_inst_{self._attr_name}"
         cd = obj.__dict__.get(inst_key)
         if cd is None or not isinstance(cd, ClockDomain):
-            cd = ClockDomain(period=self._period)
+            cd = ClockDomain(period=self._period, name=self._name or self._attr_name or None)
             obj.__dict__[inst_key] = cd
         return cd
 
@@ -385,26 +572,30 @@ def clock_domain(
     clock: Optional[Callable] = None,
     reset: Optional[Callable] = None,
     period: Optional[Any] = None,
+    name: Optional[str] = None,
 ) -> "_ClockDomainField":
-    """Declare a :class:`ClockDomain` field on a component for use by
-    ``@zdc.pipeline(clock_domain=...)``.
+    """Declare a :class:`ClockDomain` field on a component.
 
     Analogous to ``zdc.input()`` / ``zdc.output()`` for clock domains.
+    Use when the component has a physical clock input port and you want to
+    bind a :class:`ClockDomain` to it (top-level boards and clock sources).
 
     Args:
-        clock: Lambda ``lambda self: self.clk`` returning the clock bit field.
-        reset: Lambda ``lambda self: self.rst_n`` returning the reset field
-               (optional).
-        period: Optional clock period hint for future timing analysis.
+        clock:  Lambda ``lambda self: self.clk`` returning the clock bit field.
+        reset:  Lambda ``lambda self: self.rst_n`` returning the reset field
+                (optional).
+        period: Optional clock period hint for timing analysis / SDC export.
+        name:   Optional human-readable clock name (used in SDC output).
 
     Example::
 
         @zdc.dataclass
-        class Cpu(zdc.Component):
-            clk: zdc.bit = zdc.input()
-            cd:  zdc.ClockDomain = zdc.clock_domain(clock=lambda s: s.clk)
-
-            @zdc.pipeline(clock_domain=lambda s: s.cd)
-            async def _fetch(self): ...
+        class Board(zdc.Component):
+            CLK: zdc.bit = zdc.input()
+            clk_domain: zdc.ClockDomain = zdc.clock_domain(
+                clock=lambda s: s.CLK,
+                period=zdc.Time.ns(10),
+                name="sys_clk",
+            )
     """
-    return _ClockDomainField(clock=clock, reset=reset, period=period)
+    return _ClockDomainField(clock=clock, reset=reset, period=period, name=name)

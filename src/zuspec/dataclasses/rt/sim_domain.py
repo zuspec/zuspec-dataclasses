@@ -63,7 +63,7 @@ class SimDomain:
         ``None``).  Deferred writes are committed after each edge.
         """
         for _ in range(n):
-            self._comp._impl.domain_clock_edge(self._comp)
+            self._comp._impl.domain_clock_edge(self._comp, self._domain_obj)
             # Yield to the event loop so async processes can run between ticks.
             await asyncio.sleep(0)
 
@@ -127,9 +127,9 @@ class SimDomain:
         active_low = True
         if reset_domain is not None:
             try:
-                from ..domain import ResetDomain
+                from ..domain import ResetDomain, ResetPolarity
                 if isinstance(reset_domain, ResetDomain):
-                    active_low = (reset_domain.polarity == "active_low")
+                    active_low = (reset_domain.polarity == ResetPolarity.ACTIVE_LOW)
             except ImportError:
                 pass
         return (0, 1) if active_low else (1, 0)

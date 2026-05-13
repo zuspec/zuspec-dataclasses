@@ -35,6 +35,8 @@ from zuspec.ir.core.activity import (
     ActivitySuper,
     ActivityTraversal,
     ActivityWhileDo,
+    JoinKind,
+    JoinSpec,
 )
 from ..solver.api import randomize
 from .action_context import ActionContext
@@ -1346,14 +1348,14 @@ async def _gather_with_join(coros: list, join_spec) -> None:
     """Run coroutines according to the join policy in *join_spec*."""
     import asyncio
 
-    if join_spec is None or join_spec.kind == "all":
+    if join_spec is None or join_spec.kind == JoinKind.ALL:
         await asyncio.gather(*coros)
 
-    elif join_spec.kind == "none":
+    elif join_spec.kind == JoinKind.NONE:
         for c in coros:
             asyncio.create_task(c)
 
-    elif join_spec.kind == "first":
+    elif join_spec.kind == JoinKind.FIRST:
         n = 1
         if join_spec.count is not None:
             try:
@@ -1372,7 +1374,7 @@ async def _gather_with_join(coros: list, join_spec) -> None:
         for t in pending:
             t.cancel()
 
-    elif join_spec.kind == "select":
+    elif join_spec.kind == JoinKind.SELECT:
         import random as _random
         n = 1
         if join_spec.count is not None:

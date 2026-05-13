@@ -1,8 +1,8 @@
 """Variable Extractor - extracts variables from IR structures"""
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Union
 from zuspec.ir.core.data_type import DataType, DataTypeStruct, DataTypeClass
-from zuspec.ir.core.fields import Field
+from zuspec.ir.core.fields import Field, RandKind
 from ..core.variable import Variable, VarKind
 from ..core.domain import Domain
 from ..core.type_mapper import TypeMapper
@@ -89,9 +89,9 @@ class VariableExtractor:
         domain = self._apply_domain(domain, field)
         
         # Determine variable kind
-        if rand_kind == "randc":
+        if rand_kind == RandKind.RANDC:
             var_kind = VarKind.RANDC
-        elif rand_kind == "rand":
+        elif rand_kind == RandKind.RAND:
             var_kind = VarKind.RAND
         else:
             var_kind = VarKind.RAND  # Default
@@ -156,9 +156,9 @@ class VariableExtractor:
         domain = self._apply_domain(domain, field)
         
         # Determine variable kind
-        if rand_kind == "randc":
+        if rand_kind == RandKind.RANDC:
             var_kind = VarKind.RANDC
-        elif rand_kind == "rand":
+        elif rand_kind == RandKind.RAND:
             var_kind = VarKind.RAND
         else:
             var_kind = VarKind.RAND
@@ -217,7 +217,7 @@ class VariableExtractor:
         
         return variables
     
-    def _get_rand_kind(self, field: Field) -> Optional[str]:
+    def _get_rand_kind(self, field: Field) -> Optional[RandKind]:
         """
         Determine if field is rand/randc and return the kind.
         
@@ -225,7 +225,7 @@ class VariableExtractor:
             field: IR field
             
         Returns:
-            'rand', 'randc', or None
+            RandKind.RAND, RandKind.RANDC, or None
         """
         # Check the field's rand_kind attribute (set by DataModelFactory)
         if field.rand_kind is not None:

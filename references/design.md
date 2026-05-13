@@ -13,7 +13,30 @@ combinational logic.
 ### `@zdc.sync`
 
 Clocked process. All output assignments are non-blocking (registered on
-the active clock edge). Reset behavior uses an `if self.rst:` guard.
+the active clock edge).
+
+**Preferred (domain-based):** Inherit clock and reset from the component's
+`clock_domain` / `reset_domain` by using bare `@zdc.sync`:
+
+```python
+@zdc.dataclass
+class Counter(zdc.SyncComponent):
+    count: zdc.bit32 = zdc.output(reset=0)
+
+    @zdc.sync
+    def tick(self):
+        self.count += 1   # automatic reset handled by SyncComponent
+```
+
+**Named domain:** Fire only when a specific named `ClockDomain` ticks:
+
+```python
+@zdc.sync(domain=lambda s: s.fast_clk)
+def fast_tick(self):
+    self.count += 1
+```
+
+**Legacy (explicit clock/reset):** Still supported for backward compatibility.
 
 ```python
 @zdc.sync(clock=lambda s: s.clk, reset=lambda s: s.rst)
@@ -87,9 +110,138 @@ regions.
 
 ### Clock and Reset Domains
 
-`zdc.ClockDomain` / `zdc.ResetDomain` — explicit domain declarations for
-CDC analysis and multi-clock designs.  
-Built-in CDC crossing primitives: `zdc.TwoFFSync`, `zdc.AsyncFIFO`.
+Domains eliminate explicit CLK/RST wiring from component hierarchies.
+Declare a domain once at the top level; sub-components inherit it automatically.
+
+#### `zdc.SyncComponent`
+
+Base class for any component with `@zdc.sync` methods.  Provides default
+`clock_domain` and `reset_domain` class attributes that propagate
+top-down through the hierarchy.
+
+```python
+@zdc.dataclass
+class Counter(zdc.SyncComponent):
+    count: zdc.bit32 = zdc.output(reset=0)
+
+    @zdc.sync          # fires on inherited clock_domain
+    def tick(self):
+        self.count += 1
+```
+
+#### `zdc.ClockDomain` / `zdc.ResetDomain`
+
+Declare at class level (not as dataclass fields):
+
+```python
+@zdc.dataclass
+class Top(zdc.SyncComponent):
+    clock_domain = zdc.ClockDomain(period=zdc.Time.ns(10), name="sys_clk")
+    reset_domain = zdc.ResetDomain(polarity="active_low", style="sync")
+    child: Counter = zdc.inst()   # inherits clock_domain / reset_domain
+```
+
+`ResetDomain` styles: `"sync"` (default), `"async"`, `"none"`.
+
+#### `zdc.clock_domain()` — port-bound factory
+
+Use when the top-level clock is driven by a physical port:
+
+```python
+@zdc.dataclass
+class Board(zdc.SyncComponent):
+    CLK: zdc.bit = zdc.input()
+    clock_domain = zdc.clock_domain(
+        clock=lambda s: s.CLK,
+        period=zdc.Time.ns(10),
+        name="sys_clk",
+    )
+```
+
+#### Named (multi-clock) domains
+
+Declare additional `ClockDomain` class attributes for multi-clock designs.
+Bind `@zdc.sync` methods to a specific domain with `domain=`:
+
+```python
+@zdc.dataclass
+class DualClock(zdc.SyncComponent):
+    fast_clk: zdc.ClassVar[zdc.ClockDomain] = zdc.ClockDomain(
+        period=zdc.Time.ns(2), name="fast_clk"
+    )
+    slow_count: zdc.bit32 = 0
+    fast_count: zdc.bit32 = 0
+
+    @zdc.sync                              # fires on default clock_domain
+    def slow_step(self):
+        self.slow_count += 1
+
+    @zdc.sync(domain=lambda s: s.fast_clk)  # fires on fast_clk only
+    def fast_step(self):
+        self.fast_count += 1
+```
+
+#### `zdc.DerivedClockDomain` and `zdc.super()`
+
+Express PLL/divider relationships for SDC generation:
+
+```python
+@zdc.dataclass
+class ClockGen(zdc.SyncComponent):
+    fast_clk = zdc.DerivedClockDomain(
+        source=zdc.super(),   # derived from inherited clock_domain
+        div=4,
+        name="fast_div4",
+    )
+```
+
+#### Domain binding in `__bind__`
+
+Override a child component's domain from the parent's `__bind__`:
+
+```python
+@zdc.dataclass
+class Top(zdc.SyncComponent):
+    fast_clk: zdc.ClassVar[zdc.ClockDomain] = zdc.ClockDomain(
+        period=zdc.Time.ns(2), name="fast_clk"
+    )
+    fast_worker: Worker = zdc.inst()
+
+    def __bind__(self):
+        return {
+            self.fast_worker.clock_domain: self.fast_clk,
+        }
+```
+
+After elaboration `fast_worker` ticks only when `fast_clk` is driven, not
+when the default domain ticks.
+
+#### SDC emission
+
+Generate SDC/Tcl timing constraints from an elaborated design:
+
+```python
+from zuspec.dataclasses.sdc_emit import emit_sdc
+
+async with zdc.simulate(Top) as top:
+    print(emit_sdc(top))
+# → create_clock -name {sys_clk} -period 10.000
+# → create_generated_clock -name {fast_div4} -source {sys_clk} -divide_by 4
+# → set_false_path -from {slow_clk} -to {fast_clk}   # CDC crossing
+```
+
+`emit_sdc(comp)` is a convenience wrapper; `SDCEmitPass` provides finer control.
+
+#### CDC primitives
+
+```python
+from zuspec.dataclasses.cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
+```
+
+- `zdc.TwoFFSync` — synthesizable two-FF synchronizer for single-bit crossings.  
+  Automatically suppresses `set_false_path` on the launch side in SDC output.
+- `zdc.AsyncFIFO` — structural placeholder for multi-bit asynchronous FIFOs.
+- `@zdc.cdc_unchecked(reason)` — marks a class or field as a known-safe crossing.
 
 ---
 

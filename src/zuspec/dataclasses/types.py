@@ -410,21 +410,19 @@ class State(Struct):
     initial: bool = False
 
 
-class Resource[T](Protocol):
+@dc.dataclass
+class Resource(Struct):
     """PSS resource base type.
 
     Resources are claimed by actions via ``zdc.lock()`` (exclusive) or
     ``zdc.share()`` (shared).  The ``instance_id`` attribute is assigned by
     the pool when the resource is allocated.
     """
+    instance_id: int = 0
 
-    @property
-    def id(self) -> int:
-        ...
-
-    @property
-    def t(self) -> T:
-        ...
+    def __class_getitem__(cls, item):
+        # Allow Resource[T] syntax for annotation purposes (generic alias).
+        return cls
 
 class Bundle(TypeBase):
     """Bundle base class for interface/port collections with directionality.
@@ -498,7 +496,7 @@ class Component(TypeBase):
         assert self._impl is not None
         return self._impl.parent
 
-    def __bind__(self) -> Optional[Union[Dict,Tuple]]: 
+    def __bind__(self) -> Optional[Tuple]:
         pass
 
     async def wait(self, amt : Time = None):
@@ -524,6 +522,74 @@ class Component(TypeBase):
         else:
             ret = object.__new__(cls)
         return ret
+
+
+@dc.dataclass
+class SyncComponent(Component):
+    """Base class for synchronous (clocked) RTL components.
+
+    ``SyncComponent`` extends :class:`Component` with default clock and reset
+    domain declarations.  Sub-components automatically inherit these domains
+    from their parent, so no explicit CLK/RST ports are needed at lower levels
+    of the hierarchy.
+
+    Typical usage::
+
+        @zdc.dataclass
+        class Counter(zdc.SyncComponent):
+            count : zdc.bit32 = zdc.output(reset=0)
+
+            @zdc.sync
+            def _count(self):
+                self.count = self.count + 1
+
+    Override ``clock_domain`` or ``reset_domain`` at the class level to
+    customise the domain::
+
+        @zdc.dataclass
+        class FastCounter(zdc.SyncComponent):
+            clock_domain = zdc.ClockDomain(period=zdc.Time.ns(5))
+            reset_domain = zdc.ResetDomain(style="async")
+            count : zdc.bit32 = zdc.output(reset=0)
+            ...
+
+    The ``rst`` property returns the current state of the reset signal
+    according to the component's ``reset_domain`` polarity.  It is ``True``
+    while reset is active.
+
+    The ``reset_domain`` class attribute defaults to a synchronous
+    active-low reset (:class:`~zuspec.dataclasses.domain.ResetDomain`).
+    """
+
+    from .domain import ResetDomain as _ResetDomain
+    reset_domain: ClassVar[_ResetDomain] = _ResetDomain()
+    del _ResetDomain
+
+    @property
+    def rst(self) -> bool:
+        """``True`` while the component is in reset.
+
+        Reads ``rst_n`` (active-low) or ``rst`` / ``reset`` (active-high)
+        according to the ``reset_domain.polarity`` attribute.  Returns
+        ``False`` if no matching signal is found.
+        """
+        from .domain import ResetDomain, ResetPolarity
+        rd = getattr(type(self), 'reset_domain', None)
+        active_low = True
+        if isinstance(rd, ResetDomain):
+            active_low = (rd.polarity == ResetPolarity.ACTIVE_LOW)
+
+        if active_low:
+            for candidate in ('rst_n', 'nreset'):
+                val = getattr(self, candidate, None)
+                if val is not None:
+                    return int(val) == 0  # active-low: asserted when pin == 0
+        else:
+            for candidate in ('rst', 'reset'):
+                val = getattr(self, candidate, None)
+                if val is not None:
+                    return int(val) != 0  # active-high: asserted when pin == 1
+        return False
     
 def _find_comp_instances(comp: 'Component', comp_type: type) -> list:
     """Recursively find all instances of comp_type within a component's fields."""
@@ -1227,6 +1293,9 @@ class bv(int):
             width = high - low + 1
             return bv((int(self) >> low) & ((1 << width) - 1), _width=width)
         return bv((int(self) >> int(key)) & 1, _width=1)
+    
+    def __iadd__(self, other):
+        return bv((int(self) + int(other)) & ((1 << self._width)-1))
 
 # bitv is a special marker type for variable-width unsigned bit vectors.
 # The actual width must be supplied via input(width=...) / output(width=...).

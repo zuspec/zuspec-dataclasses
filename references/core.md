@@ -24,6 +24,12 @@ class MyBlock(zdc.Component):
 - Declare child components with `zdc.field()` (or `zdc.inst()`)
 - Override `__bind__()` to wire ports between children
 
+> **Prefer `zdc.SyncComponent`** for any component that contains `@zdc.sync`
+> methods. `SyncComponent` extends `Component` with default `clock_domain` and
+> `reset_domain` class attributes that propagate automatically through the
+> hierarchy, eliminating the need for explicit CLK/RST ports.  
+> See [design.md — Clock and Reset Domains](design.md#clock-and-reset-domains).
+
 ## Fields and Ports
 
 | Decorator | Role |

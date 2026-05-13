@@ -81,16 +81,18 @@ After ``asyncio.run(comp.wait(...))``, access ``comp.<method>_trace`` for a
 
 from asyncio import Event as aEvent
 from typing import Callable
+from . import pcf
 from .decorators import (
-    dataclass, field, proc, input, output, reg, array,
+    dataclass, field, proc, input, output, inout, reg, array,
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
-    Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
+    Input, Output, Inout, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view, constraint, rand, randc,
     lock, share, extend, pool, flow_output, flow_input,
     indexed_regfile,
     indexed_pool,
     ContractViolation, requires, ensures,
+    ConstraintKind, ConstraintRole,
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order, valid, internal
 from .constraint_parser import ConstraintParser, extract_rand_fields
@@ -142,11 +144,15 @@ from .coverage import (
 from .domain import (
     ClockDomain, DerivedClockDomain, InheritedDomain,
     ResetDomain, SoftwareResetDomain, HardwareResetDomain,
+    ResetPolarity, ResetStyle,
+    PowerDomain,
     ClockPort, ClockBind, ResetBind,
     clock_port, clock_bind, reset_bind,
-    clock_domain,
+    clock_domain, reset_domain,
+    super as super,  # zdc.super() — parent-domain sentinel factory
 )
 from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
+from .sdc_emit import SDCEmitPass, emit_sdc
 from .pipeline_ns import pipeline, _StageHandle, _Snap
 from .pipeline_locks import HazardLock, QueueLock, BypassLock, RenameLock
 from .pipeline_resource import PipelineResource
@@ -179,15 +185,16 @@ __all__ = [
     # From asyncio
     'aEvent',
     # From decorators
-    'dataclass', 'field', 'proc', 'input', 'output', 'reg', 'array',
-    'const', 'bundle', 'mirror', 'monitor',
+    'dataclass', 'field', 'proc', 'input', 'output', 'inout', 'reg', 'array',
+    'const', 'bundle', 'mirror', 'monitor', 'pcf',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
-    'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
+    'Input', 'Output', 'Inout', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
     'enum',
     # Contract decorators / context managers / exceptions
     'ContractViolation', 'requires', 'ensures',
+    'ConstraintKind', 'ConstraintRole',
     # Pipeline process API — new async API
     'pipeline', '_StageHandle', '_Snap',
     'HazardLock', 'QueueLock', 'BypassLock', 'RenameLock',
@@ -196,8 +203,8 @@ __all__ = [
     'stage', 'forward', 'PipelineError',
     # Method ports
     'InPort', 'OutPort', 'in_port', 'out_port',
-    # Clock domain field factory
-    'clock_domain',
+    # Clock/reset domain field factories
+    'clock_domain', 'reset_domain',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
     # From errors
@@ -219,7 +226,7 @@ __all__ = [
     'Action',
     'Buffer', 'Stream', 'State', 'Resource',
     'AddrHandle', 'AddressSpace', 'Array', 'BackdoorMemory', 'BackdoorRegFile',
-    'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
+    'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component', 'SyncComponent',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'ResourcePool', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
@@ -275,8 +282,12 @@ __all__ = [
     # From domain
     'ClockDomain', 'DerivedClockDomain', 'InheritedDomain',
     'ResetDomain', 'SoftwareResetDomain', 'HardwareResetDomain',
+    'ResetPolarity', 'ResetStyle',
+    'PowerDomain',
     'ClockPort', 'ClockBind', 'ResetBind',
     'clock_port', 'clock_bind', 'reset_bind',
+    'clock_domain', 'reset_domain',
+    'super',
     # From cdc
     'TwoFFSync', 'AsyncFIFO', 'cdc_unchecked',
     # Submodules
