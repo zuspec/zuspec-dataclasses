@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Abstract Counters &#8212; Zuspec Language  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Interface Protocols" href="interface_protocols.html" />
+    <link rel="prev" title="Clock and Reset Domains" href="domains.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="abstract-counters">
+<span id="counters"></span><h1>Abstract Counters<a class="headerlink" href="#abstract-counters" title="Link to this heading">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">zuspec.dataclasses</span></code> provides a family of <em>abstract</em> counter classes that
+work at every abstraction level — simulation, RTL synthesis, and formal
+verification — without requiring explicit per-cycle callback overhead.</p>
+<nav class="contents local" id="contents">
+<p class="topic-title">Contents</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#motivation" id="id1">Motivation</a></p></li>
+<li><p><a class="reference internal" href="#quick-start-free-running-counter" id="id2">Quick start — free-running counter</a></p></li>
+<li><p><a class="reference internal" href="#counter-types" id="id3">Counter types</a></p></li>
+<li><p><a class="reference internal" href="#free-running-counter" id="id4">Free-running Counter</a></p>
+<ul>
+<li><p><a class="reference internal" href="#waiting-for-a-specific-value" id="id5">Waiting for a specific value</a></p></li>
+<li><p><a class="reference internal" href="#scheduling-callbacks" id="id6">Scheduling callbacks</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#modulocounter" id="id7">ModuloCounter</a></p></li>
+<li><p><a class="reference internal" href="#watchdogcounter" id="id8">WatchdogCounter</a></p>
+<ul>
+<li><p><a class="reference internal" href="#arm-kick-disarm-lifecycle" id="id9">Arm → kick → disarm lifecycle</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#counterbank" id="id10">CounterBank</a></p></li>
+<li><p><a class="reference internal" href="#rtl-synthesis" id="id11">RTL synthesis</a></p></li>
+<li><p><a class="reference internal" href="#formal-verification" id="id12">Formal verification</a></p></li>
+<li><p><a class="reference internal" href="#edge-cases" id="id13">Edge cases</a></p></li>
+<li><p><a class="reference internal" href="#faq" id="id14">FAQ</a></p></li>
+</ul>
+</nav>
+<section id="motivation">
+<h2><a class="toc-backref" href="#id1" role="doc-backlink">Motivation</a><a class="headerlink" href="#motivation" title="Link to this heading">¶</a></h2>
+<p>A naive simulation counter updates a value on every clock edge.  For a 32-bit
+counter running at 1 GHz that means one billion Python function calls per
+simulated second — far too slow for anything beyond trivial designs.</p>
+<p>The abstract counter avoids this by recording only the <em>start cycle</em> and
+computing the current value on demand:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">current_cycle</span> <span class="o">-</span> <span class="n">start_cycle</span><span class="p">)</span> <span class="o">%</span> <span class="n">modulus</span>
+</pre></div>
+</div>
+<p>This “lazy” strategy has zero per-cycle overhead regardless of the counter
+width or frequency.</p>
+</section>
+<section id="quick-start-free-running-counter">
+<h2><a class="toc-backref" href="#id2" role="doc-backlink">Quick start — free-running counter</a><a class="headerlink" href="#quick-start-free-running-counter" title="Link to this heading">¶</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">zuspec.dataclasses</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">zdc</span>
+
+<span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LatencyProbe</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">cnt</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">Counter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Counter</span><span class="p">)</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">proc</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">t0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">snapshot</span><span class="p">()</span>          <span class="c1"># record start time</span>
+        <span class="c1"># ... do some work ...</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="n">t0</span> <span class="o">+</span> <span class="mi">256</span><span class="p">)</span> <span class="c1"># stall until 256 cycles later</span>
+        <span class="n">latency</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">value</span> <span class="o">-</span> <span class="n">t0</span>
+</pre></div>
+</div>
+<p><code class="xref py py-attr docutils literal notranslate"><span class="pre">snapshot</span></code> is an alias for <code class="xref py py-attr docutils literal notranslate"><span class="pre">value</span></code> that
+communicates <em>timestamping</em> intent to readers of the code.</p>
+</section>
+<section id="counter-types">
+<h2><a class="toc-backref" href="#id3" role="doc-backlink">Counter types</a><a class="headerlink" href="#counter-types" title="Link to this heading">¶</a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 25.0%" />
+<col style="width: 20.0%" />
+<col style="width: 55.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Class</p></th>
+<th class="head"><p>Key parameters</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="xref py py-class docutils literal notranslate"><span class="pre">Counter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">WIDTH=32</span></code></p></td>
+<td><p>Free-running counter, modulus <code class="docutils literal notranslate"><span class="pre">2**WIDTH</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-class docutils literal notranslate"><span class="pre">ModuloCounter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">PERIOD</span></code></p></td>
+<td><p>Counts 0 … PERIOD-1 then wraps.  PERIOD need not be a power of two.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-class docutils literal notranslate"><span class="pre">WatchdogCounter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TIMEOUT</span></code></p></td>
+<td><p>Calls <code class="xref py py-meth docutils literal notranslate"><span class="pre">on_timeout()</span></code> if not kicked in time.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-class docutils literal notranslate"><span class="pre">CounterBank</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">COUNT</span></code>, <code class="docutils literal notranslate"><span class="pre">WIDTH</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">COUNT</span></code> independent counters sharing one clock domain.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="free-running-counter">
+<h2><a class="toc-backref" href="#id4" role="doc-backlink">Free-running Counter</a><a class="headerlink" href="#free-running-counter" title="Link to this heading">¶</a></h2>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">Counter</span></code> wraps freely at <code class="docutils literal notranslate"><span class="pre">2**WIDTH</span></code>.  Use it for timestamps,
+latency measurements, and any application where the exact rollover point does
+not matter.</p>
+<section id="waiting-for-a-specific-value">
+<h3><a class="toc-backref" href="#id5" role="doc-backlink">Waiting for a specific value</a><a class="headerlink" href="#waiting-for-a-specific-value" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>          <span class="c1"># absolute target value</span>
+<span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">wait_ge</span><span class="p">(</span><span class="n">threshold</span><span class="p">)</span>        <span class="c1"># first cycle where value &gt;= threshold</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">target</span></code> may also be a zero-argument callable so the threshold can be
+computed lazily:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">deadline</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Edge case: if <code class="docutils literal notranslate"><span class="pre">value</span> <span class="pre">==</span> <span class="pre">target</span></code> already, <code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_for()</span></code>
+returns immediately.  If the target was <em>already passed</em> (target &lt; current),
+the wait runs until the <em>next</em> rollover past target.</p>
+</section>
+<section id="scheduling-callbacks">
+<h3><a class="toc-backref" href="#id6" role="doc-backlink">Scheduling callbacks</a><a class="headerlink" href="#scheduling-callbacks" title="Link to this heading">¶</a></h3>
+<p><code class="xref py py-meth docutils literal notranslate"><span class="pre">schedule()</span></code> registers a one-shot callback and returns a
+<code class="xref py py-class docutils literal notranslate"><span class="pre">ScheduleHandle</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">schedule</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">value</span> <span class="o">+</span> <span class="mi">100</span><span class="p">,</span> <span class="n">callback</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_on_alarm</span><span class="p">)</span>
+<span class="c1"># ... later ...</span>
+<span class="n">handle</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>                          <span class="c1"># prevent firing</span>
+<span class="n">handle</span><span class="o">.</span><span class="n">reschedule</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cnt</span><span class="o">.</span><span class="n">value</span> <span class="o">+</span> <span class="mi">200</span><span class="p">)</span>  <span class="c1"># move the alarm</span>
+</pre></div>
+</div>
+<p>The handle’s <code class="xref py py-attr docutils literal notranslate"><span class="pre">fired</span></code> property is <code class="docutils literal notranslate"><span class="pre">True</span></code> once the
+callback has executed at least once.</p>
+</section>
+</section>
+<section id="modulocounter">
+<h2><a class="toc-backref" href="#id7" role="doc-backlink">ModuloCounter</a><a class="headerlink" href="#modulocounter" title="Link to this heading">¶</a></h2>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">ModuloCounter</span></code> is the go-to counter for frequency dividers, baud
+rate generators, and PWM periods.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BaudTick</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">baud</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">ModuloCounter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">ModuloCounter</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;PERIOD&#39;</span><span class="p">:</span> <span class="mi">868</span><span class="p">})</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">proc</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">baud</span><span class="o">.</span><span class="n">wait_next</span><span class="p">()</span>   <span class="c1"># fires every 868 cycles</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tx_bit</span> <span class="o">=</span> <span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">tx_bit</span>
+</pre></div>
+</div>
+<p><code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_next()</span></code> suspends until the counter wraps to 0.  To wait
+for a specific phase within the period use <code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_for()</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">baud</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="mi">434</span><span class="p">)</span>  <span class="c1"># mid-period sample point</span>
+</pre></div>
+</div>
+<p>Override <code class="xref py py-meth docutils literal notranslate"><span class="pre">on_rollover()</span></code> instead of <code class="docutils literal notranslate"><span class="pre">wait_next()</span></code> for
+a callback-style interface.</p>
+</section>
+<section id="watchdogcounter">
+<h2><a class="toc-backref" href="#id8" role="doc-backlink">WatchdogCounter</a><a class="headerlink" href="#watchdogcounter" title="Link to this heading">¶</a></h2>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">WatchdogCounter</span></code> fires <code class="xref py py-meth docutils literal notranslate"><span class="pre">on_timeout()</span></code> if
+the design does not call <code class="xref py py-meth docutils literal notranslate"><span class="pre">kick()</span></code> within <code class="docutils literal notranslate"><span class="pre">TIMEOUT</span></code>
+cycles of the last arm/kick.</p>
+<section id="arm-kick-disarm-lifecycle">
+<h3><a class="toc-backref" href="#id9" role="doc-backlink">Arm → kick → disarm lifecycle</a><a class="headerlink" href="#arm-kick-disarm-lifecycle" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SafeController</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">wdog</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">WatchdogCounter</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">WatchdogCounter</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;TIMEOUT&#39;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">})</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">proc</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wdog</span><span class="o">.</span><span class="n">arm</span><span class="p">()</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">active</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">zdc</span><span class="o">.</span><span class="n">tick</span><span class="p">()</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">wdog</span><span class="o">.</span><span class="n">kick</span><span class="p">()</span>          <span class="c1"># extend the window</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wdog</span><span class="o">.</span><span class="n">disarm</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_timeout</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>           <span class="c1"># override to handle expiry</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fault</span> <span class="o">=</span> <span class="mi">1</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="xref py py-meth docutils literal notranslate"><span class="pre">arm()</span></code> — start or restart the timeout window.
+Pass <code class="docutils literal notranslate"><span class="pre">cycles</span></code> to override <code class="docutils literal notranslate"><span class="pre">TIMEOUT</span></code> for this activation only.</p></li>
+<li><p><code class="xref py py-meth docutils literal notranslate"><span class="pre">kick()</span></code> — reset the window; keeps the watchdog
+armed.</p></li>
+<li><p><code class="xref py py-meth docutils literal notranslate"><span class="pre">disarm()</span></code> — stop the watchdog without firing.</p></li>
+</ul>
+</section>
+</section>
+<section id="counterbank">
+<h2><a class="toc-backref" href="#id10" role="doc-backlink">CounterBank</a><a class="headerlink" href="#counterbank" title="Link to this heading">¶</a></h2>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">CounterBank</span></code> provides <code class="docutils literal notranslate"><span class="pre">COUNT</span></code> independent counters that share a
+single clock domain, avoiding the overhead of instantiating <code class="docutils literal notranslate"><span class="pre">COUNT</span></code> separate
+<code class="xref py py-class docutils literal notranslate"><span class="pre">Component</span></code> objects.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@zdc</span><span class="o">.</span><span class="n">dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MultiChannel</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">Component</span><span class="p">):</span>
+    <span class="n">timers</span><span class="p">:</span> <span class="n">zdc</span><span class="o">.</span><span class="n">CounterBank</span> <span class="o">=</span> <span class="n">zdc</span><span class="o">.</span><span class="n">inst</span><span class="p">(</span><span class="n">zdc</span><span class="o">.</span><span class="n">CounterBank</span><span class="p">,</span>
+                                       <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;COUNT&#39;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s1">&#39;WIDTH&#39;</span><span class="p">:</span> <span class="mi">16</span><span class="p">})</span>
+
+    <span class="nd">@zdc</span><span class="o">.</span><span class="n">proc</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">snap</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">timers</span><span class="o">.</span><span class="n">snapshot_all</span><span class="p">()</span>   <span class="c1"># atomic snapshot of all 4</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">timers</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="n">snap</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">100</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Individual counters are accessed by index (<code class="docutils literal notranslate"><span class="pre">self.timers[i]</span></code>) and expose the
+same <code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_for()</span></code> / <code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_ge()</span></code> /
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">schedule()</span></code> interface as a standalone <code class="xref py py-class docutils literal notranslate"><span class="pre">Counter</span></code>.</p>
+</section>
+<section id="rtl-synthesis">
+<h2><a class="toc-backref" href="#id11" role="doc-backlink">RTL synthesis</a><a class="headerlink" href="#rtl-synthesis" title="Link to this heading">¶</a></h2>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">ModuloCounter</span></code> and <code class="xref py py-class docutils literal notranslate"><span class="pre">WatchdogCounter</span></code> fields inside a
+<code class="xref py py-func docutils literal notranslate"><span class="pre">proc()</span></code>-based component are synthesised automatically by the
+<code class="docutils literal notranslate"><span class="pre">zuspec-synth</span></code> pass.  The synthesiser replaces <code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">cnt.wait_next()</span></code>
+with an equivalent <code class="docutils literal notranslate"><span class="pre">await</span> <span class="pre">zdc.cycles(PERIOD)</span></code> pattern, which the RTL backend
+maps to a hardware cycle-count register.</p>
+<p>The counter field itself is <em>neutralised</em> (removed from the synthesised port
+list) so the generated SystemVerilog contains only the internal state register.</p>
+<div class="highlight-systemverilog notranslate"><div class="highlight"><pre><span></span><span class="c1">// Generated for Blinker(ModuloCounter(PERIOD=8))</span>
+<span class="k">always_ff</span><span class="w"> </span><span class="p">@(</span><span class="k">posedge</span><span class="w"> </span><span class="n">clk</span><span class="p">)</span><span class="w"> </span><span class="k">begin</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">rst_n</span><span class="p">)</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">S_IDLE</span><span class="p">;</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="k">case</span><span class="w"> </span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+<span class="w">        </span><span class="nl">S_IDLE:</span><span class="w"> </span><span class="k">begin</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">S_1</span><span class="p">;</span><span class="w"> </span><span class="n">S_1_cnt</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">8</span><span class="o">-</span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="k">end</span>
+<span class="w">        </span><span class="nl">S_1:</span><span class="w">    </span><span class="k">begin</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">S_1_cnt</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="k">begin</span><span class="w"> </span><span class="n">led</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="o">~</span><span class="n">led</span><span class="p">;</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">S_IDLE</span><span class="p">;</span><span class="w"> </span><span class="k">end</span>
+<span class="w">            </span><span class="k">else</span><span class="w"> </span><span class="n">S_1_cnt</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">S_1_cnt</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">        </span><span class="k">end</span>
+<span class="w">    </span><span class="k">endcase</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_for()</span></code> with a runtime-computed target is <strong>not
+synthesisable</strong>.  Use <code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_next()</span></code> or pass a compile-time
+constant.</p>
+</div>
+</section>
+<section id="formal-verification">
+<h2><a class="toc-backref" href="#id12" role="doc-backlink">Formal verification</a><a class="headerlink" href="#formal-verification" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">zuspec-be-fv</span></code> automatically derives SystemVerilog Assertions from counter
+fields via <code class="xref py py-class docutils literal notranslate"><span class="pre">CounterFormalPass</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">zuspec.be.fv.passes</span><span class="w"> </span><span class="kn">import</span> <span class="n">CounterFormalPass</span>
+
+<span class="n">fpass</span> <span class="o">=</span> <span class="n">CounterFormalPass</span><span class="p">(</span><span class="n">Blinker</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">fpass</span><span class="o">.</span><span class="n">all_properties</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">prop</span><span class="o">.</span><span class="n">to_sva</span><span class="p">())</span>
+
+<span class="c1"># Recommended BMC depth for full coverage:</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">fpass</span><span class="o">.</span><span class="n">min_required_depth</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>Two assertions are generated per counter:</p>
+<dl class="simple">
+<dt>range_invariant</dt><dd><p><code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">&lt;=</span> <span class="pre">cnt</span> <span class="pre">&amp;&amp;</span> <span class="pre">cnt</span> <span class="pre">&lt;</span> <span class="pre">PERIOD</span></code> — the counter stays in bounds.</p>
+</dd>
+<dt>monotone_progress</dt><dd><p>Each cycle the counter increments by 1, or rolls over from <code class="docutils literal notranslate"><span class="pre">PERIOD-1</span></code>
+to 0 — no arbitrary jumps.</p>
+</dd>
+</dl>
+<p><code class="xref py py-meth docutils literal notranslate"><span class="pre">min_required_depth()</span></code> returns the
+minimum BMC depth needed to observe all <code class="xref py py-meth docutils literal notranslate"><span class="pre">wait_for()</span></code> targets,
+making it easy to set the solver bound correctly.</p>
+</section>
+<section id="edge-cases">
+<h2><a class="toc-backref" href="#id13" role="doc-backlink">Edge cases</a><a class="headerlink" href="#edge-cases" title="Link to this heading">¶</a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 40.0%" />
+<col style="width: 60.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Situation</p></th>
+<th class="head"><p>Behaviour</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">wait_for(target)</span></code> when <code class="docutils literal notranslate"><span class="pre">value</span> <span class="pre">==</span> <span class="pre">target</span></code></p></td>
+<td><p>Returns immediately (no suspension).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">wait_for(target)</span></code> when target already passed</p></td>
+<td><p>Waits until the <em>next</em> rollover then continues to target.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">wait_for(0)</span></code> on a <code class="docutils literal notranslate"><span class="pre">ModuloCounter</span></code></p></td>
+<td><p>Equivalent to <code class="docutils literal notranslate"><span class="pre">wait_next()</span></code> — suspends until the next wrap.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WatchdogCounter.kick()</span></code> before <code class="docutils literal notranslate"><span class="pre">arm()</span></code></p></td>
+<td><p>Silently ignored.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WatchdogCounter.arm()</span></code> while already armed</p></td>
+<td><p>Restarts the timeout window from now.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">CounterBank[i]</span></code> out of range</p></td>
+<td><p>Raises <code class="docutils literal notranslate"><span class="pre">IndexError</span></code>.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="faq">
+<h2><a class="toc-backref" href="#id14" role="doc-backlink">FAQ</a><a class="headerlink" href="#faq" title="Link to this heading">¶</a></h2>
+<dl class="simple">
+<dt><strong>Can I use a counter across clock-domain boundaries (CDC)?</strong></dt><dd><p>Counters are tied to a single <code class="xref py py-class docutils literal notranslate"><span class="pre">ClockDomain</span></code>.  To sample a
+counter value in a different domain, use
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">snapshot()</span></code> in the source domain and transfer the
+captured integer via a synchroniser or FIFO.</p>
+</dd>
+<dt><strong>What is the difference between</strong> <code class="docutils literal notranslate"><span class="pre">wait_ge</span></code> <strong>and</strong> <code class="docutils literal notranslate"><span class="pre">wait_for</span></code>?</dt><dd><p><code class="docutils literal notranslate"><span class="pre">wait_for(t)</span></code> waits until <code class="docutils literal notranslate"><span class="pre">value</span> <span class="pre">==</span> <span class="pre">t</span></code> (mod modulus).  <code class="docutils literal notranslate"><span class="pre">wait_ge(t)</span></code>
+waits until <code class="docutils literal notranslate"><span class="pre">value</span> <span class="pre">&gt;=</span> <span class="pre">t</span></code>, which is useful when the exact rollover boundary
+doesn’t matter and over-shooting is acceptable.</p>
+</dd>
+<dt><strong>How do I implement a step ≠ 1 counter?</strong></dt><dd><p>Instantiate a <code class="docutils literal notranslate"><span class="pre">ModuloCounter</span></code> with <code class="docutils literal notranslate"><span class="pre">PERIOD</span> <span class="pre">=</span> <span class="pre">target_step</span></code> and call
+<code class="docutils literal notranslate"><span class="pre">wait_next()</span></code> in a loop.  Each <code class="docutils literal notranslate"><span class="pre">wait_next()</span></code> advances the logical time
+by exactly <code class="docutils literal notranslate"><span class="pre">PERIOD</span></code> cycles.  Alternatively, use <code class="docutils literal notranslate"><span class="pre">Counter</span></code> directly and
+call <code class="docutils literal notranslate"><span class="pre">wait_for(snapshot()</span> <span class="pre">+</span> <span class="pre">step)</span></code> for a one-shot advance.</p>
+</dd>
+</dl>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Zuspec Language</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">User Guide:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Zuspec Language Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="abstraction_levels.html">Abstraction Levels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fields.html">Class Fields</a></li>
+<li class="toctree-l1"><a class="reference internal" href="types.html">Core Types</a></li>
+<li class="toctree-l1"><a class="reference internal" href="constraints.html">Constraints</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pragmas.html">Pragma Comments</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime.html">Runtime Implementation (Developer)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="checker.html">Zuspec IR Checker</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pipeline-api.html">Pipeline API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="domains.html">Clock and Reset Domains</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Abstract Counters</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#motivation">Motivation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quick-start-free-running-counter">Quick start — free-running counter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#counter-types">Counter types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#free-running-counter">Free-running Counter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#modulocounter">ModuloCounter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#watchdogcounter">WatchdogCounter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#counterbank">CounterBank</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rtl-synthesis">RTL synthesis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#formal-verification">Formal verification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#edge-cases">Edge cases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#faq">FAQ</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Interface Protocols (NEW in 2026.1):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="interface_protocols.html">Interface Protocols</a></li>
+<li class="toctree-l1"><a class="reference internal" href="split_transactions.html">Split Transactions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="migration_callable_to_protocol.html">Migration: Callable → IfProtocol</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="datamodel.html">Data Model (Developer)</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="domains.html" title="previous chapter">Clock and Reset Domains</a></li>
+      <li>Next: <a href="interface_protocols.html" title="next chapter">Interface Protocols</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2022-2026, Matthew Ballance.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/counters.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
