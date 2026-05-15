@@ -25,6 +25,8 @@ package:
         src: pypi
       - name: zuspec-ir-core
         url: https://github.com/zuspec/zuspec-ir-core.git
+      - name: zuspec-cli
+        url: https://github.com/zuspec/zuspec-cli.git
 
 
 

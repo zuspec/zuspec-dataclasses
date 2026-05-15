@@ -5,6 +5,7 @@ version = "0.0.1"
 dependencies = [
     "networkx>=3.0",
     "zuspec-ir-core",
+    "zuspec-cli",
 ]
 
 [build-system]
