@@ -59,6 +59,11 @@ class ClockDomain:
     # Future here; tick() resolves them to advance simulated time.
     _cycle_waiters: Any = dc.field(default_factory=list, init=False, repr=False, compare=False)
 
+    # Integer cycle counter for testbench-driven tick() mode.
+    # Incremented by one per tick() call so Counter.value can be derived
+    # without a femtosecond timebase.
+    _cycle_count: int = dc.field(default=0, init=False, repr=False, compare=False)
+
     async def wait_cycle(self, n: int = 1) -> None:
         """Wait *n* clock cycles on this domain.
 
@@ -106,11 +111,39 @@ class ClockDomain:
         """
         import asyncio
         for _ in range(n):
+            self._cycle_count += 1
             waiters, self._cycle_waiters = self._cycle_waiters, []
             for fut in waiters:
                 if not fut.done():
                     fut.set_result(None)
             await asyncio.sleep(0)  # yield so resolved coroutines can run
+
+    def cycle(self) -> int:
+        """Return the current integer cycle count for this domain.
+
+        * With a wired timebase (pipeline-RT or ``zdc.simulate()``):
+          derived from ``timebase._current_time // period_fs``.  If the
+          domain has no period configured, defaults to 1 ns per cycle.
+        * Testbench ``tick()`` mode (no timebase): returns ``_cycle_count``,
+          which is incremented once per :meth:`tick` call.
+
+        Returns:
+            Integer cycle index since simulation start.
+        """
+        if self._timebase is not None:
+            period_fs = self._period_fs()
+            return self._timebase._current_time // period_fs
+        return self._cycle_count
+
+    def _period_fs(self) -> int:
+        """Clock period in femtoseconds; defaults to 1 ns if unset."""
+        if self.period is not None:
+            try:
+                from .rt.timebase import Timebase
+                return Timebase._time_to_fs(self.period)
+            except Exception:
+                pass
+        return 1_000_000  # 1 ns default
 
     @property
     def period_ns(self) -> Optional[float]:

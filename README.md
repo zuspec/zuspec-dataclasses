@@ -362,6 +362,7 @@ for stmt in ir.stmts:
 - ✅ Static type checking via MyPy plugin
 - ✅ PSS Activities — compound actions, scheduling blocks, control flow, flow-objects, resources
 - ✅ `@zdc.extend` for PSS type extensions
+- ✅ Abstract counters (`Counter`, `ModuloCounter`, `WatchdogCounter`, `CounterBank`) with lazy simulation, RTL synthesis, and formal verification support
 
 **In Progress:**
 - 🔄 RTL execution engine for sync/comb processes

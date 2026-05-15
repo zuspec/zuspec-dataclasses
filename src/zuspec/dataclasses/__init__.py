@@ -151,6 +151,10 @@ from .domain import (
     clock_domain, reset_domain,
     super as super,  # zdc.super() — parent-domain sentinel factory
 )
+from .counter import Counter, ScheduleHandle
+from .modulo_counter import ModuloCounter
+from .watchdog_counter import WatchdogCounter
+from .counter_bank import CounterBank
 from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
 from .sdc_emit import SDCEmitPass, emit_sdc
 from .pipeline_ns import pipeline, _StageHandle, _Snap
@@ -160,6 +164,17 @@ from .stage_decorator import stage
 from .decorators import _LegacyForwardingDecl, PipelineError
 from .method_port import InPort, OutPort, in_port, out_port
 from typing import Type
+
+# Abstract MMR subsystem
+from .mmr import (
+    SW, HW, RegAcc, OnWrite, OnRead, StickyBit, Precedence,
+    FieldDescriptor, reg_field, FieldAttr,
+    reg, regfile,
+    RegisterFile,
+    WriteHandle, RegisterValue,
+    BusPort, PassthroughPort,
+    wait_until,
+)
 
 
 def forward(signal: str, from_stage: str = "", to_stage: str = "") -> _LegacyForwardingDecl:
@@ -288,10 +303,20 @@ __all__ = [
     'clock_port', 'clock_bind', 'reset_bind',
     'clock_domain', 'reset_domain',
     'super',
+    # From counter
+    'Counter', 'ScheduleHandle', 'ModuloCounter', 'WatchdogCounter', 'CounterBank',
     # From cdc
     'TwoFFSync', 'AsyncFIFO', 'cdc_unchecked',
     # Submodules
     'ir', 'profiles',
+    # From abstract MMR subsystem
+    'SW', 'HW', 'RegAcc', 'OnWrite', 'OnRead', 'StickyBit', 'Precedence',
+    'FieldDescriptor', 'reg_field', 'FieldAttr',
+    'regfile',
+    'RegisterFile',
+    'WriteHandle', 'RegisterValue',
+    'BusPort', 'PassthroughPort',
+    'wait_until',
     # Other exports
     'DataModelFactory', 'Event', 'cycles', 'tick',
     'sext', 'zext', 'cbit', 'signed',
@@ -364,7 +389,7 @@ def cycles(n: int = 1) -> _CyclesAwaitable:
     return _CyclesAwaitable(n)
 
 
-def tick() -> _CyclesAwaitable:
+def tick(count: int=1) -> _CyclesAwaitable:
     """Advance exactly one clock cycle in a @zdc.proc or @zdc.sync process.
 
     Convenience alias for ``zdc.cycles(1)``.  Use this at the end of a
@@ -379,7 +404,7 @@ def tick() -> _CyclesAwaitable:
                 self.count = self.count + 1
                 await zdc.tick()   # ← end of cycle; loop back
     """
-    return _CyclesAwaitable(1)
+    return _CyclesAwaitable(count)
 
 
 # ---------------------------------------------------------------------------
