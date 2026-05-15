@@ -2,6 +2,10 @@
 
 Registers :class:`PythonFrontend` with the zuspec-cli
 :class:`~zuspec.cli.Registry`.
+
+``zuspec-cli`` is an optional peer — this module is only useful when it is
+installed, but ``zuspec-dataclasses`` must not declare it as a hard
+dependency (``zuspec-cli`` itself depends on ``zuspec-dataclasses``).
 """
 from __future__ import annotations
 
@@ -9,9 +13,16 @@ import argparse
 import importlib
 from typing import List, TYPE_CHECKING
 
-from zuspec.cli.plugin import Plugin
-from zuspec.cli.frontend import Frontend
-from zuspec.cli.ir import IR
+try:
+    from zuspec.cli.plugin import Plugin
+    from zuspec.cli.frontend import Frontend
+    from zuspec.cli.ir import IR
+    _CLI_AVAILABLE = True
+except ImportError:
+    Plugin = object  # type: ignore[assignment,misc]
+    Frontend = object  # type: ignore[assignment,misc]
+    IR = None  # type: ignore[assignment,misc]
+    _CLI_AVAILABLE = False
 
 if TYPE_CHECKING:
     from zuspec.cli.registry import Registry

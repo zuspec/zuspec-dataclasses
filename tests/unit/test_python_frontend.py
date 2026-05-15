@@ -5,6 +5,8 @@ import argparse
 import sys
 import pytest
 
+pytest.importorskip("zuspec.cli", reason="zuspec-cli is not installed")
+
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.cli_plugin import PythonFrontend, ZuspecDataclassesPlugin
 from zuspec.cli.registry import Registry
