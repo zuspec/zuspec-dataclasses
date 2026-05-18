@@ -41,6 +41,34 @@ class WatchdogCounter(Counter):
     # Handle to the spawned timeout coroutine so we can cancel it on kick/disarm.
     _handle = dc.field(default=None, init=False, repr=False, compare=False)
 
+    @classmethod
+    def elaborate_field(
+        cls,
+        field_name: str,
+        field_index: int,
+        inst_kwargs: dict,
+        element_type=None,
+    ):
+        """Build an ``AbstractionFieldIR`` for a ``WatchdogCounter`` field.
+
+        Reads ``TIMEOUT`` from *inst_kwargs* (default 1000).  The register
+        width is chosen as the minimum number of bits to represent
+        ``TIMEOUT - 1``.
+        """
+        from .counter_ir import CounterIR
+        from zuspec.ir.core.abstraction_field_ir import AbstractionFieldIR
+        timeout = int(inst_kwargs.get("TIMEOUT", 1000))
+        width = max(1, (timeout - 1).bit_length()) if timeout > 1 else 1
+        ir_node = CounterIR(width=width, period=timeout, is_free_running=False)
+        return AbstractionFieldIR(
+            spec_type_name=cls.__name__,
+            field_name=field_name,
+            field_index=field_index,
+            py_cls=cls,
+            inst_kwargs=inst_kwargs,
+            ir_node=ir_node,
+        )
+
     # ── Public control ──────────────────────────────────────────────────────
 
     def arm(self, cycles: Optional[int] = None) -> None:

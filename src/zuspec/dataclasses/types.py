@@ -25,6 +25,24 @@ from typing import (
     Self, Union, Awaitable, runtime_checkable)
 from .decorators import dataclass, field, export
 
+# ---------------------------------------------------------------------------
+# Lowering protocols (optional — zuspec-ir-core may not be installed)
+# ---------------------------------------------------------------------------
+try:
+    from zuspec.ir.core.interfaces import (
+        Lowerable as _Lowerable,
+        ElaboratableInterface as _ElaboratableInterface,
+        SVEmittableInterface as _SVEmittableInterface,
+        SVAEmittableInterface as _SVAEmittableInterface,
+        CSimEmittableInterface as _CSimEmittableInterface,
+    )
+except ImportError:
+    class _Lowerable:              pass  # noqa: E701
+    class _ElaboratableInterface:  pass  # noqa: E701
+    class _SVEmittableInterface:   pass  # noqa: E701
+    class _SVAEmittableInterface:  pass  # noqa: E701
+    class _CSimEmittableInterface: pass  # noqa: E701
+
 
 @dc.dataclass
 class TypeBase(object):
@@ -898,7 +916,24 @@ class IndexedClaim(Protocol):
     kind: str   # 'read' | 'write'
 
 
-class IndexedRegFile[TIdx, TData](Protocol):
+def _extract_bit_width(t, default: int = 32) -> int:
+    """Extract the bit width from ``Annotated[int, U(N)]`` or return *default*."""
+    from typing import get_args, get_origin
+    if get_origin(t) is Annotated:
+        for meta in get_args(t)[1:]:
+            if isinstance(meta, SignWidth):
+                return meta.width
+    return default
+
+
+class IndexedRegFile[TIdx, TData](
+    _Lowerable,
+    _ElaboratableInterface,
+    _SVEmittableInterface,
+    _SVAEmittableInterface,
+    _CSimEmittableInterface,
+    Protocol,
+):
     """Register file resource with explicit port count and topology.
 
     ``read_ports``  — number of independent read port slots.  Each slot is
@@ -918,6 +953,11 @@ class IndexedRegFile[TIdx, TData](Protocol):
     groups on the synthesised register file module, and ``shared_port`` to
     decide whether forwarding muxes (separate ports) or stall logic (shared
     port) are needed for RAW hazard resolution.
+
+    Implements :class:`~zuspec.ir.core.interfaces.Lowerable` and the
+    four facet protocols so that ``DataModelFactory`` can register it in the
+    global lowering registry and ``AbstractionSVLowerPass`` / FV passes can
+    dispatch to it directly.
     """
     read_ports:  int
     write_ports: int
@@ -962,6 +1002,152 @@ class IndexedRegFile[TIdx, TData](Protocol):
         Writing register 0 (x0) is a no-op; no slot is consumed.
         """
         ...
+
+    # ── Self-describing lowering interface ───────────────────────────────────
+
+    @classmethod
+    def elaborate_field(cls, *, field_name, field_index, inst_kwargs,
+                        element_type=None):
+        """Build an AbstractionFieldIR from an IndexedRegFile[TIdx, TData] field.
+
+        ``element_type`` is a tuple ``(TIdx, TData)`` from the generic
+        annotation; bit widths are extracted via ``_extract_bit_width()``.
+        ``inst_kwargs`` carries ``READ_PORTS``, ``WRITE_PORTS``, ``SHARED_PORT``
+        folded in from the ``indexed_regfile()`` factory metadata.
+        """
+        from zuspec.ir.core.abstraction_field_ir import AbstractionFieldIR
+        idx_bits = 5
+        data_width = 32
+        if isinstance(element_type, tuple) and len(element_type) >= 2:
+            idx_bits = _extract_bit_width(element_type[0], default=5)
+            data_width = _extract_bit_width(element_type[1], default=32)
+        elif isinstance(element_type, tuple) and len(element_type) == 1:
+            data_width = _extract_bit_width(element_type[0], default=32)
+        depth = 2 ** idx_bits
+        ir_node = {
+            'field_name': field_name,
+            'depth': depth,
+            'idx_width': idx_bits,
+            'data_width': data_width,
+            'read_ports': int(inst_kwargs.get('READ_PORTS', 2)),
+            'write_ports': int(inst_kwargs.get('WRITE_PORTS', 1)),
+            'shared_port': bool(inst_kwargs.get('SHARED_PORT', False)),
+        }
+        return AbstractionFieldIR(
+            spec_type_name='IndexedRegFile',
+            field_name=field_name,
+            field_index=field_index,
+            py_cls=cls,
+            inst_kwargs=inst_kwargs,
+            ir_node=ir_node,
+        )
+
+    @classmethod
+    def sv_module_text(cls, field_ir) -> str:
+        """Return a synthesisable SV register file module.
+
+        Delegates to :class:`~zuspec.synth.sprtl.regfile_synth.RegFileSVGenerator`
+        using the ``RegFileDeclIR`` reconstructed from ``field_ir.ir_node``.
+        """
+        from zuspec.synth.sprtl.regfile_synth import RegFileSVGenerator
+        from zuspec.synth.elab.elab_ir import RegFileDeclIR
+        n = field_ir.ir_node
+        decl = RegFileDeclIR(
+            field_name=n['field_name'],
+            depth=n['depth'],
+            idx_width=n['idx_width'],
+            data_width=n['data_width'],
+            read_ports=n['read_ports'],
+            write_ports=n['write_ports'],
+            shared_port=n['shared_port'],
+        )
+        return RegFileSVGenerator().generate(decl)
+
+    @classmethod
+    def sv_instance_text(cls, field_ir, parent_prefix: str = '') -> str:
+        """Return the SV instantiation snippet for this register file."""
+        n = field_ir.ir_node
+        fn = n['field_name']
+        rp, wp = n['read_ports'], n['write_ports']
+        sp = n['shared_port']
+        lines = [f'{fn}_rf u_{fn}_rf (', '  .clk(clk),', '  .rst(rst),']
+        num_r = 1 if sp else rp
+        for i in range(num_r):
+            sfx = '' if num_r == 1 else f'_{i}'
+            lines += [
+                f'  .rd_en{sfx}({fn}_rd_en{sfx}),',
+                f'  .rd_addr{sfx}({fn}_rd_addr{sfx}),',
+                f'  .rd_data{sfx}({fn}_rd_data{sfx}),',
+            ]
+        num_w = 1 if sp else wp
+        for i in range(num_w):
+            sfx = '' if num_w == 1 else f'_{i}'
+            lines += [
+                f'  .wr_en{sfx}({fn}_wr_en{sfx}),',
+                f'  .wr_addr{sfx}({fn}_wr_addr{sfx}),',
+                f'  .wr_data{sfx}({fn}_wr_data{sfx}),',
+            ]
+        lines[-1] = lines[-1].rstrip(',')
+        lines.append(');')
+        return '\n'.join(lines)
+
+    @classmethod
+    def rewrite_proc_stmts(cls, stmts, field_ir):
+        """Pass-through: IndexedRegFile accesses are expressed as port connections."""
+        return stmts
+
+    @classmethod
+    def sva_assert_properties(cls, field_ir):
+        """Return RAW forwarding correctness SVA assertions for each r×w pair."""
+        n = field_ir.ir_node
+        fn = n['field_name']
+        rp, wp, sp = n['read_ports'], n['write_ports'], n['shared_port']
+        props = []
+        if not sp:
+            for r in range(rp):
+                for w in range(wp):
+                    r_sfx = '' if rp == 1 else f'_{r}'
+                    w_sfx = '' if wp == 1 else f'_{w}'
+                    props.append(
+                        f'// RAW forwarding correctness: read{r_sfx} vs write{w_sfx}\n'
+                        f'ap_{fn}_raw_r{r}_w{w}: assert property (\n'
+                        f'  @(posedge clk) disable iff (rst)\n'
+                        f'  ({fn}_rd_en{r_sfx} && {fn}_wr_en{w_sfx} && '
+                        f'({fn}_rd_addr{r_sfx} == {fn}_wr_addr{w_sfx}))\n'
+                        f'  |-> ({fn}_rd_data{r_sfx} == {fn}_wr_data{w_sfx})\n'
+                        f');'
+                    )
+        return props
+
+    @classmethod
+    def sva_assume_properties(cls, field_ir):
+        return []
+
+    @classmethod
+    def bmc_depth(cls, field_ir) -> int:
+        return 4
+
+    @classmethod
+    def cutpoint_signals(cls, field_ir):
+        return []
+
+    @classmethod
+    def c_header(cls, field_ir) -> str:
+        n = field_ir.ir_node
+        fn, dw, depth = n['field_name'], n['data_width'], n['depth']
+        t = f'uint{dw}_t' if dw <= 64 else 'uint64_t'
+        guard = f'_ZDC_{fn.upper()}_RF_H_'
+        return (
+            f'#ifndef {guard}\n#define {guard}\n#include <stdint.h>\n'
+            f'{t} zdc_{fn}_rf[{depth}];\n#endif\n'
+        )
+
+    @classmethod
+    def c_impl(cls, field_ir) -> str:
+        n = field_ir.ir_node
+        fn, dw, depth = n['field_name'], n['data_width'], n['depth']
+        t = f'uint{dw}_t' if dw <= 64 else 'uint64_t'
+        return f'{t} zdc_{fn}_rf[{depth}];\n'
 
 
 class BackdoorRegFile(Protocol):

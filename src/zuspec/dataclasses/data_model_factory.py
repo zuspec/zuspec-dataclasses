@@ -1025,6 +1025,73 @@ class DataModelFactory(object):
             
             # Get field type
             origin = get_origin(field_type)
+
+            # ── Abstraction-field hook ───────────────────────────────────────
+            # Check if the field type (or its generic origin) is a Lowerable
+            # abstraction (e.g. Counter, Queue, IndexedRegFile).
+            # When found, ask the class to elaborate itself into an
+            # AbstractionFieldIR and skip the rest of the field-type dispatch.
+            _abstraction_cls = origin if isinstance(origin, type) else (
+                field_type if isinstance(field_type, type) else (
+                    # Handle _QueueAlias: Queue[T].__class_getitem__ returns
+                    # _QueueAlias(Queue, T); get_origin() returns None for it,
+                    # but _QueueAlias._origin holds the Queue class.
+                    getattr(field_type, '_origin', None)
+                )
+            )
+            if _abstraction_cls is not None:
+                try:
+                    from zuspec.ir.core.interfaces import Lowerable
+                    from zuspec.ir.core.registry import global_registry
+                    _is_lowerable = (
+                        Lowerable in getattr(_abstraction_cls, '__mro__', ())
+                    )
+                except ImportError:
+                    _is_lowerable = False
+                if _is_lowerable and hasattr(_abstraction_cls, 'elaborate_field'):
+                    _inst_kwargs = dict(field_metadata.get('kwargs', {})) if field_metadata else {}
+                    # For indexed_regfile(), metadata stores params as direct keys
+                    # (read_ports, write_ports, shared_port), not inside a 'kwargs'
+                    # sub-dict — fold them into inst_kwargs as upper-cased keys.
+                    if field_metadata:
+                        for _mk, _ik in (
+                            ('read_ports', 'READ_PORTS'),
+                            ('write_ports', 'WRITE_PORTS'),
+                            ('shared_port', 'SHARED_PORT'),
+                        ):
+                            if _mk in field_metadata:
+                                _inst_kwargs.setdefault(_ik, field_metadata[_mk])
+                    # For Queue fields using the legacy queue(depth=N) factory,
+                    # depth is stored on the default QueueRT instance, not in
+                    # metadata['kwargs'].  Extract it here as a fallback.
+                    if 'DEPTH' not in _inst_kwargs:
+                        _field_default = getattr(f, 'default', None)
+                        if _field_default is not None and not isinstance(_field_default, type):
+                            _legacy_depth = getattr(_field_default, 'depth', None)
+                            if _legacy_depth is not None:
+                                _inst_kwargs['DEPTH'] = _legacy_depth
+                    # Collect type args; handle _QueueAlias (._item) and standard
+                    # multi-param generics (e.g. IndexedRegFile[TIdx, TData]).
+                    _type_args = get_args(field_type) if origin else ()
+                    if not _type_args and hasattr(field_type, '_item'):
+                        _type_args = (field_type._item,)
+                    if len(_type_args) == 0:
+                        _element_type = None
+                    elif len(_type_args) == 1:
+                        _element_type = _type_args[0]
+                    else:
+                        _element_type = _type_args  # tuple for multi-param generics
+                    _field_index = len(fields)
+                    abstraction_field_ir = _abstraction_cls.elaborate_field(
+                        field_name=f.name,
+                        field_index=_field_index,
+                        inst_kwargs=_inst_kwargs,
+                        element_type=_element_type,
+                    )
+                    fields.append(abstraction_field_ir)
+                    continue
+            # ────────────────────────────────────────────────────────────────
+
             # Detect Reg[T] fields (hardware registers)
             from .types import Reg as _Reg
             if origin is _Reg:
@@ -1354,6 +1421,12 @@ class DataModelFactory(object):
                     self._add_pending(elem_py)
                 return DataTypeClaimPool(elem_type_name=elem_name)
         
+        # Handle @zdc.enum-decorated classes → DataTypeEnum (must be before IntEnum check)
+        if inspect.isclass(field_type) and hasattr(field_type, '_zdc_data_type'):
+            dt = field_type._zdc_data_type
+            if type(dt).__name__ == 'DataTypeEnum':
+                return dt
+
         # Handle Python IntEnum subclasses → DataTypeEnum
         if inspect.isclass(field_type) and issubclass(field_type, _enum_mod.IntEnum):
             items = {member.name: member.value for member in field_type}

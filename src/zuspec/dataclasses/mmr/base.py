@@ -1,14 +1,60 @@
-"""RegisterFile base class: elaboration, bus access, and named register access."""
+"""RegisterFile base class: elaboration, bus access, and named register access.
+
+Lowering
+--------
+``RegisterFile`` participates in the Zuspec structured-lowering pipeline by
+inheriting all five interface protocols from ``zuspec.ir.core.interfaces``.
+The ``elaborate_field()`` classmethod is called by ``DataModelFactory`` when a
+component declares a ``RegisterFile`` field; it returns an ``AbstractionFieldIR``
+whose ``ir_node`` is a plain dict capturing ``regfile_cls`` and ``module_name``.
+
+``sv_module_text()`` delegates to the standalone ``synthesize_regfile()``
+function in ``zuspec-synth`` via a lazy import (avoiding a circular dependency
+since ``zuspec-dataclasses`` does not depend on ``zuspec-synth`` at module load
+time).
+"""
 from __future__ import annotations
 
+import re as _re
 from typing import Dict, List, Optional, Callable
 
 from .field_rt import FieldRT
 from .register_rt import RegisterRT
 from .descriptor import FieldDescriptor
 
+try:
+    from zuspec.ir.core.interfaces import (
+        Lowerable,
+        ElaboratableInterface,
+        SVEmittableInterface,
+        SVAEmittableInterface,
+        CSimEmittableInterface,
+    )
+    _HAS_INTERFACES = True
+except ImportError:
+    # Graceful degradation when zuspec-ir-core is not installed.
+    Lowerable = object
+    ElaboratableInterface = object
+    SVEmittableInterface = object
+    SVAEmittableInterface = object
+    CSimEmittableInterface = object
+    _HAS_INTERFACES = False
 
-class RegisterFile:
+
+def _snake(name: str) -> str:
+    """Convert CamelCase to snake_case."""
+    s = _re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', name)
+    s = _re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s)
+    return s.lower()
+
+
+class RegisterFile(
+    Lowerable,
+    ElaboratableInterface,
+    SVEmittableInterface,
+    SVAEmittableInterface,
+    CSimEmittableInterface,
+):
     """Base class for all abstract register files.
 
     Subclasses must be decorated with :func:`~.decorators.regfile` and contain
@@ -30,6 +76,107 @@ class RegisterFile:
         self.regs.CTRL           # → RegisterRT
         self.regs.CTRL.START     # → int (current value) in comb/sync context
     """
+
+    # ------------------------------------------------------------------
+    # Lowering interface (ElaboratableInterface / SVEmittableInterface /
+    # SVAEmittableInterface / CSimEmittableInterface)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def elaborate_field(cls, field_name, field_index, inst_kwargs, element_type=None):
+        """Return an AbstractionFieldIR capturing this RegisterFile for synthesis."""
+        from zuspec.ir.core.abstraction_field_ir import AbstractionFieldIR
+        module_name = _snake(cls.__name__)
+        ir_node = {
+            'regfile_cls': cls,
+            'module_name': module_name,
+            'reg_classes': getattr(cls, '_mmr_reg_classes', []),
+        }
+        return AbstractionFieldIR(
+            spec_type_name='RegisterFile',
+            field_name=field_name,
+            field_index=field_index,
+            py_cls=cls,
+            inst_kwargs=inst_kwargs or {},
+            ir_node=ir_node,
+        )
+
+    @classmethod
+    def sv_module_text(cls, field_ir):
+        """Delegate to synthesize_regfile() via lazy import to avoid circular deps."""
+        from zuspec.synth.passes.mmr_regfile_emit import synthesize_regfile
+        ir_node = field_ir.ir_node
+        return synthesize_regfile(ir_node['regfile_cls'], module_name=ir_node['module_name'])
+
+    @classmethod
+    def sv_instance_text(cls, field_ir, parent_prefix):
+        """Return an APB4 instantiation snippet for the register file module."""
+        ir_node = field_ir.ir_node
+        module_name = ir_node['module_name']
+        field_name = field_ir.field_name
+        prefix = f"{parent_prefix}{field_name}" if parent_prefix else field_name
+        lines = [
+            f"    {module_name} u_{field_name} (",
+            f"        .clk     (clk),",
+            f"        .rst     (rst),",
+            f"        .psel    ({prefix}_psel),",
+            f"        .penable ({prefix}_penable),",
+            f"        .pwrite  ({prefix}_pwrite),",
+            f"        .paddr   ({prefix}_paddr),",
+            f"        .pwdata  ({prefix}_pwdata),",
+            f"        .prdata  ({prefix}_prdata),",
+            f"        .pready  ({prefix}_pready),",
+            f"        .pslverr ({prefix}_pslverr),",
+            f"        .hwif_in ({prefix}_hwif_in),",
+            f"        .hwif_out({prefix}_hwif_out)",
+            f"    );",
+        ]
+        return "\n".join(lines)
+
+    @classmethod
+    def rewrite_proc_stmts(cls, stmts, field_ir):
+        """RegisterFile accesses do not require proc-body rewriting."""
+        return stmts
+
+    @classmethod
+    def sva_assert_properties(cls, field_ir):
+        """Generate singlepulse reset assertions for all singlepulse fields."""
+        ir_node = field_ir.ir_node
+        reg_classes = ir_node.get('reg_classes', [])
+        properties = []
+        for reg_name, reg_cls in reg_classes:
+            for fname, fd in getattr(reg_cls, '_mmr_fields', []):
+                if getattr(fd, 'singlepulse', False):
+                    sig = f"field_storage_{reg_name}_{fname}"
+                    properties.append(
+                        f"assert property (@(posedge clk) disable iff (rst)"
+                        f" {sig} |=> !{sig});"
+                    )
+        return properties
+
+    @classmethod
+    def sva_assume_properties(cls, field_ir):
+        return []
+
+    @classmethod
+    def bmc_depth(cls, field_ir):
+        return 0
+
+    @classmethod
+    def cutpoint_signals(cls, field_ir):
+        return []
+
+    @classmethod
+    def c_header(cls, field_ir):
+        return ""
+
+    @classmethod
+    def c_impl(cls, field_ir):
+        return ""
+
+    # ------------------------------------------------------------------
+    # Runtime elaboration
+    # ------------------------------------------------------------------
 
     def __init__(self):
         # Maps are filled by _elaborate()

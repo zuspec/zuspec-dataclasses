@@ -243,16 +243,16 @@ Formal verification
 -------------------
 
 ``zuspec-be-fv`` automatically derives SystemVerilog Assertions from counter
-fields via :class:`~zuspec.be.fv.passes.CounterFormalPass`:
+fields via :class:`~zuspec.be.fv.passes.AbstractionFormalPass`:
 
 .. code-block:: python
 
-    from zuspec.be.fv.passes import CounterFormalPass
+    from zuspec.be.fv.passes import AbstractionFormalPass
 
-    fpass = CounterFormalPass(Blinker)
+    fpass = AbstractionFormalPass(Blinker)
 
-    for prop in fpass.all_properties():
-        print(prop.to_sva())
+    for sva in fpass.all_properties():
+        print(sva)
 
     # Recommended BMC depth for full coverage:
     print(fpass.min_required_depth())
@@ -265,7 +265,7 @@ monotone_progress
     Each cycle the counter increments by 1, or rolls over from ``PERIOD-1``
     to 0 — no arbitrary jumps.
 
-:meth:`~zuspec.be.fv.passes.CounterFormalPass.min_required_depth` returns the
+:meth:`~zuspec.be.fv.passes.AbstractionFormalPass.min_required_depth` returns the
 minimum BMC depth needed to observe all :meth:`~zdc.Counter.wait_for` targets,
 making it easy to set the solver bound correctly.
 

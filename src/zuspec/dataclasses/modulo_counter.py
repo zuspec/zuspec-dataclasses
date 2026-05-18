@@ -42,6 +42,33 @@ class ModuloCounter(Counter):
         """Rollover point: ``PERIOD`` (overrides ``2**WIDTH``)."""
         return self.PERIOD
 
+    @classmethod
+    def elaborate_field(
+        cls,
+        field_name: str,
+        field_index: int,
+        inst_kwargs: dict,
+        element_type=None,
+    ):
+        """Build an ``AbstractionFieldIR`` for a ``ModuloCounter`` field.
+
+        Reads ``PERIOD`` from *inst_kwargs* (default 256).  The register width
+        is chosen as the minimum number of bits to represent ``PERIOD - 1``.
+        """
+        from .counter_ir import CounterIR
+        from zuspec.ir.core.abstraction_field_ir import AbstractionFieldIR
+        period = int(inst_kwargs.get("PERIOD", 256))
+        width = max(1, (period - 1).bit_length()) if period > 1 else 1
+        ir_node = CounterIR(width=width, period=period, is_free_running=True)
+        return AbstractionFieldIR(
+            spec_type_name=cls.__name__,
+            field_name=field_name,
+            field_index=field_index,
+            py_cls=cls,
+            inst_kwargs=inst_kwargs,
+            ir_node=ir_node,
+        )
+
     @_proc
     async def on_rollover(self) -> None:
         """Override or bind: called every ``PERIOD`` cycles.

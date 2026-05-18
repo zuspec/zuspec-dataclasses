@@ -165,6 +165,31 @@ from .decorators import _LegacyForwardingDecl, PipelineError
 from .method_port import InPort, OutPort, in_port, out_port
 from typing import Type
 
+
+def _register_standard_abstractions() -> None:
+    """Register Counter, ModuloCounter, WatchdogCounter, IndexedRegFile, and Queue
+    in the global registry.
+
+    Called once at import time.  Safe to call multiple times (registry
+    ``register()`` is idempotent).  Silently skips registration when
+    ``zuspec-ir-core`` is not installed.
+    """
+    try:
+        from zuspec.ir.core.registry import global_registry
+    except ImportError:
+        return
+    r = global_registry()
+    for cls in (Counter, ModuloCounter, WatchdogCounter):
+        r.register(cls)
+    # IndexedRegFile and Queue also participate in the lowering pipeline.
+    from .types import IndexedRegFile
+    from .queue_type import Queue as _Queue
+    r.register(IndexedRegFile)
+    r.register(_Queue)
+
+
+_register_standard_abstractions()
+
 # Abstract MMR subsystem
 from .mmr import (
     SW, HW, RegAcc, OnWrite, OnRead, StickyBit, Precedence,
@@ -175,6 +200,13 @@ from .mmr import (
     BusPort, PassthroughPort,
     wait_until,
 )
+
+# Register RegisterFile in the lowering registry (must happen after the mmr import).
+try:
+    from zuspec.ir.core.registry import global_registry as _global_registry
+    _global_registry().register(RegisterFile)
+except ImportError:
+    pass
 
 
 def forward(signal: str, from_stage: str = "", to_stage: str = "") -> _LegacyForwardingDecl:
