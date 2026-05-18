@@ -37,11 +37,11 @@ try:
         CSimEmittableInterface as _CSimEmittableInterface,
     )
 except ImportError:
-    class _Lowerable:              pass  # noqa: E701
-    class _ElaboratableInterface:  pass  # noqa: E701
-    class _SVEmittableInterface:   pass  # noqa: E701
-    class _SVAEmittableInterface:  pass  # noqa: E701
-    class _CSimEmittableInterface: pass  # noqa: E701
+    class _Lowerable(Protocol):              pass  # noqa: E701
+    class _ElaboratableInterface(Protocol):  pass  # noqa: E701
+    class _SVEmittableInterface(Protocol):   pass  # noqa: E701
+    class _SVAEmittableInterface(Protocol):  pass  # noqa: E701
+    class _CSimEmittableInterface(Protocol): pass  # noqa: E701
 
 
 @dc.dataclass
