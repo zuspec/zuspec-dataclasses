@@ -19,8 +19,10 @@ from typing import List, Optional
 
 from .base import SolverBackend
 from .python_backend import PythonSolverBackend
+from .native_backend import NativeSolverBackend
 
 _PYTHON_BACKEND = PythonSolverBackend()
+_NATIVE_BACKEND = NativeSolverBackend()
 
 # Known error values that should raise instead of falling back
 _SENTINEL = object()
@@ -42,12 +44,16 @@ def _discover_backends() -> List[SolverBackend]:
 
     backends: List[SolverBackend] = []
 
+    # Built-in native back-end (preferred over Python when available)
+    if _NATIVE_BACKEND.available:
+        backends.append(_NATIVE_BACKEND)
+
     try:
         from importlib.metadata import entry_points
         eps = entry_points(group="zuspec.solver.backend")
         for ep in eps:
             # Skip the python entry-point — we include it explicitly below
-            if ep.name == "python":
+            if ep.name in ("python", "native"):
                 continue
             try:
                 cls = ep.load()
