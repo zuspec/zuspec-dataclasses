@@ -785,6 +785,20 @@ def array(depth: int, default=None) -> Any:
     return dc.field(default_factory=lambda: [fill] * depth, metadata=metadata)
 
 
+def field_names(obj_or_cls) -> tuple:
+    """Return the declared field names of a zdc dataclass (instance or class).
+
+    Iteration order matches declaration order. Works on any class produced by
+    ``@zdc.dataclass`` (Bundle, Struct, Component, plain dataclass) because the
+    underlying machinery is the standard ``dataclasses`` module.
+
+    Example:
+        for n in zdc.field_names(WishboneReqIF):
+            setattr(dst, n, getattr(src, n))
+    """
+    return tuple(f.name for f in dataclasses.fields(obj_or_cls))
+
+
 def const(default=None) -> Any:
     """Marks a post-construction constant.
 

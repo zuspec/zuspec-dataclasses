@@ -84,7 +84,7 @@ from typing import Callable
 from . import pcf
 from .decorators import (
     dataclass, field, proc, input, output, inout, reg, array,
-    const, bundle, mirror, monitor,
+    const, bundle, mirror, monitor, field_names,
     port, export, bind, Exec, ExecKind, ExecProc,
     Input, Output, Inout, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view, constraint, rand, randc,

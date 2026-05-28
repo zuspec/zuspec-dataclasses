@@ -55,9 +55,17 @@ class ClockDomain:
     _timebase: Any = dc.field(default=None, init=False, repr=False, compare=False)
     _rt_domain: Any = dc.field(default=None, init=False, repr=False, compare=False)
 
-    # Sim-time waiter list.  Coroutines blocked on wait_cycle() append a
-    # Future here; tick() resolves them to advance simulated time.
+    # Sim-time waiter list.  Each entry is a (target_cycle, Future) tuple.
+    # Coroutines blocked on wait_cycle(n) register one entry; the future is
+    # resolved when _cycle_count reaches target_cycle.  Using a single entry
+    # per wait_cycle(n) call (rather than n individual futures) allows the
+    # testbench to fast-forward many cycles in O(1) event-loop yields.
     _cycle_waiters: Any = dc.field(default_factory=list, init=False, repr=False, compare=False)
+
+    # Signal-edge waiter list.  Each entry is a (signal_fn, prev_value, edge_type, Future) tuple.
+    # Coroutines blocked on negedge/posedge/edge register one entry; the future is resolved
+    # when the signal transitions as specified.  edge_type is 'neg', 'pos', or 'any'.
+    _edge_waiters: Any = dc.field(default_factory=list, init=False, repr=False, compare=False)
 
     # Integer cycle counter for testbench-driven tick() mode.
     # Incremented by one per tick() call so Counter.value can be derived
@@ -78,15 +86,18 @@ class ClockDomain:
             n: Number of cycles.  Must be >= 1.
         """
         import asyncio
+        if n < 1:
+            raise ValueError(f"wait_cycle() requires n >= 1, got {n}")
         if self._timebase is not None and self._rt_domain is not None:
             await self._timebase.wait_cycles(n, self._rt_domain)
         elif self._cycle_waiters is not None:
-            # Testbench drives tick() — block until tick() resolves our future.
+            # Testbench drives tick() — register a single (target, future) pair
+            # so the testbench can fast-forward many cycles with O(1) overhead.
             loop = asyncio.get_running_loop()
-            for _ in range(n):
-                fut = loop.create_future()
-                self._cycle_waiters.append(fut)
-                await fut
+            target = self._cycle_count + n
+            fut = loop.create_future()
+            self._cycle_waiters.append((target, fut))
+            await fut
         else:
             raise RuntimeError(
                 f"ClockDomain {self!r} is unbound: no timebase and no testbench "
@@ -96,6 +107,55 @@ class ClockDomain:
     async def wait_cycles(self, n: int) -> None:
         """Alias for :meth:`wait_cycle` with explicit count."""
         await self.wait_cycle(n)
+
+    def _advance_cycles_sync(self, n: int = 1) -> None:
+        """Advance *_cycle_count* by *n* and resolve any waiters now due.
+
+        This is the synchronous core shared by :meth:`tick` and
+        :meth:`~zuspec.dataclasses.rt.sim_domain.SimDomain.tick`.  Callers
+        are responsible for yielding to the event loop (``await
+        asyncio.sleep(0)``) afterwards so that resolved coroutines can run.
+        """
+        self._cycle_count += n
+        if not self._cycle_waiters:
+            return
+        remaining = []
+        for target, fut in self._cycle_waiters:
+            if fut.done():
+                continue  # cancelled or already resolved — discard
+            if target <= self._cycle_count:
+                fut.set_result(None)
+            else:
+                remaining.append((target, fut))
+        self._cycle_waiters = remaining
+
+    def _check_edge_waiters(self) -> bool:
+        """Check signal-edge waiters and resolve any that have fired.
+
+        Returns ``True`` if at least one waiter was resolved.  Remaining
+        waiters have their stored ``prev_value`` updated to the current signal
+        value so that subsequent oscillations are detected correctly.
+        """
+        if not self._edge_waiters:
+            return False
+        remaining = []
+        fired = False
+        for (fn, prev, edge_type, fut) in self._edge_waiters:
+            if fut.done():
+                continue
+            curr = int(fn())
+            should_fire = (
+                (edge_type == 'neg' and prev == 1 and curr == 0) or
+                (edge_type == 'pos' and prev == 0 and curr == 1) or
+                (edge_type == 'any' and prev != curr)
+            )
+            if should_fire:
+                fut.set_result(None)
+                fired = True
+            else:
+                remaining.append((fn, curr, edge_type, fut))
+        self._edge_waiters = remaining
+        return fired
 
     async def tick(self, n: int = 1) -> None:
         """Advance *n* clock cycles (testbench-side clock driver).
@@ -111,11 +171,7 @@ class ClockDomain:
         """
         import asyncio
         for _ in range(n):
-            self._cycle_count += 1
-            waiters, self._cycle_waiters = self._cycle_waiters, []
-            for fut in waiters:
-                if not fut.done():
-                    fut.set_result(None)
+            self._advance_cycles_sync(1)
             await asyncio.sleep(0)  # yield so resolved coroutines can run
 
     def cycle(self) -> int:

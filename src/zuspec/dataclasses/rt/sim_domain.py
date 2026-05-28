@@ -58,14 +58,66 @@ class SimDomain:
     async def tick(self, n: int = 1) -> None:
         """Advance *n* rising edges on this domain.
 
-        Each call triggers all ``@zdc.sync`` methods that are bound to this
-        domain (or to the component's default domain when *domain_obj* is
-        ``None``).  Deferred writes are committed after each edge.
+        For components with ``@zdc.sync`` methods the clock is driven one
+        cycle at a time so every sync body fires on every edge.
+
+        For pure ``@zdc.proc`` components (no ``@zdc.sync`` in the entire
+        domain subtree) the testbench fast-forwards directly to the next proc
+        wakeup point, skipping O(N) ``asyncio.sleep(0)`` calls.  This makes
+        SPL-style ``await zdc.tick(count)`` waits significantly cheaper than
+        running each simulated cycle individually.
         """
-        for _ in range(n):
-            self._comp._impl.domain_clock_edge(self._comp, self._domain_obj)
-            # Yield to the event loop so async processes can run between ticks.
-            await asyncio.sleep(0)
+        impl = self._comp._impl
+        cd = self._domain_obj
+        remaining = n
+
+        while remaining > 0:
+            # First call: initialise eval state and start @proc tasks.
+            if not impl._eval_initialized or not impl._processes_started:
+                impl.domain_clock_edge(self._comp, cd)
+                if cd is not None:
+                    cd._advance_cycles_sync(1)
+                remaining -= 1
+                await asyncio.sleep(0)
+                continue
+
+            if cd is not None and not impl._has_sync_for_domain(self._comp, cd):
+                # No @sync methods in this domain's subtree — fast-forward.
+
+                # Check edge waiters first: signal may have changed since last tick().
+                if cd._edge_waiters:
+                    if cd._check_edge_waiters():
+                        # An edge fired — advance exactly 1 cycle so the woken
+                        # proc resumes at the correct cycle boundary.
+                        cd._advance_cycles_sync(1)
+                        remaining -= 1
+                        await asyncio.sleep(0)
+                        continue
+
+                if cd._cycle_waiters:
+                    min_target = min(t for t, _ in cd._cycle_waiters)
+                    cycles_to_event = min_target - cd._cycle_count
+                    if cycles_to_event <= 0:
+                        # Overdue waiter: resolve without consuming budget.
+                        cd._advance_cycles_sync(0)
+                        await asyncio.sleep(0)
+                        continue
+                    advance = min(remaining, cycles_to_event)
+                else:
+                    advance = remaining  # no waiters — burn remaining budget
+
+                cd._advance_cycles_sync(advance)
+                remaining -= advance
+                await asyncio.sleep(0)  # let woken proc tasks resume
+            else:
+                # @sync methods present — must fire every edge.
+                impl.domain_clock_edge(self._comp, cd)
+                if cd is not None:
+                    cd._check_edge_waiters()
+                    cd._advance_cycles_sync(1)
+                remaining -= 1
+                # Yield to the event loop so async processes can run between ticks.
+                await asyncio.sleep(0)
 
     async def reset(self, cycles: int = 2) -> None:
         """Assert reset for *cycles* rising edges, then deassert.

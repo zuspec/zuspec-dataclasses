@@ -706,6 +706,27 @@ class CompImplRT(object):
         # the waiting coroutines when the caller next yields (e.g. sleep(0)).
         self._tick_cycle_sync()
 
+    def _has_sync_for_domain(self, comp: "Component", cd) -> bool:
+        """Return True if this component or any domain child has domain-driven @sync methods.
+
+        Used by :meth:`~zuspec.dataclasses.rt.sim_domain.SimDomain.tick` to
+        decide whether the simulation can fast-forward many cycles at once
+        (safe when no ``@zdc.sync`` method needs to fire on every edge).
+
+        Conservative: returns ``True`` when eval state is not yet initialised
+        so that the caller always falls back to the safe per-cycle path.
+        """
+        if not self._eval_initialized:
+            return True  # unknown — assume sync methods may exist
+        for sync_func in self._sync_processes:
+            if sync_func.metadata.get('clock') is None:
+                return True  # at least one domain-driven sync method
+        for child in self._domain_children:
+            if hasattr(child, '_impl') and child._impl is not None:
+                if child._impl._has_sync_for_domain(child, cd):
+                    return True
+        return False
+
     def _tick_cycle_sync(self) -> None:
         """Synchronously advance the proc-cycle counter and resolve waiters.
 

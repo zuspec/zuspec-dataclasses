@@ -23,7 +23,7 @@ from typing import (
     Callable, cast, ClassVar, Dict, Generic, List, Optional, TypeVar, 
     Literal, Type, Annotated, Protocol, Any, SupportsInt, Union, Tuple, 
     Self, Union, Awaitable, runtime_checkable)
-from .decorators import dataclass, field, export
+from .decorators import dataclass, field, export, input, output, bundle
 
 # ---------------------------------------------------------------------------
 # Lowering protocols (optional — zuspec-ir-core may not be installed)
@@ -1683,6 +1683,12 @@ class MemIF(Protocol):
     async def write32(self, addr : u64, data : u32): ...
 
     async def write64(self, addr : u64, data : u64): ...
+
+@dc.dataclass
+class ReadyValidIF[T](Bundle):
+    valid: bit = output()
+    data: T = bundle()
+    ready: bit = input()
 
 @dc.dataclass
 class At(object):

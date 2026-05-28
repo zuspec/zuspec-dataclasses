@@ -23,9 +23,9 @@ multi-abstraction hardware modeling (behavioral → MLS → RTL).
 
 | Level | Key constructs | Reference |
 |---|---|---|
-| **Core** (all levels) | `zdc.Component`, `@zdc.dataclass`, ports, fields, binding, scalar types | [references/core.md](references/core.md) |
-| **Design** – RTL & MLS | `@zdc.sync`, `@zdc.comb`, `zdc.RegFile`, `zdc.Memory`, `@zdc.pipeline`, `@zdc.proc` | [references/design.md](references/design.md) |
-| **Behavioral** – BFMs & simulation | `zdc.IfProtocol`, `zdc.Queue`, `zdc.spawn`, `zdc.simulate`, TLM channels | [references/behavioral.md](references/behavioral.md) |
-| **Verification** – tests & coverage | `zdc.rand`, `@zdc.constraint`, `zdc.Covergroup`, `zdc.Action`, `zdc.ScenarioRunner` | [references/verification.md](references/verification.md) |
+| **Core** (all levels) | `zdc.Component`, `@zdc.dataclass`, ports, fields, binding, scalar types | [resources/core.md](resources/core.md) |
+| **Design** – RTL & MLS | `@zdc.sync`, `@zdc.comb`, `zdc.RegFile`, `zdc.Memory`, `@zdc.pipeline`, `@zdc.proc` | [resources/design.md](resources/design.md) |
+| **Behavioral** – BFMs & simulation | `zdc.IfProtocol`, `zdc.Queue`, `zdc.spawn`, `zdc.simulate`, TLM channels | [resources/behavioral.md](resources/behavioral.md) |
+| **Verification** – tests & coverage | `zdc.rand`, `@zdc.constraint`, `zdc.Covergroup`, `zdc.Action`, `zdc.ScenarioRunner` | [resources/verification.md](resources/verification.md) |
 
 Load only the reference file(s) relevant to your task.

@@ -25,10 +25,21 @@ Python = "zuspec.dataclasses.ir_checker.python_profile:PythonIRChecker"
 Retargetable = "zuspec.dataclasses.profiles:RetargetableProfile"
 Python = "zuspec.dataclasses.profiles:PythonProfile"
 
+[project.entry-points."agent.skills"]
+zuspec-dataclasses = "zuspec.dataclasses.skills:skills"
+
+# Deprecated: kept for backward compatibility with older IVPM versions.
+# Remove once consumers have migrated to the 'agent.skills' group.
+[project.entry-points."ivpm.skill"]
+zuspec-dataclasses = "zuspec.dataclasses.skills:skills"
 
 
 [tool.setuptools.package-data]
 "zuspec.dataclasses" = [
     "llms.txt",
     "py.typed"
+]
+"zuspec.dataclasses.skills" = [
+    "SKILL.md",
+    "resources/*.md",
 ]
