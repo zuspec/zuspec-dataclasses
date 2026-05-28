@@ -18,6 +18,7 @@ from zuspec.ir.core.activity import (
     ActivitySequenceBlock,
     ActivityTraversal,
     ActivityWhileDo,
+    JoinKind,
     MatchCase,
     SelectBranch,
 )
@@ -542,7 +543,7 @@ def test_parallel_with_repeat_and_select():
     """)
     par = ir.stmts[0]
     assert isinstance(par, ActivityParallel)
-    assert par.join_spec.kind == 'first'
+    assert par.join_spec.kind == JoinKind.FIRST
     assert len(par.stmts) == 2
     last = ir.stmts[1]
     assert isinstance(last, ActivityAnonTraversal)

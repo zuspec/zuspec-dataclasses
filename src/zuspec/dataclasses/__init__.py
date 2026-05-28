@@ -81,16 +81,18 @@ After ``asyncio.run(comp.wait(...))``, access ``comp.<method>_trace`` for a
 
 from asyncio import Event as aEvent
 from typing import Callable
+from . import pcf
 from .decorators import (
-    dataclass, field, proc, input, output, reg, array,
+    dataclass, field, proc, input, output, inout, reg, array,
     const, bundle, mirror, monitor,
     port, export, bind, Exec, ExecKind, ExecProc,
-    Input, Output, RegField, sync, comb, ExecSync, ExecComb, invariant,
+    Input, Output, Inout, RegField, sync, comb, ExecSync, ExecComb, invariant,
     inst, tuple, view, constraint, rand, randc,
     lock, share, extend, pool, flow_output, flow_input,
     indexed_regfile,
     indexed_pool,
     ContractViolation, requires, ensures,
+    ConstraintKind, ConstraintRole,
 )
 from .constraint_helpers import implies, dist, unique, sum, ascending, descending, solve_order, valid, internal
 from .constraint_parser import ConstraintParser, extract_rand_fields
@@ -142,11 +144,19 @@ from .coverage import (
 from .domain import (
     ClockDomain, DerivedClockDomain, InheritedDomain,
     ResetDomain, SoftwareResetDomain, HardwareResetDomain,
+    ResetPolarity, ResetStyle,
+    PowerDomain,
     ClockPort, ClockBind, ResetBind,
     clock_port, clock_bind, reset_bind,
-    clock_domain,
+    clock_domain, reset_domain,
+    super as super,  # zdc.super() — parent-domain sentinel factory
 )
+from .counter import Counter, ScheduleHandle
+from .modulo_counter import ModuloCounter
+from .watchdog_counter import WatchdogCounter
+from .counter_bank import CounterBank
 from .cdc import TwoFFSync, AsyncFIFO, cdc_unchecked
+from .sdc_emit import SDCEmitPass, emit_sdc
 from .pipeline_ns import pipeline, _StageHandle, _Snap
 from .pipeline_locks import HazardLock, QueueLock, BypassLock, RenameLock
 from .pipeline_resource import PipelineResource
@@ -154,6 +164,49 @@ from .stage_decorator import stage
 from .decorators import _LegacyForwardingDecl, PipelineError
 from .method_port import InPort, OutPort, in_port, out_port
 from typing import Type
+
+
+def _register_standard_abstractions() -> None:
+    """Register Counter, ModuloCounter, WatchdogCounter, IndexedRegFile, and Queue
+    in the global registry.
+
+    Called once at import time.  Safe to call multiple times (registry
+    ``register()`` is idempotent).  Silently skips registration when
+    ``zuspec-ir-core`` is not installed.
+    """
+    try:
+        from zuspec.ir.core.registry import global_registry
+    except ImportError:
+        return
+    r = global_registry()
+    for cls in (Counter, ModuloCounter, WatchdogCounter):
+        r.register(cls)
+    # IndexedRegFile and Queue also participate in the lowering pipeline.
+    from .types import IndexedRegFile
+    from .queue_type import Queue as _Queue
+    r.register(IndexedRegFile)
+    r.register(_Queue)
+
+
+_register_standard_abstractions()
+
+# Abstract MMR subsystem
+from .mmr import (
+    SW, HW, RegAcc, OnWrite, OnRead, StickyBit, Precedence,
+    FieldDescriptor, reg_field, FieldAttr,
+    reg, regfile,
+    RegisterFile,
+    WriteHandle, RegisterValue,
+    BusPort, PassthroughPort,
+    wait_until,
+)
+
+# Register RegisterFile in the lowering registry (must happen after the mmr import).
+try:
+    from zuspec.ir.core.registry import global_registry as _global_registry
+    _global_registry().register(RegisterFile)
+except ImportError:
+    pass
 
 
 def forward(signal: str, from_stage: str = "", to_stage: str = "") -> _LegacyForwardingDecl:
@@ -179,15 +232,16 @@ __all__ = [
     # From asyncio
     'aEvent',
     # From decorators
-    'dataclass', 'field', 'proc', 'input', 'output', 'reg', 'array',
-    'const', 'bundle', 'mirror', 'monitor',
+    'dataclass', 'field', 'proc', 'input', 'output', 'inout', 'reg', 'array',
+    'const', 'bundle', 'mirror', 'monitor', 'pcf',
     'port', 'export', 'bind', 'Exec', 'ExecKind', 'ExecProc',
-    'Input', 'Output', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
+    'Input', 'Output', 'Inout', 'RegField', 'sync', 'comb', 'ExecSync', 'ExecComb', 'invariant',
     'inst', 'tuple', 'view', 'constraint', 'rand', 'randc',
     'lock', 'share', 'extend', 'pool', 'flow_output', 'flow_input',
     'enum',
     # Contract decorators / context managers / exceptions
     'ContractViolation', 'requires', 'ensures',
+    'ConstraintKind', 'ConstraintRole',
     # Pipeline process API — new async API
     'pipeline', '_StageHandle', '_Snap',
     'HazardLock', 'QueueLock', 'BypassLock', 'RenameLock',
@@ -196,8 +250,8 @@ __all__ = [
     'stage', 'forward', 'PipelineError',
     # Method ports
     'InPort', 'OutPort', 'in_port', 'out_port',
-    # Clock domain field factory
-    'clock_domain',
+    # Clock/reset domain field factories
+    'clock_domain', 'reset_domain',
     # From solver API
     'randomize', 'randomize_with', 'RandomizationError',
     # From errors
@@ -219,7 +273,7 @@ __all__ = [
     'Action',
     'Buffer', 'Stream', 'State', 'Resource',
     'AddrHandle', 'AddressSpace', 'Array', 'BackdoorMemory', 'BackdoorRegFile',
-    'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component',
+    'Bundle', 'ClaimContext', 'ClaimPool', 'CompImpl', 'Component', 'SyncComponent',
     'Extern', 'ListPool', 'Lock', 'MemIF', 'Memory', 'PackedStruct', 'Pool',
     'Reg', 'RegFifo', 'RegFile', 'ResourcePool', 'SignWidth', 'Struct', 'Time', 'TimeUnit',
     'Timebase', 'TypeBase', 'Uptr', 'XtorComponent',
@@ -275,12 +329,26 @@ __all__ = [
     # From domain
     'ClockDomain', 'DerivedClockDomain', 'InheritedDomain',
     'ResetDomain', 'SoftwareResetDomain', 'HardwareResetDomain',
+    'ResetPolarity', 'ResetStyle',
+    'PowerDomain',
     'ClockPort', 'ClockBind', 'ResetBind',
     'clock_port', 'clock_bind', 'reset_bind',
+    'clock_domain', 'reset_domain',
+    'super',
+    # From counter
+    'Counter', 'ScheduleHandle', 'ModuloCounter', 'WatchdogCounter', 'CounterBank',
     # From cdc
     'TwoFFSync', 'AsyncFIFO', 'cdc_unchecked',
     # Submodules
     'ir', 'profiles',
+    # From abstract MMR subsystem
+    'SW', 'HW', 'RegAcc', 'OnWrite', 'OnRead', 'StickyBit', 'Precedence',
+    'FieldDescriptor', 'reg_field', 'FieldAttr',
+    'regfile',
+    'RegisterFile',
+    'WriteHandle', 'RegisterValue',
+    'BusPort', 'PassthroughPort',
+    'wait_until',
     # Other exports
     'DataModelFactory', 'Event', 'cycles', 'tick',
     'sext', 'zext', 'cbit', 'signed',
@@ -353,7 +421,7 @@ def cycles(n: int = 1) -> _CyclesAwaitable:
     return _CyclesAwaitable(n)
 
 
-def tick() -> _CyclesAwaitable:
+def tick(count: int=1) -> _CyclesAwaitable:
     """Advance exactly one clock cycle in a @zdc.proc or @zdc.sync process.
 
     Convenience alias for ``zdc.cycles(1)``.  Use this at the end of a
@@ -368,7 +436,7 @@ def tick() -> _CyclesAwaitable:
                 self.count = self.count + 1
                 await zdc.tick()   # ← end of cycle; loop back
     """
-    return _CyclesAwaitable(1)
+    return _CyclesAwaitable(count)
 
 
 # ---------------------------------------------------------------------------

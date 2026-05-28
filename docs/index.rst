@@ -33,6 +33,8 @@ Version: 2026.1 (January 2026)
    runtime
    checker
    pipeline-api
+   domains
+   counters
 
 .. toctree::
    :maxdepth: 2
@@ -41,6 +43,19 @@ Version: 2026.1 (January 2026)
    interface_protocols
    split_transactions
    migration_callable_to_protocol
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Registers and Memory Maps:
+
+   regmem
+   how-to/declare_register_file
+   how-to/read_write_registers
+   how-to/wait_for_register_condition
+   how-to/react_to_sw_writes
+   how-to/interrupt_pending_registers
+   how-to/generate_rtl
+   how-to/generate_sw_artefacts
 
 .. toctree::
    :maxdepth: 2

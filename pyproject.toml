@@ -25,8 +25,7 @@ Python = "zuspec.dataclasses.ir_checker.python_profile:PythonIRChecker"
 Retargetable = "zuspec.dataclasses.profiles:RetargetableProfile"
 Python = "zuspec.dataclasses.profiles:PythonProfile"
 
-[project.entry-points."zuspec.ext"]
-zuspec_dataclasses = "zuspec.dataclasses.cli_plugin:ZuspecDataclassesPlugin"
+
 
 [tool.setuptools.package-data]
 "zuspec.dataclasses" = [

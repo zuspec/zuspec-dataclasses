@@ -672,10 +672,12 @@ class IRExpressionParser:
         # Try to evaluate the index expression to an integer
         index = self._evaluate_index_expr(index_expr)
         
-        # Validate index bounds
+        # Validate index bounds — raise ValueError so it propagates to callers;
+        # unlike ParseError (which is swallowed for unbound flow fields), an
+        # out-of-bounds index is always a user error and must not be silenced.
         array_size = self.array_fields[field_name]['size']
         if index < 0 or index >= array_size:
-            raise ParseError(
+            raise ValueError(
                 f"Array index {index} out of bounds for '{field_name}' "
                 f"(size={array_size}, valid range: 0-{array_size-1})"
             )
@@ -1464,8 +1466,9 @@ class IRExpressionParser:
         if isinstance(expr, ExprUnary):
             operand_val = self._evaluate_index_expr(expr.operand)
             if expr.op == UnaryOp.USub:
-                # Negative index - not supported
-                raise ParseError(
+                # Negative index — always a user error; raise ValueError so it
+                # propagates instead of being silenced as an unbound flow field.
+                raise ValueError(
                     "Negative array indices not supported. "
                     "Use positive indices: arr[0], arr[1], etc."
                 )
@@ -2139,15 +2142,15 @@ class IRExpressionParser:
                     else:
                         body_constraints = self.parse_statement(body_stmt)
                         for bc in body_constraints:
-                            if antecedent_const:
-                                result.append(bc)   # constant True — no wrapping
-                            else:
-                                result.append(ImplicationConstraint(
-                                    condition=antecedent,
-                                    then_constraint=bc,
-                                    else_constraint=None,
-                                    source_location=self.current_source,
-                                ))
+                            # Always wrap in ImplicationConstraint so the antecedent
+                            # condition (including tautologies like ConstantConstraint(1))
+                            # is visible in the constraint tree.
+                            result.append(ImplicationConstraint(
+                                condition=antecedent,
+                                then_constraint=bc,
+                                else_constraint=None,
+                                source_location=self.current_source,
+                            ))
 
             # Accumulate pattern condition for wildcard negation (skip guard)
             if not isinstance(case.pattern, PatternAs):

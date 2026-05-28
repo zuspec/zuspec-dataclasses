@@ -41,6 +41,19 @@ class ListClaimPool[T](ClaimPool[T]):
         def drop(self):
             self._p.drop(self)
 
+        def __getattr__(self, name: str):
+            # Forward unknown attribute lookups to the underlying resource
+            # so callers can do ``claim.pad_id`` instead of ``claim.t.pad_id``.
+            try:
+                resource = object.__getattribute__(self, '_p').resources[
+                    object.__getattribute__(self, '_id')
+                ]
+                return getattr(resource, name)
+            except AttributeError:
+                raise AttributeError(
+                    f"'{type(self).__name__}' object has no attribute '{name}'"
+                )
+
     async def _lock_coro(
             self,
             claim_id: Optional[Any] = None,

@@ -12,7 +12,7 @@ from zuspec.ir.core.data_type import (
     DataTypeTuple, DataTypeTupleReturn, DataTypeEnum, DataTypeClaimPool,
     Function, Process, ProcessKind
 )
-from zuspec.ir.core.fields import Field, FieldKind, Bind, FieldInOut
+from zuspec.ir.core.fields import Field, FieldKind, RandKind, Bind, FieldInOut
 from zuspec.ir.core.stmt import (
     Stmt, Arguments, Arg,
     StmtFor, StmtWhile, StmtExpr, StmtAssign, StmtAnnAssign, StmtAugAssign, StmtPass, StmtReturn, StmtIf,
@@ -26,7 +26,7 @@ def _get_event_type():
     from . import Event
     return Event
 from .tlm import Channel, GetIF, PutIF
-from .decorators import ExecProc, ExecSync, ExecComb, Input, Output
+from .decorators import ExecProc, ExecSync, ExecComb, Input, Output, Inout
 
 
 # ---------------------------------------------------------------------------
@@ -145,16 +145,19 @@ def _create_bind_proxy_class(target_cls: type, field_indices: dict, field_types:
                         nested_indices = {}
                         nested_types = {}
                         idx = 0
-                        for fname, fval in field_type.__dataclass_fields__.items():
-                            if not fname.startswith('_'):
-                                nested_indices[fname] = idx
-                                try:
-                                    nested_hints = get_type_hints(field_type)
-                                    nested_type = nested_hints.get(fname)
-                                    nested_types[fname] = (nested_hints, nested_type)
-                                except Exception:
-                                    nested_types[fname] = ({}, None)
-                                idx += 1
+                        raw_annots = getattr(field_type, '__annotations__', {})
+                        try:
+                            nested_hints = get_type_hints(field_type)
+                        except Exception:
+                            nested_hints = {k: v for k, v in raw_annots.items()
+                                            if not isinstance(v, str)}
+                        for fld in dc.fields(field_type):
+                            if fld.name == '_impl' or fld.name.startswith('_'):
+                                continue
+                            nested_indices[fld.name] = idx
+                            nested_type = nested_hints.get(fld.name)
+                            nested_types[fld.name] = (nested_hints, nested_type)
+                            idx += 1
                         return _BindProxy(nested_indices, nested_types, new_expr)
                     elif field_type is not None:
                         return _BindProxyMethod(new_expr, field_type)
@@ -223,20 +226,27 @@ class _BindProxy:
                     elem_type = args[0] if args else None
                     return _BindProxyTuple(new_expr, elem_type)
                 elif field_type is not None and hasattr(field_type, '__dataclass_fields__'):
-                    # Build field indices for the nested type, excluding internal fields
+                    # Build field indices for the nested type, using the same
+                    # logic as _extract_fields: iterate dc.fields() to exclude
+                    # class-level descriptors (e.g. clock_domain) and skip _impl.
                     nested_indices = {}
                     nested_types = {}
                     idx = 0
-                    for fname, fval in field_type.__dataclass_fields__.items():
-                        if not fname.startswith('_'):
-                            nested_indices[fname] = idx
-                            try:
-                                nested_hints = get_type_hints(field_type)
-                                nested_type = nested_hints.get(fname)
-                                nested_types[fname] = (nested_hints, nested_type)
-                            except Exception:
-                                nested_types[fname] = ({}, None)
-                            idx += 1
+                    raw_annots = getattr(field_type, '__annotations__', {})
+                    try:
+                        nested_hints = get_type_hints(field_type)
+                    except Exception:
+                        # Fallback for locally-defined types where get_type_hints
+                        # can't resolve names; use raw annotations (eagerly evaluated).
+                        nested_hints = {k: v for k, v in raw_annots.items()
+                                        if not isinstance(v, str)}
+                    for fld in dc.fields(field_type):
+                        if fld.name == '_impl' or fld.name.startswith('_'):
+                            continue
+                        nested_indices[fld.name] = idx
+                        nested_type = nested_hints.get(fld.name)
+                        nested_types[fld.name] = (nested_hints, nested_type)
+                        idx += 1
                     return _BindProxy(nested_indices, nested_types, new_expr)
                 elif field_type is not None:
                     # Protocol or other type - allow method references via ExprRefPy
@@ -985,12 +995,15 @@ class DataModelFactory(object):
             # Check if this is an input or output port
             is_input_port = False
             is_output_port = False
+            is_inout_port = False
             is_reg_field = False
             if f.default_factory is not dc.MISSING:
                 if f.default_factory is Input:
                     is_input_port = True
                 elif f.default_factory is Output:
                     is_output_port = True
+                elif f.default_factory is Inout:
+                    is_inout_port = True
             
             # Determine field kind from metadata
             kind = FieldKind.Field
@@ -1012,6 +1025,73 @@ class DataModelFactory(object):
             
             # Get field type
             origin = get_origin(field_type)
+
+            # ── Abstraction-field hook ───────────────────────────────────────
+            # Check if the field type (or its generic origin) is a Lowerable
+            # abstraction (e.g. Counter, Queue, IndexedRegFile).
+            # When found, ask the class to elaborate itself into an
+            # AbstractionFieldIR and skip the rest of the field-type dispatch.
+            _abstraction_cls = origin if isinstance(origin, type) else (
+                field_type if isinstance(field_type, type) else (
+                    # Handle _QueueAlias: Queue[T].__class_getitem__ returns
+                    # _QueueAlias(Queue, T); get_origin() returns None for it,
+                    # but _QueueAlias._origin holds the Queue class.
+                    getattr(field_type, '_origin', None)
+                )
+            )
+            if _abstraction_cls is not None:
+                try:
+                    from zuspec.ir.core.interfaces import Lowerable
+                    from zuspec.ir.core.registry import global_registry
+                    _is_lowerable = (
+                        Lowerable in getattr(_abstraction_cls, '__mro__', ())
+                    )
+                except ImportError:
+                    _is_lowerable = False
+                if _is_lowerable and hasattr(_abstraction_cls, 'elaborate_field'):
+                    _inst_kwargs = dict(field_metadata.get('kwargs', {})) if field_metadata else {}
+                    # For indexed_regfile(), metadata stores params as direct keys
+                    # (read_ports, write_ports, shared_port), not inside a 'kwargs'
+                    # sub-dict — fold them into inst_kwargs as upper-cased keys.
+                    if field_metadata:
+                        for _mk, _ik in (
+                            ('read_ports', 'READ_PORTS'),
+                            ('write_ports', 'WRITE_PORTS'),
+                            ('shared_port', 'SHARED_PORT'),
+                        ):
+                            if _mk in field_metadata:
+                                _inst_kwargs.setdefault(_ik, field_metadata[_mk])
+                    # For Queue fields using the legacy queue(depth=N) factory,
+                    # depth is stored on the default QueueRT instance, not in
+                    # metadata['kwargs'].  Extract it here as a fallback.
+                    if 'DEPTH' not in _inst_kwargs:
+                        _field_default = getattr(f, 'default', None)
+                        if _field_default is not None and not isinstance(_field_default, type):
+                            _legacy_depth = getattr(_field_default, 'depth', None)
+                            if _legacy_depth is not None:
+                                _inst_kwargs['DEPTH'] = _legacy_depth
+                    # Collect type args; handle _QueueAlias (._item) and standard
+                    # multi-param generics (e.g. IndexedRegFile[TIdx, TData]).
+                    _type_args = get_args(field_type) if origin else ()
+                    if not _type_args and hasattr(field_type, '_item'):
+                        _type_args = (field_type._item,)
+                    if len(_type_args) == 0:
+                        _element_type = None
+                    elif len(_type_args) == 1:
+                        _element_type = _type_args[0]
+                    else:
+                        _element_type = _type_args  # tuple for multi-param generics
+                    _field_index = len(fields)
+                    abstraction_field_ir = _abstraction_cls.elaborate_field(
+                        field_name=f.name,
+                        field_index=_field_index,
+                        inst_kwargs=_inst_kwargs,
+                        element_type=_element_type,
+                    )
+                    fields.append(abstraction_field_ir)
+                    continue
+            # ────────────────────────────────────────────────────────────────
+
             # Detect Reg[T] fields (hardware registers)
             from .types import Reg as _Reg
             if origin is _Reg:
@@ -1086,6 +1166,13 @@ class DataModelFactory(object):
             else:
                 datatype = self._resolve_field_type(field_type)
 
+                # For bv fields with an explicit integer width=N, upgrade the
+                # bare DataTypeRef('bv') to DataTypeInt(bits=N) so that the
+                # synthesiser can emit the correct logic [N-1:0] declaration.
+                if (isinstance(datatype, DataTypeRef) and datatype.ref_name == 'bv'
+                        and field_metadata and isinstance(field_metadata.get('width'), int)):
+                    datatype = DataTypeInt(bits=field_metadata['width'], signed=False)
+
                 # For Memory fields, extract size from metadata
                 if isinstance(datatype, DataTypeMemory) and f.metadata and 'size' in f.metadata:
                     datatype.size = f.metadata['size']
@@ -1114,7 +1201,11 @@ class DataModelFactory(object):
             if field_metadata:
                 # Check for rand/randc markers
                 if field_metadata.get('rand', False):
-                    rand_kind = field_metadata.get('rand_kind', 'rand')
+                    _rk = field_metadata.get('rand_kind', 'rand')
+                    if isinstance(_rk, RandKind):
+                        rand_kind = _rk
+                    else:
+                        rand_kind = RandKind[_rk.upper()] if _rk else RandKind.RAND
                 
                 # Extract domain for random variables
                 if 'domain' in field_metadata:
@@ -1151,8 +1242,8 @@ class DataModelFactory(object):
             # Try to get source location for this field
             field_loc = self._get_field_location(t, f.name)
             
-            # Create FieldInOut for input/output ports, otherwise regular Field
-            if is_input_port or is_output_port:
+            # Create FieldInOut for input/output/inout ports, otherwise regular Field
+            if is_input_port or is_output_port or is_inout_port:
                 reset_val = field_metadata.get("reset")
                 if reset_val is None and is_reg_field:
                     reset_val = 0
@@ -1160,7 +1251,8 @@ class DataModelFactory(object):
                     name=f.name,
                     datatype=datatype,
                     kind=kind,
-                    is_out=is_output_port,  # True for output, False for input
+                    is_out=is_output_port,
+                    is_inout=is_inout_port,
                     width_expr=width_expr,
                     kwargs_expr=kwargs_expr,
                     is_const=is_const,
@@ -1329,6 +1421,12 @@ class DataModelFactory(object):
                     self._add_pending(elem_py)
                 return DataTypeClaimPool(elem_type_name=elem_name)
         
+        # Handle @zdc.enum-decorated classes → DataTypeEnum (must be before IntEnum check)
+        if inspect.isclass(field_type) and hasattr(field_type, '_zdc_data_type'):
+            dt = field_type._zdc_data_type
+            if type(dt).__name__ == 'DataTypeEnum':
+                return dt
+
         # Handle Python IntEnum subclasses → DataTypeEnum
         if inspect.isclass(field_type) and issubclass(field_type, _enum_mod.IntEnum):
             items = {member.name: member.value for member in field_type}
@@ -1368,12 +1466,19 @@ class DataModelFactory(object):
                 # This is acceptable for bind proxy - we'll work without type hints
                 hints = {}
             
+            # Fallback: raw annotations resolve names that get_type_hints couldn't
+            # (e.g., locally-defined classes inside test functions).
+            raw_annots = {}
+            for klass in reversed(t.__mro__):
+                raw_annots.update(getattr(klass, '__annotations__', {}))
+            
             idx = 0
             for f in dc.fields(t):
                 if f.name == '_impl':
                     continue
                 # Allow underscore-prefixed fields if they are explicitly typed
-                if f.name.startswith('_') and hints.get(f.name) is None:
+                # (check both resolved hints and raw annotations as fallback)
+                if f.name.startswith('_') and hints.get(f.name) is None and f.name not in raw_annots:
                     continue
                 field_indices[f.name] = idx
                 # Try to get type from hints first, fall back to field.type

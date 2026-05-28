@@ -18,6 +18,7 @@
 #****************************************************************************
 import dataclasses
 import dataclasses as dc
+import enum as _enum_mod
 import enum
 import inspect
 import sys
@@ -673,19 +674,26 @@ class Output(object):
     """Marker type for 'output' dataclass fields"""
     ...
 
-def input(*args, width=None, **kwargs) -> Any:
+class Inout(object):
+    """Marker type for 'inout' (bidirectional) dataclass fields"""
+    ...
+
+def input(*args, width=None, bind=None, **kwargs) -> Any:
     """Marks an input field.
 
     Args:
         width: For width-unspecified types (eg bitv), specifies the concrete width.
                May be an int or a lambda that reads consts (eg width=lambda s: s.DATA_WIDTH).
+        bind:  Physical binding annotation (e.g. zdc.pcf.io(pin=35)).
     """
     metadata = {}
     if width is not None:
         metadata["width"] = width
+    if bind is not None:
+        metadata["bind"] = bind
     return dataclasses.field(default_factory=Input, metadata=metadata if metadata else None)
 
-def output(*args, width=None, reset=None, **kwargs) -> Any:
+def output(*args, width=None, bind=None, reset=None, **kwargs) -> Any:
     """Marks an output field.
 
     Args:
@@ -694,13 +702,35 @@ def output(*args, width=None, reset=None, **kwargs) -> Any:
         reset: Reset value for the output. Used to generate reset logic in synchronous processes.
                For scalar types, use a literal (e.g., reset=0).
                For struct types, use a dict (e.g., reset={'data': 0, 'valid': 0}).
+        bind:  Physical binding annotation (e.g. zdc.pcf.io(pin=11)).
     """
     metadata = {}
     if width is not None:
         metadata["width"] = width
     if reset is not None:
         metadata["reset"] = reset
+    if bind is not None:
+        metadata["bind"] = bind
     return dc.field(default_factory=Output, metadata=metadata if metadata else None)
+
+def inout(*args, width=None, bind=None, **kwargs) -> Any:
+    """Marks a bidirectional (inout) field.
+
+    The actual direction of the port is resolved at synthesis time from the
+    binding context: if the port is bound to an output it becomes an output;
+    if bound to an input it becomes an input.  Every inout port must be
+    connected in the parent component's ``__bind__``.
+
+    Args:
+        width: For width-unspecified types (eg bitv), specifies the concrete width.
+        bind:  Physical binding annotation (e.g. zdc.pcf.io(pin=4)).
+    """
+    metadata = {}
+    if width is not None:
+        metadata["width"] = width
+    if bind is not None:
+        metadata["bind"] = bind
+    return dc.field(default_factory=Inout, metadata=metadata if metadata else None)
 
 
 
@@ -1151,6 +1181,18 @@ class _ContractContextManager:
 
 requires = _ContractContextManager('requires')
 ensures  = _ContractContextManager('ensures')
+
+
+class ConstraintKind(_enum_mod.Enum):
+    """Kind of a constraint method."""
+    FIXED   = "fixed"
+    GENERIC = "generic"
+
+
+class ConstraintRole(_enum_mod.Enum):
+    """Role of a contract constraint method."""
+    REQUIRES = "requires"
+    ENSURES  = "ensures"
 
 
 class _ConstraintDecorator:

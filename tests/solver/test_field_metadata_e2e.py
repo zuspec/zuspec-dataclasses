@@ -2,6 +2,7 @@
 
 import pytest
 from zuspec.dataclasses import dataclass, rand, randc, randomize, randomize_with, constraint, RandomizationError
+from zuspec.ir.core.fields import RandKind
 
 
 @dataclass
@@ -119,11 +120,11 @@ def test_field_metadata_ir_flow():
     
     # Verify fields have metadata
     addr_field = [f for f in struct_ir.fields if f.name == 'addr'][0]
-    assert addr_field.rand_kind == 'rand'
+    assert addr_field.rand_kind == RandKind.RAND
     assert addr_field.domain == (0, 255)
     
     data_field = [f for f in struct_ir.fields if f.name == 'data'][0]
-    assert data_field.rand_kind == 'randc'
+    assert data_field.rand_kind == RandKind.RANDC
     assert data_field.domain == (0, 15)
     
     # Extract variables

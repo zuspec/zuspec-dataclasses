@@ -111,6 +111,9 @@ class SignalDescriptor:
             else:
                 # During construction or for simple components, store directly
                 old_value = obj._impl._signal_values.get(self.name)
+                # Treat None (e.g. from zdc.field(width=N) default) as the descriptor default
+                if value is None:
+                    value = self.default_value
                 obj._impl._signal_values[self.name] = value
                 
                 # Still notify tracer if signal tracing is enabled
@@ -118,6 +121,9 @@ class SignalDescriptor:
                     obj._impl._notify_signal_tracer(obj, self.name, old_value, value, self.width)
         else:
             # _impl not yet set — buffer the value until __comp_build__ runs
+            # Treat None (e.g. from zdc.field(width=N) default) as the descriptor default
+            if value is None:
+                value = self.default_value
             obj.__dict__[f'_sig_{self.name}'] = value
 
 class BindPath:
@@ -127,6 +133,20 @@ class BindPath:
         self._path = path
     
     def __getattr__(self, name):
+        from ..types import Component
+        # If the next element resolves to a domain attribute on a Component,
+        # return a _ZdcDomainRef so __apply_bindmap__ can handle it.
+        try:
+            resolved = ObjFactory.__resolve_bind_path__(self._root, self)
+            if isinstance(resolved, Component):
+                from ..domain import ClockDomain, ResetDomain, _ZdcDomainRef
+                val = getattr(resolved, name, None)
+                if isinstance(val, ClockDomain):
+                    return _ZdcDomainRef(owner=resolved, kind='clock', domain=val)
+                elif isinstance(val, ResetDomain):
+                    return _ZdcDomainRef(owner=resolved, kind='reset', domain=val)
+        except Exception:
+            pass
         return BindPath(self._root, self._path + (name,))
     
     def __getitem__(self, index):
@@ -282,14 +302,17 @@ class ObjFactory(ObjFactoryP):
                     elif hasattr(field_type, '__name__'):
                         type_name = getattr(field_type, '__name__', '')
                         # Check for bit types (bit, bit8, bit16, etc.) or uint types
-                        if (type_name.startswith('bit') or type_name.startswith('uint') or 
+                        if (type_name.startswith('bit') or type_name.startswith('uint') or
+                            type_name == 'bv' or
                             type_name.startswith('int') and type_name.endswith('_t')):
                             is_signal = True
                             is_field_signal = True
                 
                 if is_signal:
                     # Store signal field metadata including default value - don't add to dataclass fields
-                    default_value = f.default if f.default is not dc.MISSING else 0
+                    # Treat None and MISSING the same: default to 0 for numeric signal fields
+                    _raw = f.default
+                    default_value = 0 if (_raw is dc.MISSING or _raw is None) else _raw
                     
                     # Extract width from metadata/type annotation
                     width = 32  # default
@@ -898,6 +921,12 @@ class ObjFactory(ObjFactoryP):
                 sig_name = key[5:]
                 comp._impl._signal_values[sig_name] = comp.__dict__.pop(key)
         
+        # Pre-populate _signal_widths from SignalDescriptor.width so the executor
+        # doesn't default to width=32 when it calls signal_write without a width.
+        for attr_name, attr in type(comp).__dict__.items():
+            if isinstance(attr, SignalDescriptor):
+                comp._impl._signal_widths[attr.name] = attr.width
+        
         # Register signals with tracer if signal tracing is enabled
         if enable_signal_tracing and tracer is not None:
             ObjFactory.__register_signals_with_tracer__(comp, tracer, parent)
@@ -905,6 +934,10 @@ class ObjFactory(ObjFactoryP):
         # Set timebase on root component
         if parent is None:
             comp._impl.set_timebase(timebase)
+
+        # Resolve and store the effective clock/reset domain for this component.
+        # This walks the class MRO to find the nearest explicit domain declaration.
+        ObjFactory.__resolve_component_domain__(comp, parent)
 
         # Discover @process and @zdc.pipeline decorated methods (result cached per class).
         procs, has_eval = _cached_exec_attrs(type(comp))
@@ -923,14 +956,19 @@ class ObjFactory(ObjFactoryP):
             fo = getattr(comp, f.name)
             if isinstance(fo, Component):
                 ObjFactory.__comp_build__(fo, comp, f.name, timebase)
+                # Register child in the parent's domain children list so domain
+                # clock edges propagate top-down through the hierarchy.
+                comp._impl._domain_children.append(fo)
             elif isinstance(fo, TupleRT):
                 for i, e in enumerate(fo):
                     if isinstance(e, Component):
                         ObjFactory.__comp_build__(e, comp, f"{f.name}[{i}]", timebase)
+                        comp._impl._domain_children.append(e)
             elif isinstance(fo, tuple) or isinstance(fo, list):
                 for i, e in enumerate(fo):
                     if isinstance(e, Component):
                         ObjFactory.__comp_build__(e, comp, f"{f.name}[{i}]", timebase)
+                        comp._impl._domain_children.append(e)
         
         # Initialize Memory fields
         ObjFactory.__init_memory_fields__(comp)
@@ -985,6 +1023,79 @@ class ObjFactory(ObjFactoryP):
                     else:
                         bindmap = dict(bindmap)
                 ObjFactory.__apply_bindmap__(comp, bindmap)
+
+    @staticmethod
+    def __resolve_component_domain__(comp, parent):
+        """Resolve and store the effective clock/reset domain on a component instance.
+
+        Stores the resolved domains as ``_zdc_resolved_clock_domain`` and
+        ``_zdc_resolved_reset_domain`` on the component instance.  Resolution
+        rules (in priority order):
+
+        1. If the component's class declares an explicit ``clock_domain`` /
+           ``reset_domain`` class attribute (other than the base ``Component``
+           default), use it.
+        2. Otherwise, inherit from the parent's resolved domain.
+        3. If there is no parent (root), use the class-level attribute as-is.
+        """
+        try:
+            from ..domain import ClockDomain, ResetDomain
+        except ImportError:
+            return
+
+        cls = type(comp)
+
+        # --- Clock domain ---
+        # Check if this class has its *own* clock_domain (not just inherited from Component)
+        own_clk = None
+        for klass in cls.__mro__:
+            if klass.__name__ in ('Component', 'SyncComponent', 'TypeBase', 'object'):
+                break
+            if 'clock_domain' in klass.__dict__:
+                val = klass.__dict__['clock_domain']
+                if isinstance(val, (ClockDomain,)):
+                    own_clk = getattr(comp, 'clock_domain', val)
+                    break
+                # _ClockDomainField descriptor
+                from ..domain import _ClockDomainField
+                if isinstance(val, _ClockDomainField):
+                    own_clk = getattr(comp, 'clock_domain', None)
+                    break
+
+        if own_clk is not None:
+            resolved_clk = own_clk
+        elif parent is not None:
+            resolved_clk = getattr(parent, '_zdc_resolved_clock_domain',
+                                   getattr(type(parent), 'clock_domain', None))
+        else:
+            resolved_clk = getattr(comp, 'clock_domain', None)
+
+        object.__setattr__(comp, '_zdc_resolved_clock_domain', resolved_clk)
+
+        # --- Reset domain ---
+        own_rst = None
+        for klass in cls.__mro__:
+            if klass.__name__ in ('Component', 'TypeBase', 'object'):
+                break
+            if 'reset_domain' in klass.__dict__:
+                val = klass.__dict__['reset_domain']
+                if isinstance(val, ResetDomain):
+                    own_rst = val
+                    break
+                from ..domain import _ResetDomainField
+                if isinstance(val, _ResetDomainField):
+                    own_rst = getattr(comp, 'reset_domain', None)
+                    break
+
+        if own_rst is not None:
+            resolved_rst = own_rst
+        elif parent is not None:
+            resolved_rst = getattr(parent, '_zdc_resolved_reset_domain',
+                                   getattr(type(parent), 'reset_domain', None))
+        else:
+            resolved_rst = getattr(type(comp), 'reset_domain', None)
+
+        object.__setattr__(comp, '_zdc_resolved_reset_domain', resolved_rst)
 
     @staticmethod
     def __register_signals_with_tracer__(comp, tracer, parent):
@@ -1214,6 +1325,40 @@ class ObjFactory(ObjFactoryP):
             setattr(comp, f.name, BundleProxy(comp, f.name, const_fields, signal_dirs, signal_widths))
 
     @staticmethod
+    def __apply_domain_binding__(comp, target, source):
+        """Apply a domain override binding.
+        
+        target: a _ZdcDomainRef or a BindPath that resolves to a ClockDomain/ResetDomain
+        source: the new domain value (BindPath or direct value)
+        """
+        from ..domain import ClockDomain, ResetDomain, _ZdcDomainRef
+
+        # Resolve the source domain object
+        if isinstance(source, BindPath):
+            new_domain = ObjFactory.__resolve_bind_path__(comp, source)
+        else:
+            new_domain = source
+
+        # Identify the owner component and domain kind
+        if isinstance(target, _ZdcDomainRef):
+            owner = target.owner
+            kind = target.kind
+        else:
+            # BindPath — resolve to domain value and owner via path[:-1]
+            tval = ObjFactory.__resolve_bind_path__(comp, target)
+            kind = 'clock' if isinstance(tval, ClockDomain) else 'reset'
+            if len(target._path) >= 2:
+                owner = ObjFactory.__resolve_bind_path__(comp, BindPath(target._root, target._path[:-1]))
+            else:
+                owner = comp
+
+        # Apply the override
+        if kind == 'clock':
+            object.__setattr__(owner, '_zdc_resolved_clock_domain', new_domain)
+        else:
+            object.__setattr__(owner, '_zdc_resolved_reset_domain', new_domain)
+
+    @staticmethod
     def __apply_bindmap__(comp, bindmap):
         """Apply bindmap entries by setting target values to source values.
         
@@ -1223,11 +1368,20 @@ class ObjFactory(ObjFactoryP):
         - Sources: Export, Method (fields or methods to be assigned from)
         - Special case: AddressSpace.mmap targets get At() objects for memory mapping
         - Special case: Event.at targets get callbacks bound
+        - Special case: domain targets (_ZdcDomainRef or BindPath to ClockDomain/ResetDomain)
+          override the resolved domain of the owning component.
         """
-        # Process AddressSpace.mmap and Event.at bindings first
+        # Process AddressSpace.mmap, Event.at, and domain bindings first
         aspace_bindings = []
         event_bindings = []
+        domain_bindings = []
         other_bindings = {}
+
+        try:
+            from ..domain import ClockDomain, ResetDomain, _ZdcDomainRef
+            _domain_types = (ClockDomain, ResetDomain, _ZdcDomainRef)
+        except ImportError:
+            _domain_types = ()
         
         for target, source in bindmap.items():
             # Check if target is a path to .mmap attribute
@@ -1236,8 +1390,25 @@ class ObjFactory(ObjFactoryP):
             # Check if target is a path to .at attribute (Event callback)
             elif isinstance(target, BindPath) and len(target._path) >= 2 and target._path[-1] == 'at':
                 event_bindings.append((target, source))
+            # Check if target is a _ZdcDomainRef (domain override via BindPath.__getattr__)
+            elif _domain_types and isinstance(target, _ZdcDomainRef):
+                domain_bindings.append((target, source))
+            # Check if target is a BindPath that resolves to a ClockDomain or ResetDomain
+            elif _domain_types and isinstance(target, BindPath):
+                try:
+                    tval = ObjFactory.__resolve_bind_path__(comp, target)
+                    if isinstance(tval, (ClockDomain, ResetDomain)):
+                        domain_bindings.append((target, source))
+                        continue
+                except Exception:
+                    pass
+                other_bindings[target] = source
             else:
                 other_bindings[target] = source
+
+        # Handle domain override bindings
+        for target, source in domain_bindings:
+            ObjFactory.__apply_domain_binding__(comp, target, source)
         
         # Handle AddressSpace.mmap bindings
         for target, source in aspace_bindings:

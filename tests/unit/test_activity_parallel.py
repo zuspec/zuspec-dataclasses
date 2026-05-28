@@ -11,6 +11,7 @@ from zuspec.ir.core.activity import (
     ActivitySequenceBlock,
     ActivityTraversal,
     JoinSpec,
+    JoinKind,
 )
 
 
@@ -68,7 +69,7 @@ def test_parallel_join_branch():
     par = ir.stmts[0]
     assert isinstance(par, ActivityParallel)
     assert par.join_spec is not None
-    assert par.join_spec.kind == 'branch'
+    assert par.join_spec.kind == JoinKind.BRANCH
     assert par.join_spec.branch_label == 'L2'
     # After the parallel block, ActionC
     assert isinstance(ir.stmts[1], ActivityAnonTraversal)
@@ -85,7 +86,7 @@ def test_parallel_join_none():
     """)
     js = ir.stmts[0].join_spec
     assert js is not None
-    assert js.kind == 'none'
+    assert js.kind == JoinKind.NONE
     assert js.count is None
     assert js.branch_label is None
 
@@ -99,7 +100,7 @@ def test_parallel_join_select():
                 await self.a2()
     """)
     js = ir.stmts[0].join_spec
-    assert js.kind == 'select'
+    assert js.kind == JoinKind.SELECT
     assert js.count is not None
     assert js.count['type'] == 'constant'
     assert js.count['value'] == 1
@@ -115,7 +116,7 @@ def test_parallel_join_first():
             await self.a3()
     """)
     js = ir.stmts[0].join_spec
-    assert js.kind == 'first'
+    assert js.kind == JoinKind.FIRST
     assert js.count['value'] == 1
     # Sequential action after the parallel block
     assert isinstance(ir.stmts[1], ActivityTraversal)
@@ -169,7 +170,7 @@ def test_schedule_join_branch():
     sched = ir.stmts[0]
     assert isinstance(sched, ActivitySchedule)
     js = sched.join_spec
-    assert js.kind == 'branch'
+    assert js.kind == JoinKind.BRANCH
     assert js.branch_label == 'L1'
 
 
@@ -181,7 +182,7 @@ def test_schedule_join_none():
                 await ActionA()
     """)
     js = ir.stmts[0].join_spec
-    assert js.kind == 'none'
+    assert js.kind == JoinKind.NONE
 
 
 def test_schedule_join_first():
@@ -194,7 +195,7 @@ def test_schedule_join_first():
                 await ActionC()
     """)
     js = ir.stmts[0].join_spec
-    assert js.kind == 'first'
+    assert js.kind == JoinKind.FIRST
     assert js.count['value'] == 2
 
 

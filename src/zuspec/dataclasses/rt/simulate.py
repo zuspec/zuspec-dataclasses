@@ -112,7 +112,12 @@ class SimulateContext:
         * If the class declares a single ``clock_domain`` attribute, exposes
           ``comp.domain`` as a convenience shortcut.
         * Named ``ClockDomain`` class attributes are also exposed individually
-          (e.g. ``comp.rx_domain``).
+          (e.g. ``comp.rx_domain_sim``).
+
+        The ``@zdc.dataclass`` decorator wraps the user-defined class in a new
+        subclass, so ``vars(type(comp))`` only contains the signal descriptors
+        for the outer wrapper.  We therefore walk the full MRO to find all
+        ``ClockDomain`` class attributes declared by the user.
         """
         from .sim_domain import SimDomain
         try:
@@ -121,17 +126,26 @@ class SimulateContext:
             return
 
         cls = type(comp)
+
+        # Attach the default domain accessor (comp.domain).
         default_domain = getattr(cls, 'clock_domain', None)
         if default_domain is not None and isinstance(default_domain, ClockDomain):
             object.__setattr__(comp, 'domain', SimDomain(comp, default_domain))
 
-        # Expose any additionally named ClockDomain class attributes
-        for attr in vars(cls):
-            if attr.startswith('_') or attr == 'clock_domain':
-                continue
-            val = getattr(cls, attr, None)
-            if isinstance(val, ClockDomain):
-                object.__setattr__(comp, f"{attr}_sim", SimDomain(comp, val))
+        # Walk the MRO (stopping at Component/TypeBase/object) to find all
+        # named ClockDomain class attributes.  Skip the signal-descriptor layer
+        # (the outermost wrapper only has SignalDescriptors) and reserved names.
+        _STOP_NAMES = frozenset({'Component', 'SyncComponent', 'TypeBase', 'object'})
+        seen: set = {'clock_domain'}
+        for klass in cls.__mro__:
+            if klass.__name__ in _STOP_NAMES:
+                break
+            for attr, val in vars(klass).items():
+                if attr in seen or attr.startswith('_'):
+                    continue
+                seen.add(attr)
+                if isinstance(val, ClockDomain):
+                    object.__setattr__(comp, f"{attr}_sim", SimDomain(comp, val))
 
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:

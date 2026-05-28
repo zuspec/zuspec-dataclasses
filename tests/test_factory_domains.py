@@ -2,7 +2,7 @@
 
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.domain import ClockDomain, ResetDomain, HardwareResetDomain
+from zuspec.dataclasses.domain import ClockDomain, ResetDomain, HardwareResetDomain, ResetPolarity, ResetStyle
 from zuspec.dataclasses.data_model_factory import DataModelFactory
 from zuspec.ir.core.data_type import DataTypeComponent
 
@@ -96,7 +96,7 @@ class TestExplicitDomain:
         dtc = _get_dtc(WithRstDomain)
         assert dtc is not None
         assert isinstance(dtc.reset_domain, ResetDomain)
-        assert dtc.reset_domain.polarity == "active_low"
+        assert dtc.reset_domain.polarity == ResetPolarity.ACTIVE_LOW
 
     def test_both_domains_captured(self):
         @zdc.dataclass
