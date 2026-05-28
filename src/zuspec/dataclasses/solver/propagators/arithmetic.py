@@ -822,48 +822,72 @@ class ModPropagator(Propagator):
                 changed.add(result)
         
         # Backward propagation: constrain lhs based on result and rhs
-        # For lhs % rhs == result, lhs must be in the set of values where lhs % rhs ∈ result.domain
-        # When rhs and result are both small/constrained, filter lhs
-        if rhs.domain.size() <= 10 and result.domain.size() <= 10:
-            # Enumerate valid lhs values
-            valid_result_values = set(result.domain.values())
-            valid_lhs_values = []
-            for lhs_val in lhs.domain.values():
-                for rhs_val in rhs.domain.values():
-                    if rhs_val == 0:
-                        continue
-                    mod_result = lhs_val % rhs_val
-                    if mod_result in valid_result_values:
-                        valid_lhs_values.append(lhs_val)
-                        break  # This lhs value is valid
-            
-            if valid_lhs_values:
-                # Create new domain from valid values
-                if valid_lhs_values:
-                    valid_lhs_values = sorted(set(valid_lhs_values))
-                    new_lhs_intervals = []
-                    # Group consecutive values into intervals
-                    start = valid_lhs_values[0]
-                    end = valid_lhs_values[0]
-                    for val in valid_lhs_values[1:]:
-                        if val == end + 1:
-                            end = val
+        # For lhs % rhs == result, compute valid lhs values using strided
+        # interval arithmetic instead of enumeration.
+        #
+        # Fast path: when rhs is a single constant K and result contains a
+        # small set of remainders, compute the strided domain directly.
+        # For each lhs interval [lo, hi] and each valid remainder r,
+        # the valid values are {ceil((lo-r)/K)*K + r, ..., floor((hi-r)/K)*K + r}.
+        # This is O(intervals * remainders) -- independent of domain size.
+        rhs_is_single = (rhs.domain.size() == 1)
+        result_small = (result.domain.size() <= 64)
+
+        if rhs_is_single and result_small:
+            K = next(iter(rhs.domain.values()))
+            if K > 0:
+                valid_remainders = list(result.domain.values())
+                new_lhs_intervals = []
+                for lo, hi in lhs.domain.intervals:
+                    for r in valid_remainders:
+                        # First value >= lo with lhs % K == r
+                        if lo <= r:
+                            first = r
                         else:
-                            new_lhs_intervals.append((start, end))
-                            start = val
-                            end = val
-                    new_lhs_intervals.append((start, end))
-                    
+                            # ceil((lo - r) / K) * K + r
+                            first = ((lo - r + K - 1) // K) * K + r
+                        # Last value <= hi with lhs % K == r
+                        last = ((hi - r) // K) * K + r
+                        if first <= last and first <= hi and last >= lo:
+                            new_lhs_intervals.append((first, last))
+                if new_lhs_intervals:
                     new_lhs_domain = IntDomain(new_lhs_intervals, lhs.domain.width, lhs.domain.signed)
                     old_lhs = lhs.domain
                     lhs.domain = lhs.domain.intersect(new_lhs_domain)
-                    
                     if lhs.domain.is_empty():
                         return PropagationResult.conflict()
                     if lhs.domain != old_lhs:
                         changed.add(lhs)
+                else:
+                    return PropagationResult.conflict()
+        elif rhs.domain.size() <= 10 and result_small:
+            # Multiple rhs values but still small: use strided approach per rhs value
+            valid_result_values = set(result.domain.values())
+            new_lhs_intervals = []
+            for K in rhs.domain.values():
+                if K == 0:
+                    continue
+                K_abs = abs(K)
+                for lo, hi in lhs.domain.intervals:
+                    for r in valid_result_values:
+                        if r >= K_abs:
+                            continue
+                        if lo <= r:
+                            first = r
+                        else:
+                            first = ((lo - r + K_abs - 1) // K_abs) * K_abs + r
+                        last = ((hi - r) // K_abs) * K_abs + r
+                        if first <= last and first <= hi and last >= lo:
+                            new_lhs_intervals.append((first, last))
+            if new_lhs_intervals:
+                new_lhs_domain = IntDomain(new_lhs_intervals, lhs.domain.width, lhs.domain.signed)
+                old_lhs = lhs.domain
+                lhs.domain = lhs.domain.intersect(new_lhs_domain)
+                if lhs.domain.is_empty():
+                    return PropagationResult.conflict()
+                if lhs.domain != old_lhs:
+                    changed.add(lhs)
             else:
-                # No valid lhs values
                 return PropagationResult.conflict()
         
         if changed:

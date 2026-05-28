@@ -1,7 +1,8 @@
 """PassManager — runs an ordered sequence of passes and enforces readiness."""
 from __future__ import annotations
 
-from typing import Any, Iterable, List
+import time
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
 class PassValidationError(Exception):
@@ -156,3 +157,62 @@ class PassManager:
                 f"{prov_info}. "
                 f"{len(remaining)} unlowered node(s) found."
             )
+
+
+class LayeredPassManager(PassManager):
+    """A ``PassManager`` that runs an :class:`IRLayerVerifier` at each layer transition.
+
+    After executing each pass, checks whether the pass declares an
+    ``output_layer`` property.  If it does, the corresponding verifier (if
+    registered) is called before the next pass begins.  Also records per-pass
+    wall-clock timing.
+
+    Args:
+        passes: Ordered list of :py:class:`Pass` instances.
+        verifiers: Optional mapping from :class:`~zuspec.synth.ir.layers.IRLayer`
+            to an :class:`~zuspec.synth.verify.layer_verifiers.IRLayerVerifier`.
+            Unregistered layers are silently skipped.
+    """
+
+    def __init__(
+        self,
+        passes: Iterable,
+        verifiers: Optional[Dict] = None,
+    ) -> None:
+        super().__init__(passes)
+        self._verifiers: Dict = verifiers or {}
+        self._timings: List[Tuple[str, float]] = []
+
+    @property
+    def timings(self) -> List[Tuple[str, float]]:
+        """Ordered list of ``(pass_name, elapsed_seconds)`` for all completed passes."""
+        return list(self._timings)
+
+    def run(self, ir: Any) -> Any:
+        """Execute all passes with layer-boundary verification and timing.
+
+        Args:
+            ir: Initial IR state.
+
+        Returns:
+            The IR after all passes have been applied.
+
+        Raises:
+            LayerVerificationError: If a pass transitions a layer and the
+                corresponding verifier detects a violation.
+        """
+        self._timings = []
+        for p in self._passes:
+            name = getattr(p, "name", type(p).__name__)
+            t0 = time.monotonic()
+            ir = p.run(ir)
+            elapsed = time.monotonic() - t0
+            self._timings.append((name, elapsed))
+
+            # Check for a layer transition and run the verifier.
+            output_layer = getattr(p, "output_layer", None)
+            if output_layer is not None and output_layer in self._verifiers:
+                verifier = self._verifiers[output_layer]
+                verifier.verify(ir)
+
+        return ir
