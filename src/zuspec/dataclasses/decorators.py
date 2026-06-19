@@ -162,7 +162,8 @@ def dataclass(cls=None, *, profile: Optional[type['Profile']] = None, **kwargs):
         for name, value in cls.__dict__.items():
     #        print("Name: %s ; Value: %s" % (name, value))
             if isinstance(value, dc.Field) and not name in cls_annotations:
-                print("TODO: annotate field")
+                # No declared annotation for this dataclasses.Field; fall back to
+                # int so dc.dataclass() can process it. (Was a debug print.)
                 cls_annotations[name] = int
 
         cls_t = dc.dataclass(cls, kw_only=True, **kwargs)
