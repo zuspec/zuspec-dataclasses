@@ -170,7 +170,16 @@ class NativeSolverBackend:
         else:
             struct_type = _extract_struct_type(obj)
             builder = ConstraintSystemBuilder()
-            system = builder.build_from_struct(struct_type)
+            try:
+                system = builder.build_from_struct(struct_type)
+            except BuildError as exc:
+                # Mirror the Python backend: surface build failures (notably the
+                # "No random variables found in struct" no-op case) as a
+                # RandomizationError, which the activity runner recognizes and
+                # tolerates for actions with nothing to randomize.
+                raise RandomizationError(
+                    f"Native solver: failed to build constraint system: {exc}"
+                ) from exc
 
             # Build the C problem from the constraint system
             try:

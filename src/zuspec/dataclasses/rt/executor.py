@@ -107,6 +107,20 @@ class Executor:
         """
         return None
 
+    @staticmethod
+    def _import_call_name(func) -> Optional[str]:
+        """Return the import name if *func* is a package-scope import reference.
+
+        PSS surfaces an ``import p::*`` call ``doit(x)`` as ``self.doit(x)``
+        (an ``ExprAttribute`` over ``TypeExprRefSelf``); a bare unresolved name is
+        also recognized defensively.  Returns ``None`` for anything else.
+        """
+        if isinstance(func, ExprAttribute) and isinstance(func.value, TypeExprRefSelf):
+            return func.attr
+        if isinstance(func, ExprRefUnresolved):
+            return func.name
+        return None
+
     def _read_signal(self, field_path: str) -> Any:
         """Read signal value from backend."""
         if self.use_eval_state:
@@ -177,25 +191,28 @@ class Executor:
         """Execute an assignment statement."""
         # Evaluate RHS
         value = self.evaluate_expr(stmt.value)
-        
+
         # Assign to all targets (usually just one)
         for target in stmt.targets:
-            # Check if target is a local variable
-            if isinstance(target, ExprRefLocal):
-                self.locals[target.name] = value
-            elif isinstance(target, ExprSubscript):
-                # Handle subscript assignment (e.g., array[index] = value)
-                base = self.evaluate_expr(target.value)
-                index = self.evaluate_expr(target.slice)
-                base[int(index)] = value
-            elif isinstance(target, ExprAttribute):
-                # Handle attribute assignment on any base incl. subscripts
-                # e.g. spi[0].intf_idx = 0  where base evaluates to spi[0]
-                base = self.evaluate_expr(target.value)
-                setattr(base, target.attr, value)
-            else:
-                field_path = self.get_field_path(target)
-                self._write_signal(field_path, value)
+            self._assign_to_target(target, value)
+
+    def _assign_to_target(self, target, value):
+        """Store *value* into an lvalue *target* (local, subscript, attr, field)."""
+        if isinstance(target, ExprRefLocal):
+            self.locals[target.name] = value
+        elif isinstance(target, ExprSubscript):
+            # Handle subscript assignment (e.g., array[index] = value)
+            base = self.evaluate_expr(target.value)
+            index = self.evaluate_expr(target.slice)
+            base[int(index)] = value
+        elif isinstance(target, ExprAttribute):
+            # Handle attribute assignment on any base incl. subscripts
+            # e.g. spi[0].intf_idx = 0  where base evaluates to spi[0]
+            base = self.evaluate_expr(target.value)
+            setattr(base, target.attr, value)
+        else:
+            field_path = self.get_field_path(target)
+            self._write_signal(field_path, value)
     
     def execute_if(self, stmt: StmtIf):
         """Execute an if statement."""
@@ -425,6 +442,17 @@ class Executor:
             return val if val < 0x80000000 else val - 0x100000000
 
         elif isinstance(expr, ExprCall):
+            # Route package-scope import calls (target/solve) to the run's import
+            # resolver before normal resolution.  Without a resolver, or for a
+            # name that is not a registered import, fall through to the regular
+            # call path (so methods, builtins, and collection ops are unaffected).
+            import_name = self._import_call_name(expr.func)
+            if import_name is not None:
+                from .import_resolver import current_resolver
+                resolver = current_resolver()
+                if resolver is not None and resolver.has(import_name):
+                    args = [self.evaluate_expr(arg) for arg in expr.args]
+                    return resolver.call(import_name, args)
             # Handle function/method calls
             func = self.evaluate_expr(expr.func)
             args = [self.evaluate_expr(arg) for arg in expr.args]
@@ -692,3 +720,139 @@ class ObjectExecutor(Executor):
         for part in parts[:-1]:
             obj = getattr(obj, part)
         setattr(obj, parts[-1], value)
+
+
+class AsyncObjectExecutor(ObjectExecutor):
+    """Async-capable body executor — can ``await`` async ``import target`` calls.
+
+    Used for action-body execution.  A statement or expression that contains no
+    import call is delegated unchanged to the synchronous :class:`ObjectExecutor`
+    logic, so the common path is identical; only subtrees that actually call an
+    import take the async path (where an ``async def`` import is awaited via the
+    resolver's ``call_async``).
+    """
+
+    def __init__(self, obj: Any):
+        super().__init__(obj)
+        # id(node) -> bool, memoizing the "contains an import call" scan so hot
+        # loops do not re-walk the same statement tree each iteration.
+        self._import_scan: dict = {}
+
+    # --- import detection (cached) --------------------------------------
+
+    def _has_import_call(self, node) -> bool:
+        from .import_resolver import current_resolver
+        resolver = current_resolver()
+        if resolver is None:
+            return False
+        key = id(node)
+        cached = self._import_scan.get(key)
+        if cached is None:
+            cached = self._scan_import(node, resolver)
+            self._import_scan[key] = cached
+        return cached
+
+    def _scan_import(self, node, resolver) -> bool:
+        if isinstance(node, ExprCall):
+            nm = self._import_call_name(node.func)
+            if nm is not None and resolver.has(nm):
+                return True
+        if dc.is_dataclass(node):
+            for f in dc.fields(node):
+                if self._scan_import(getattr(node, f.name, None), resolver):
+                    return True
+        elif isinstance(node, (list, tuple)):
+            for it in node:
+                if self._scan_import(it, resolver):
+                    return True
+        return False
+
+    # --- async statement execution --------------------------------------
+
+    async def execute_stmts_async(self, stmts):
+        for stmt in stmts:
+            await self.execute_stmt_async(stmt)
+
+    async def execute_stmt_async(self, stmt):
+        # Fast path: no import anywhere in this statement — run it synchronously,
+        # reusing all existing ObjectExecutor logic unchanged.
+        if not self._has_import_call(stmt):
+            self.execute_stmt(stmt)
+            return
+
+        if isinstance(stmt, StmtExpr):
+            await self.evaluate_expr_async(stmt.expr)
+        elif isinstance(stmt, StmtAssign):
+            value = await self.evaluate_expr_async(stmt.value)
+            for target in stmt.targets:
+                self._assign_to_target(target, value)
+        elif isinstance(stmt, StmtAnnAssign):
+            if isinstance(stmt.target, ExprRefLocal):
+                value = (await self.evaluate_expr_async(stmt.value)
+                         if stmt.value is not None else 0)
+                self.locals[stmt.target.name] = value
+        elif isinstance(stmt, StmtReturn):
+            value = (await self.evaluate_expr_async(stmt.value)
+                     if stmt.value is not None else None)
+            raise _ReturnSignal(value)
+        elif isinstance(stmt, StmtIf):
+            if await self.evaluate_expr_async(stmt.test):
+                await self.execute_stmts_async(stmt.body)
+            else:
+                await self.execute_stmts_async(stmt.orelse)
+        elif isinstance(stmt, StmtFor):
+            count = int(await self.evaluate_expr_async(stmt.iter))
+            iter_name = stmt.target.name if isinstance(stmt.target, ExprRefLocal) else None
+            for i in range(count):
+                if iter_name is not None:
+                    self.locals[iter_name] = i
+                try:
+                    await self.execute_stmts_async(stmt.body)
+                except _ContinueSignal:
+                    continue
+                except _BreakSignal:
+                    break
+            if iter_name is not None:
+                self.locals.pop(iter_name, None)
+        elif isinstance(stmt, StmtWhile):
+            while await self.evaluate_expr_async(stmt.test):
+                try:
+                    await self.execute_stmts_async(stmt.body)
+                except _ContinueSignal:
+                    continue
+                except _BreakSignal:
+                    break
+        else:
+            # Uncommon statement form holding an import (foreach/match/repeat):
+            # execute synchronously.  Works for sync imports; an async import in
+            # such a position raises the clear PssImportError, as before.
+            self.execute_stmt(stmt)
+
+    # --- async expression evaluation ------------------------------------
+
+    async def evaluate_expr_async(self, expr):
+        if isinstance(expr, ExprCall):
+            name = self._import_call_name(expr.func)
+            if name is not None:
+                from .import_resolver import current_resolver
+                resolver = current_resolver()
+                if resolver is not None and resolver.has(name):
+                    args = [await self.evaluate_expr_async(a) for a in expr.args]
+                    return await resolver.call_async(name, args)
+        # No import in this subtree — synchronous evaluation (full-featured).
+        if not self._has_import_call(expr):
+            return self.evaluate_expr(expr)
+        return await self._eval_compound_async(expr)
+
+    async def _eval_compound_async(self, expr):
+        # A non-import call whose arguments may themselves contain import calls
+        # (e.g. ``self.helper(doit())``): await the args, then call normally.
+        if isinstance(expr, ExprCall):
+            func = self.evaluate_expr(expr.func)
+            args = [await self.evaluate_expr_async(a) for a in expr.args]
+            kwargs = {kw.arg: await self.evaluate_expr_async(kw.value)
+                      for kw in expr.keywords}
+            return func(*args, **kwargs) if callable(func) else 0
+        # Other compound forms with a nested import are uncommon; evaluate
+        # synchronously (handles sync imports; an async one raises the clear error).
+        return self.evaluate_expr(expr)

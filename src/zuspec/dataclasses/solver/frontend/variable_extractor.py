@@ -64,17 +64,31 @@ class VariableExtractor:
         Returns:
             Variable if field is rand/randc, List[Variable] for arrays, None otherwise
         """
-        # Check if this is a randomizable type
-        if not self.type_mapper.can_convert_to_domain(field.datatype):
-            return None
-        
         # Get field metadata - check for rand/randc markers
         rand_kind = self._get_rand_kind(field)
-        
+
         if rand_kind is None:
             # Not a random variable
             return None
-        
+
+        # Array of a struct type: decompose into per-member solver variables
+        # (e.g. `pkts[i].x`). Checked before the scalar convertibility gate
+        # below, since a struct type is not itself a domain.
+        from zuspec.ir.core.data_type import DataTypeArray, DataTypeStruct
+        elem_datatype = (
+            field.datatype.element_type
+            if isinstance(field.datatype, DataTypeArray)
+            else field.datatype
+        )
+        if field.is_array and isinstance(elem_datatype, DataTypeStruct):
+            return self._extract_struct_array_field(
+                field, index, prefix, rand_kind, elem_datatype
+            )
+
+        # Check if this is a randomizable (scalar/scalar-array) type
+        if not self.type_mapper.can_convert_to_domain(field.datatype):
+            return None
+
         # Check if this is an array field
         if field.is_array:
             return self._extract_array_field(field, index, prefix, rand_kind)
@@ -217,6 +231,48 @@ class VariableExtractor:
         
         return variables
     
+    def _extract_struct_array_field(
+        self,
+        field: Field,
+        index: int,
+        prefix: str,
+        rand_kind: str,
+        element_struct: DataTypeStruct,
+    ) -> List[Variable]:
+        """Extract solver variables for an array of struct-typed elements.
+
+        Each element's rand fields are decomposed into individually-named
+        variables, e.g. ``rand Pkt pkts[4]`` with ``rand bit[4] x`` ->
+        ``pkts[0].x, pkts[1].x, pkts[2].x, pkts[3].x``. This mirrors the naming
+        the constraint frontend expands ``forall``/``foreach`` member access to
+        (``p.x`` -> ``pkts[i].x``), and is written back element-by-element by
+        ``_apply_solution`` (names carry both ``[`` and ``.``).
+        """
+        from zuspec.ir.core.data_type import DataTypeArray
+        size = field.size
+        if size is None and isinstance(field.datatype, DataTypeArray):
+            size = field.datatype.size
+        if size is None:
+            return []
+
+        base_name = f"{prefix}{field.name}" if prefix else field.name
+
+        variables: List[Variable] = []
+        for i in range(size):
+            elem_prefix = f"{base_name}[{i}]."
+            # Fresh extractor per element so its per-struct field-index map does
+            # not clobber this (outer) extractor's mapping.
+            sub = VariableExtractor()
+            elem_vars = sub.extract_from_struct(element_struct, prefix=elem_prefix)
+            for v in elem_vars:
+                self.variables[v.name] = v
+            variables.extend(elem_vars)
+
+        self.field_index_map[index] = base_name
+        # Struct-array elements are written back individually by name in
+        # _apply_solution (names carry both '[' and '.'); not scalar array_metadata.
+        return variables
+
     def _get_rand_kind(self, field: Field) -> Optional[RandKind]:
         """
         Determine if field is rand/randc and return the kind.

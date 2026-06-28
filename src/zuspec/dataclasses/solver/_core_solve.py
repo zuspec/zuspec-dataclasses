@@ -181,6 +181,9 @@ def _apply_cached_assignment(obj: Any, cached: Dict[str, int]) -> None:
     ``_store_resource_hint`` when the intermediate field is not yet acquired.
     """
     for var_name, value in cached.items():
+        if "[" in var_name and "." in var_name:
+            _set_indexed_path(obj, var_name, value)
+            continue
         if "." in var_name:
             parts = var_name.split(".")
             target = obj
@@ -345,6 +348,28 @@ def _is_resource_ref_field(obj: Any, field_name: str) -> bool:
     return False
 
 
+def _set_indexed_path(obj: Any, name: str, value: int) -> None:
+    """Assign *value* to an indexed/nested member path like ``pkts[3].x`` or
+    ``a[0].b[1].c`` in place, preserving the existing element objects."""
+    import re
+    tokens = re.findall(r"[A-Za-z_]\w*|\[\d+\]", name)
+    if not tokens:
+        return
+    target = obj
+    for tok in tokens[:-1]:
+        if tok.startswith("["):
+            target = target[int(tok[1:-1])]
+        else:
+            target = getattr(target, tok)
+        if target is None:
+            return
+    last = tokens[-1]
+    if last.startswith("["):
+        target[int(last[1:-1])] = value
+    else:
+        setattr(target, last, value)
+
+
 def _apply_solution(
     obj: Any,
     assignment: Dict[str, int],
@@ -353,6 +378,11 @@ def _apply_solution(
     """Write *assignment* values back into *obj*'s fields."""
     # First pass: scalar fields
     for var_name, value in assignment.items():
+        # Struct-array members (e.g. `pkts[i].x`) carry both an index and a
+        # member; assign them in place so element objects are preserved.
+        if "[" in var_name and "." in var_name:
+            _set_indexed_path(obj, var_name, value)
+            continue
         if "[" in var_name:
             continue
         if "." in var_name:

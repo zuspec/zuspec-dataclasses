@@ -15,6 +15,7 @@ from .coverage_model import PssCoverageModel
 from .activity_runner import ActivityRunner
 from .compiled_scenario import CompiledScenario, ScenarioCompiler
 from .pool_resolver import PoolResolver
+from .import_resolver import use_resolver
 from .action_registry import ActionRegistry
 from .icl_table import ICLTable
 from .structural_solver import StructuralSolver
@@ -61,6 +62,7 @@ class ScenarioRunner:
         tracer=None,
         check_contracts: bool = False,
         coverage_model: Optional[PssCoverageModel] = None,
+        import_resolver=None,
     ) -> None:
         self._comp = comp
         self._resolver = PoolResolver.build(comp)
@@ -68,6 +70,8 @@ class ScenarioRunner:
         self._tracer = tracer
         self._check_contracts = check_contracts
         self._coverage_model = coverage_model
+        # Routes the model's package-scope import calls outward (None = no imports).
+        self._import_resolver = import_resolver
         # ActionRegistry and ICLTable depend only on component/action CLASS
         # topology, not on the specific instance, so they are cached per root type.
         root_cls = type(comp)
@@ -85,20 +89,51 @@ class ScenarioRunner:
     async def run(
         self, action_type: Type, timeout_s: float = 30.0, **kwargs
     ) -> Any:
-        """Traverse *action_type* once against the component tree."""
-        # Lazy-compile on first call for this action type
-        if action_type not in self._compiled_scenarios:
-            compiler = ScenarioCompiler()
-            self._compiled_scenarios[action_type] = compiler.compile(
-                action_type, self._comp, self._resolver
-            )
+        """Traverse *action_type* once against the component tree.
 
-        compiled: Optional[CompiledScenario] = self._compiled_scenarios[action_type]
-        if compiled is not None:
-            # Fast path: pre-compiled scenario — no framework overhead per cycle
+        The run's import resolver (if any) is activated for the whole traversal,
+        so the model's package-scope ``import`` calls route outward.  The value
+        propagates across ``await`` boundaries and into parallel child tasks.
+        """
+        with use_resolver(self._import_resolver):
+            # Lazy-compile on first call for this action type
+            if action_type not in self._compiled_scenarios:
+                compiler = ScenarioCompiler()
+                self._compiled_scenarios[action_type] = compiler.compile(
+                    action_type, self._comp, self._resolver
+                )
+
+            compiled: Optional[CompiledScenario] = self._compiled_scenarios[action_type]
+            if compiled is not None:
+                # Fast path: pre-compiled scenario — no framework overhead per cycle
+                try:
+                    async with asyncio.timeout(timeout_s):
+                        result = await compiled.run(tracer=self._tracer)
+                except asyncio.TimeoutError:
+                    raise DeadlockError(
+                        f"Scenario did not complete within {timeout_s}s — "
+                        f"possible deadlock in resource acquisition"
+                    )
+                self._seed = (
+                    self._seed * 6364136223846793005 + 1442695040888963407
+                ) & 0xFFFF_FFFF_FFFF_FFFF
+                return result
+
+            # Slow path: full activity runner (complex / non-compilable activities)
+            ctx = ActionContext(
+                action=None,
+                comp=self._comp,
+                pool_resolver=self._resolver,
+                seed=self._seed,
+                structural_solver=self._structural_solver,
+                tracer=self._tracer,
+                check_contracts=self._check_contracts,
+                coverage_model=self._coverage_model,
+            )
+            runner = ActivityRunner()
             try:
                 async with asyncio.timeout(timeout_s):
-                    result = await compiled.run(tracer=self._tracer)
+                    action = await runner._traverse(action_type, [], ctx)
             except asyncio.TimeoutError:
                 raise DeadlockError(
                     f"Scenario did not complete within {timeout_s}s — "
@@ -107,32 +142,7 @@ class ScenarioRunner:
             self._seed = (
                 self._seed * 6364136223846793005 + 1442695040888963407
             ) & 0xFFFF_FFFF_FFFF_FFFF
-            return result
-
-        # Slow path: full activity runner (for complex / non-compilable activities)
-        ctx = ActionContext(
-            action=None,
-            comp=self._comp,
-            pool_resolver=self._resolver,
-            seed=self._seed,
-            structural_solver=self._structural_solver,
-            tracer=self._tracer,
-            check_contracts=self._check_contracts,
-            coverage_model=self._coverage_model,
-        )
-        runner = ActivityRunner()
-        try:
-            async with asyncio.timeout(timeout_s):
-                action = await runner._traverse(action_type, [], ctx)
-        except asyncio.TimeoutError:
-            raise DeadlockError(
-                f"Scenario did not complete within {timeout_s}s — "
-                f"possible deadlock in resource acquisition"
-            )
-        self._seed = (
-            self._seed * 6364136223846793005 + 1442695040888963407
-        ) & 0xFFFF_FFFF_FFFF_FFFF
-        return action
+            return action
 
     async def run_n(self, action_type: Type, n: int) -> None:
         """Traverse *action_type* *n* times sequentially."""

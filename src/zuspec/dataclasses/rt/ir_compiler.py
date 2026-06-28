@@ -27,12 +27,25 @@ _PSS_METHODS = {
 }
 
 _BINOP_STR = {
-    1: '+', 2: '-', 3: '*', 4: '/', 5: '%', 6: '//', 7: '**',
+    # NB: PSS '/' (BinOp.Div=4) is *integer* division — matches the interpreter's
+    # ``left // right``.  FloorDiv=6 is also '//'.
+    1: '+', 2: '-', 3: '*', 4: '//', 5: '%', 6: '//', 7: '**',
     8: '&', 9: '|', 10: '^', 11: '<<', 12: '>>',
     # Comparison ops embedded in BinOp
     13: '==', 14: '!=', 15: '<', 16: '<=', 17: '>', 18: '>=',
     19: 'and', 20: 'or',
 }
+
+# AugOp -> Python augmented-assignment operator.  Div=4 is integer division
+# (matches the interpreter's ``a // b``).
+_AUGOP_STR = {
+    1: '+=', 2: '-=', 3: '*=', 4: '//=', 5: '%=', 6: '**=',
+    7: '<<=', 8: '>>=', 9: '&=', 10: '|=', 11: '^=', 12: '//=',
+}
+
+# PSS builtin call functions that must use the runtime's implementation (printf
+# semantics, escape handling) rather than Python's same-named builtin.
+_PSS_BUILTIN_CALLS = {'print', 'message'}
 
 
 class _Unhandled(Exception):
@@ -49,8 +62,14 @@ class IRCompiler:
     """
 
     def compile(self, stmts: list, self_arg: str = 'self_comp',
-                extra_args: str = '') -> Optional[callable]:
-        """Return a Python callable, or None if compilation is not possible."""
+                extra_args: str = '', import_names=None) -> Optional[callable]:
+        """Return a Python callable, or None if compilation is not possible.
+
+        *import_names*, when given, is the set of package-scope import names the
+        model may call.  A body referencing one is left to the interpreter (which
+        routes it through the run's import resolver), so this compiler bails on it.
+        """
+        self._import_names = set(import_names) if import_names else set()
         try:
             lines = self._stmts(stmts, indent=1)
         except _Unhandled:
@@ -61,8 +80,15 @@ class IRCompiler:
         if extra_args:
             args = f'{self_arg}, {extra_args}'
         src = f'def _pss_fn({args}):\n' + '\n'.join(lines)
-        ns: dict = {}
-        exec(compile(src, '<pss_compiled>', 'exec'), ns)  # noqa: S102
+        # PSS builtins available to compiled code (printf semantics).
+        from .executor import _pss_print, _pss_message
+        ns: dict = {'_pss_print': _pss_print, '_pss_message': _pss_message}
+        try:
+            exec(compile(src, '<pss_compiled>', 'exec'), ns)  # noqa: S102
+        except Exception:
+            # Any malformed generation falls back to the interpreter rather than
+            # raising — compilation is strictly a best-effort fast path.
+            return None
         return ns['_pss_fn']
 
     # ------------------------------------------------------------------ #
@@ -78,8 +104,10 @@ class IRCompiler:
     def _stmt(self, stmt, indent: int) -> list[str]:
         from zuspec.ir.core.stmt import (
             StmtAssign, StmtExpr, StmtIf, StmtReturn,
-            StmtAnnAssign,
+            StmtAnnAssign, StmtFor, StmtWhile, StmtAugAssign,
+            StmtBreak, StmtContinue, StmtPass,
         )
+        from zuspec.ir.core.expr import ExprRefLocal
         pad = '    ' * indent
 
         if isinstance(stmt, StmtAssign):
@@ -111,6 +139,36 @@ class IRCompiler:
                 return [f'{pad}{self._expr(stmt.target)} = {self._expr(stmt.value)}']
             return []
 
+        elif isinstance(stmt, StmtAugAssign):
+            op = _AUGOP_STR.get(stmt.op.value if hasattr(stmt.op, 'value') else int(stmt.op))
+            if op is None:
+                raise _Unhandled(f'AugOp {stmt.op}')
+            return [f'{pad}{self._expr(stmt.target)} {op} {self._expr(stmt.value)}']
+
+        elif isinstance(stmt, StmtFor):
+            # PSS repeat(N) / repeat(i : N) -> for <name> in range(int(N)):
+            it = self._expr(stmt.iter)
+            name = stmt.target.name if isinstance(stmt.target, ExprRefLocal) else '_i'
+            lines = [f'{pad}for {name} in range(int({it})):']
+            body = self._stmts(stmt.body, indent + 1)
+            lines.extend(body if body else [f'{pad}    pass'])
+            return lines
+
+        elif isinstance(stmt, StmtWhile):
+            lines = [f'{pad}while {self._expr(stmt.test)}:']
+            body = self._stmts(stmt.body, indent + 1)
+            lines.extend(body if body else [f'{pad}    pass'])
+            return lines
+
+        elif isinstance(stmt, StmtBreak):
+            return [f'{pad}break']
+
+        elif isinstance(stmt, StmtContinue):
+            return [f'{pad}continue']
+
+        elif isinstance(stmt, StmtPass):
+            return [f'{pad}pass']
+
         else:
             raise _Unhandled(type(stmt).__name__)
 
@@ -123,14 +181,24 @@ class IRCompiler:
             TypeExprRefSelf, ExprAttribute, ExprSubscript,
             ExprConstant, ExprBin, ExprUnary, ExprCompare,
             ExprCall, ExprRefUnresolved, ExprRefLocal, ExprIfExp,
+            ExprBool, BoolOp,
         )
 
         if isinstance(expr, TypeExprRefSelf):
             return 'self_comp'
 
         elif isinstance(expr, ExprAttribute):
+            # `self.<CONST>` for a std_pkg severity constant -> inline its value.
+            if isinstance(expr.value, TypeExprRefSelf):
+                from .executor import _PSS_CONSTANTS
+                if expr.attr in _PSS_CONSTANTS:
+                    return repr(_PSS_CONSTANTS[expr.attr])
             base = self._expr(expr.value)
             return f'{base}.{expr.attr}'
+
+        elif isinstance(expr, ExprBool):
+            sep = ' and ' if expr.op == BoolOp.And else ' or '
+            return '(' + sep.join(self._expr(v) for v in expr.values) + ')'
 
         elif isinstance(expr, ExprSubscript):
             base = self._expr(expr.value)
@@ -170,6 +238,17 @@ class IRCompiler:
             func = expr.func
             if isinstance(func, ExprAttribute):
                 method = func.attr
+                # A package-scope import call (`self.<import>(...)`) must run on
+                # the interpreter path so it routes through the import resolver.
+                if (getattr(self, '_import_names', None)
+                        and method in self._import_names
+                        and isinstance(func.value, TypeExprRefSelf)):
+                    raise _Unhandled(f'import call {method}')
+                # PSS builtins (`print`/`message`) -> runtime impl with printf
+                # semantics, not Python's same-named builtin.
+                if method in _PSS_BUILTIN_CALLS and isinstance(func.value, TypeExprRefSelf):
+                    args_str = ', '.join(self._expr(a) for a in expr.args)
+                    return f'_pss_{method}({args_str})'
                 base = self._expr(func.value)
                 if method == 'push_back' and expr.args:
                     arg = self._expr(expr.args[0])
