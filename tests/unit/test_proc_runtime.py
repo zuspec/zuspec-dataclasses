@@ -16,14 +16,14 @@ class Counter(zdc.Component):
 
 def test_count_field_is_regprocrt():
     """count field must be a RegProcRT, not a plain int."""
-    from zuspec.dataclasses.rt.regfile_rt import RegProcRT
+    from zuspec.be.py.rt.regfile_rt import RegProcRT
     c = Counter()
     assert isinstance(c.count, RegProcRT), f"Expected RegProcRT, got {type(c.count)}"
 
 
 def test_read_is_sync():
     """read() must be synchronous and return the current value."""
-    from zuspec.dataclasses.rt.regfile_rt import RegProcRT
+    from zuspec.be.py.rt.regfile_rt import RegProcRT
     c = Counter()
     assert isinstance(c.count, RegProcRT)
     val = c.count.read()

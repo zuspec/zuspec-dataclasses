@@ -37,5 +37,5 @@ async def select(*queues_with_tags: Tuple[Any, Any], priority: str = "left_to_ri
     * ``'left_to_right'`` (default) — leftmost queue in the argument list wins.
     * ``'round_robin'``             — rotates priority after each selection.
     """
-    from zuspec.dataclasses.rt.select_rt import select_rt
+    from zuspec.be.py.rt.select_rt import select_rt
     return await select_rt(*queues_with_tags, priority=priority)

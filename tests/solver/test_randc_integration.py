@@ -1,12 +1,12 @@
 """Integration tests for randc with backtracking search"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable, VarKind
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.engine import BacktrackingSearch, PropagationEngine
-from zuspec.dataclasses.solver.propagators.arithmetic import AddPropagator
-from zuspec.dataclasses.solver.propagators.relational import EqualPropagator, LessThanPropagator
-from zuspec.dataclasses.solver.randc import RandCManager, RandCConfig
+from zuspec.be.py.solver.core.variable import Variable, VarKind
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.engine import BacktrackingSearch, PropagationEngine
+from zuspec.be.py.solver.propagators.arithmetic import AddPropagator
+from zuspec.be.py.solver.propagators.relational import EqualPropagator, LessThanPropagator
+from zuspec.be.py.solver.randc import RandCManager, RandCConfig
 
 
 def test_randc_basic_solve():

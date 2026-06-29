@@ -1,9 +1,9 @@
 """Tests for set membership constraint propagators"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.propagators.set_membership import (
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.propagators.set_membership import (
     InSetPropagator,
     RangeConstraintPropagator,
 )

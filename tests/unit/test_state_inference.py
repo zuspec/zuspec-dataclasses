@@ -12,15 +12,15 @@ from typing import Optional
 import pytest
 
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.action_registry import ActionRegistry
-from zuspec.dataclasses.rt.icl_table import ICLTable
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
-from zuspec.dataclasses.rt.structural_solver import (
+from zuspec.be.py.rt.action_registry import ActionRegistry
+from zuspec.be.py.rt.icl_table import ICLTable
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.structural_solver import (
     InferenceFeasibilityError,
     StructuralSolver,
     extract_state_target,
 )
-from zuspec.dataclasses.rt.state_graph_factory import (
+from zuspec.be.py.rt.state_graph_factory import (
     StateGraph,
     StateSpaceTooLargeError,
     _fields_from_state_type,
@@ -383,8 +383,8 @@ class TestPhase4CrossFlowConstraints:
 
     def test_cross_flow_constraint_step_solve(self):
         """ATransition with fixed prev/next solves step correctly."""
-        from zuspec.dataclasses.rt.resource_rt import make_resource
-        from zuspec.dataclasses.solver.api import randomize
+        from zuspec.be.py.rt.resource_rt import make_resource
+        from zuspec.be.py.solver.api import randomize
 
         prev_obj = make_resource(PowerState)
         object.__setattr__(prev_obj, "domain_A", 2)
@@ -406,8 +406,8 @@ class TestPhase4CrossFlowConstraints:
 
     def test_cross_flow_unchanged_fields(self):
         """Field-copy constraints (next_.X == prev.X) satisfied."""
-        from zuspec.dataclasses.rt.resource_rt import make_resource
-        from zuspec.dataclasses.solver.api import randomize
+        from zuspec.be.py.rt.resource_rt import make_resource
+        from zuspec.be.py.solver.api import randomize
 
         prev_obj = make_resource(PowerState)
         object.__setattr__(prev_obj, "domain_A", 1)

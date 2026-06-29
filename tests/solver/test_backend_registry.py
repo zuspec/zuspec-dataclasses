@@ -10,8 +10,8 @@ Covers:
 import pytest
 
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.solver.backend import SolverBackend, get_backend, PythonSolverBackend
-from zuspec.dataclasses.solver._core_solve import RandomizationError
+from zuspec.be.py.solver.backend import SolverBackend, get_backend, PythonSolverBackend
+from zuspec.be.py.solver._core_solve import RandomizationError
 
 
 # ------------------------------------------------------------------ #

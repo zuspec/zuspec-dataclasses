@@ -3,8 +3,8 @@
 import pytest
 from enum import Enum as PyEnum
 from zuspec.ir.core.data_type import DataTypeInt, DataTypeEnum, DataTypeUptr
-from zuspec.dataclasses.solver.core.type_mapper import TypeMapper, TypeInference
-from zuspec.dataclasses.solver.core.domain import IntDomain, BitVectorDomain, EnumDomain
+from zuspec.be.py.solver.core.type_mapper import TypeMapper, TypeInference
+from zuspec.be.py.solver.core.domain import IntDomain, BitVectorDomain, EnumDomain
 
 
 class TestTypeMapper:

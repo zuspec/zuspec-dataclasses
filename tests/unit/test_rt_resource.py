@@ -4,15 +4,15 @@ import dataclasses as dc
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.types import ClaimPool
-from zuspec.dataclasses.rt.resource_rt import (
+from zuspec.be.py.rt.resource_rt import (
     ResourceFieldInfo,
     get_resource_fields,
     acquire_resources,
     release_resources,
     make_resource,
 )
-from zuspec.dataclasses.rt.pool_resolver import PoolResolver
-from zuspec.dataclasses.rt.action_context import ActionContext
+from zuspec.be.py.rt.pool_resolver import PoolResolver
+from zuspec.be.py.rt.action_context import ActionContext
 
 
 # ---------------------------------------------------------------------------

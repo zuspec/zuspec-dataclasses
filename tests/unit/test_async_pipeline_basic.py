@@ -214,7 +214,7 @@ class TestTrace:
         p = Pipe()
         run_comp(p, 15)
         assert hasattr(p, 'run_trace')
-        from zuspec.dataclasses.rt.pipeline_rt import PipelineTrace
+        from zuspec.be.py.rt.pipeline_rt import PipelineTrace
         assert isinstance(p.run_trace, PipelineTrace)
 
     def test_trace_has_tokens(self):

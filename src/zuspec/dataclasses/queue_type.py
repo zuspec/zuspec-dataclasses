@@ -255,5 +255,5 @@ def queue(depth: int, *, element_type=None) -> "Queue":
         DeprecationWarning,
         stacklevel=2,
     )
-    from zuspec.dataclasses.rt.queue_rt import QueueRT
+    from zuspec.be.py.rt.queue_rt import QueueRT
     return QueueRT(depth=depth, element_type=element_type)

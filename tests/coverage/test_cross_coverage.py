@@ -211,7 +211,7 @@ def test_cross_with_iff():
 
 def test_binsof_single():
     """Test binsof() to select all bins from a coverpoint."""
-    from zuspec.dataclasses.coverage.bins import binsof
+    from zuspec.be.py.coverage.bins import binsof
     
     @zdc.dataclass
     class Transaction:
@@ -255,7 +255,7 @@ def test_binsof_single():
 
 def test_binsof_with_bin_name():
     """Test binsof() with specific bin name."""
-    from zuspec.dataclasses.coverage.bins import binsof
+    from zuspec.be.py.coverage.bins import binsof
     
     @zdc.dataclass
     class Transaction:
@@ -299,7 +299,7 @@ def test_binsof_with_bin_name():
 
 def test_binsof_intersect():
     """Test binsof().intersect() to filter values."""
-    from zuspec.dataclasses.coverage.bins import binsof
+    from zuspec.be.py.coverage.bins import binsof
     
     @zdc.dataclass
     class Transaction:
@@ -341,7 +341,7 @@ def test_binsof_intersect():
 
 def test_binsof_and():
     """Test binsof() & binsof() for explicit cross bins."""
-    from zuspec.dataclasses.coverage.bins import binsof
+    from zuspec.be.py.coverage.bins import binsof
     
     @zdc.dataclass
     class Transaction:
@@ -386,7 +386,7 @@ def test_binsof_and():
 
 def test_binsof_or():
     """Test binsof() | binsof() for union of cross bins."""
-    from zuspec.dataclasses.coverage.bins import binsof
+    from zuspec.be.py.coverage.bins import binsof
     
     @zdc.dataclass
     class Transaction:
@@ -428,7 +428,7 @@ def test_binsof_or():
 
 def test_binsof_not():
     """Test ~binsof() to exclude bins from cross."""
-    from zuspec.dataclasses.coverage.bins import binsof
+    from zuspec.be.py.coverage.bins import binsof
     
     @zdc.dataclass
     class Transaction:

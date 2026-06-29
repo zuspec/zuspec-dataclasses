@@ -4,8 +4,8 @@ import pytest
 from zuspec.dataclasses import (
     dataclass, field, constraint, randomize, RandomizationError
 )
-from zuspec.dataclasses.solver.core.variable import Variable, VarKind
-from zuspec.dataclasses.solver.core.domain import IntDomain
+from zuspec.be.py.solver.core.variable import Variable, VarKind
+from zuspec.be.py.solver.core.domain import IntDomain
 from zuspec.ir.core.data_type import DataTypeStruct, DataTypeInt
 from zuspec.ir.core.fields import Field
 
@@ -67,7 +67,7 @@ class TestRandomizeAPI:
     
     def test_randomize_with_invalid_object(self):
         """Test that randomize_with() on invalid object raises RandomizationError"""
-        from zuspec.dataclasses.solver.api import randomize_with
+        from zuspec.be.py.solver.api import randomize_with
         
         class TestObj:
             value = 0
@@ -99,7 +99,7 @@ class TestRandomizationResult:
     
     def test_result_success(self):
         """Test successful result"""
-        from zuspec.dataclasses.solver.api import RandomizationResult
+        from zuspec.be.py.solver.api import RandomizationResult
         
         result = RandomizationResult(success=True, assignment={"x": 42})
         assert result.success
@@ -110,7 +110,7 @@ class TestRandomizationResult:
     
     def test_result_failure(self):
         """Test failed result"""
-        from zuspec.dataclasses.solver.api import RandomizationResult
+        from zuspec.be.py.solver.api import RandomizationResult
         
         result = RandomizationResult(success=False, error="UNSAT")
         assert not result.success
@@ -125,8 +125,8 @@ class TestApplySolution:
     
     def test_apply_simple_field(self):
         """Test applying solution to simple field"""
-        from zuspec.dataclasses.solver.api import _apply_solution
-        from zuspec.dataclasses.solver.core.constraint_system import ConstraintSystem
+        from zuspec.be.py.solver.api import _apply_solution
+        from zuspec.be.py.solver.core.constraint_system import ConstraintSystem
         
         class TestObj:
             value = 0
@@ -140,8 +140,8 @@ class TestApplySolution:
     
     def test_apply_nested_field(self):
         """Test applying solution to nested field"""
-        from zuspec.dataclasses.solver.api import _apply_solution
-        from zuspec.dataclasses.solver.core.constraint_system import ConstraintSystem
+        from zuspec.be.py.solver.api import _apply_solution
+        from zuspec.be.py.solver.core.constraint_system import ConstraintSystem
         
         class Inner:
             data = 0
@@ -158,8 +158,8 @@ class TestApplySolution:
     
     def test_apply_nonexistent_field_skipped(self):
         """Test that nonexistent fields are skipped (internal variables)"""
-        from zuspec.dataclasses.solver.api import _apply_solution
-        from zuspec.dataclasses.solver.core.constraint_system import ConstraintSystem
+        from zuspec.be.py.solver.api import _apply_solution
+        from zuspec.be.py.solver.core.constraint_system import ConstraintSystem
         
         class TestObj:
             value = 0

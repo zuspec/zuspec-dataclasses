@@ -13,7 +13,7 @@ import sys
 import os
 
 # Direct import to avoid Python version issues
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src/zuspec/dataclasses/rt'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../zuspec-be-py/src/zuspec/be/py/rt'))
 from event_rt import EventRT
 
 

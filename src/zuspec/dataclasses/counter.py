@@ -38,7 +38,7 @@ from typing import Callable, Optional
 
 from .types import SyncComponent, Component
 from .decorators import dataclass as _zdcdc, const
-from .rt.timebase import Timebase
+from zuspec.be.py.rt.timebase import Timebase
 
 
 # ---------------------------------------------------------------------------

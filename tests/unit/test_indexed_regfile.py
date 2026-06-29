@@ -5,7 +5,7 @@ import dataclasses
 
 import pytest
 
-from zuspec.dataclasses.rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
+from zuspec.be.py.rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
 from zuspec.dataclasses.decorators import indexed_regfile
 
 

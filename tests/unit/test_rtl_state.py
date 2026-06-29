@@ -1,6 +1,6 @@
 """Test State Management for Evaluation (Phase 2A)"""
 import pytest
-from zuspec.dataclasses.rt.eval_state import EvalState
+from zuspec.be.py.rt.eval_state import EvalState
 
 
 def test_eval_state_read_default():

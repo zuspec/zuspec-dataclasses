@@ -10,7 +10,7 @@ from zuspec.dataclasses.decorators import (
     _ContractContextManager, requires, ensures,
 )
 from zuspec.dataclasses.constraint_parser import ConstraintParser
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
 
 
 # ---------------------------------------------------------------------------

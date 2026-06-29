@@ -5,7 +5,7 @@ import zuspec.dataclasses as zdc
 from zuspec.dataclasses.activity_dsl import (
     do_while, while_do, replicate, select, branch
 )
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
 
 
 # ---------------------------------------------------------------------------

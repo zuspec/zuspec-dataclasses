@@ -1,7 +1,7 @@
 """Unit tests for BufferInstance, StreamInstance, and StatePool."""
 import asyncio
 import pytest
-from zuspec.dataclasses.rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
+from zuspec.be.py.rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
 
 
 def _run(coro):

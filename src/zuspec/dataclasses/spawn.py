@@ -25,7 +25,7 @@ def spawn(coro: Coroutine) -> "SpawnHandle":
     At synthesis the synthesizer bounds concurrent spawns to the
     ``max_outstanding`` of the IfProtocol port called inside ``coro``.
     """
-    from zuspec.dataclasses.rt.spawn_rt import spawn_rt
+    from zuspec.be.py.rt.spawn_rt import spawn_rt
     return spawn_rt(coro)
 
 

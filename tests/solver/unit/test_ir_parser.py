@@ -6,14 +6,14 @@ from zuspec.ir.core.expr import (
     ExprRefLocal, ExprRefField, ExprRefBottomUp, ExprSubscript, ExprSlice,
     BinOp, UnaryOp, BoolOp, CmpOp, TypeExprRefSelf, ExprAttribute,
 )
-from zuspec.dataclasses.solver.frontend import IRExpressionParser, ParseError
-from zuspec.dataclasses.solver.core import (
+from zuspec.be.py.solver.frontend import IRExpressionParser, ParseError
+from zuspec.be.py.solver.core import (
     Variable, IntDomain,
     ConstantConstraint, VariableRefConstraint, BinaryOpConstraint,
     CompareConstraint, UnaryOpConstraint, BoolOpConstraint,
     CompareChainConstraint, BitSliceConstraint,
 )
-from zuspec.dataclasses.solver.core.constraints import ImplicationConstraint
+from zuspec.be.py.solver.core.constraints import ImplicationConstraint
 
 
 class TestIRExpressionParser:
@@ -347,7 +347,7 @@ class TestResourcePoolITE:
 
     def test_build_pool_ite_returns_pool_value_ref(self):
         """_build_pool_ite returns a _PoolValueRef sentinel, not a Constraint."""
-        from zuspec.dataclasses.solver.frontend.ir_parser import _PoolValueRef
+        from zuspec.be.py.solver.frontend.ir_parser import _PoolValueRef
         pool = _FakePool([10, 20, 30, 40])
         self.parser.register_resource_pool("rs1", pool)
         result = self.parser._build_pool_ite("rs1")
@@ -614,7 +614,7 @@ class TestMatchCaseLowering:
 
 from zuspec.ir.core.stmt import StmtAnnAssign
 from zuspec.ir.core.expr import ExprAttribute, ExprRefUnresolved, ExprCall
-from zuspec.dataclasses.solver.core.variable import VarKind
+from zuspec.be.py.solver.core.variable import VarKind
 
 
 class TestWitnessVariables:

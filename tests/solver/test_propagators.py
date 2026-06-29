@@ -1,7 +1,7 @@
 """Tests for constraint propagators."""
 
 import pytest
-from zuspec.dataclasses.solver.propagators import (
+from zuspec.be.py.solver.propagators import (
     AddPropagator,
     SubPropagator,
     MultPropagator,
@@ -15,8 +15,8 @@ from zuspec.dataclasses.solver.propagators import (
     GreaterEqualPropagator,
     PropagationStatus,
 )
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
 
 
 def test_equal_propagator():

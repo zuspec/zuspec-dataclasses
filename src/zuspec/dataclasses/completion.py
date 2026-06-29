@@ -30,7 +30,7 @@ class Completion(Generic[T]):
         return _CompletionAlias(cls, item)
 
     def __new__(cls, *args, **kwargs):
-        from zuspec.dataclasses.rt.completion_rt import CompletionRT
+        from zuspec.be.py.rt.completion_rt import CompletionRT
         return CompletionRT.__new__(CompletionRT)
 
     def __init__(self):
@@ -59,7 +59,7 @@ class _CompletionAlias:
         self._item = item
 
     def __call__(self, *args, **kwargs):
-        from zuspec.dataclasses.rt.completion_rt import CompletionRT
+        from zuspec.be.py.rt.completion_rt import CompletionRT
         return CompletionRT()
 
     def __repr__(self):
@@ -67,5 +67,5 @@ class _CompletionAlias:
 
     # Allow isinstance checks against the origin class
     def __instancecheck__(self, instance):
-        from zuspec.dataclasses.rt.completion_rt import CompletionRT
+        from zuspec.be.py.rt.completion_rt import CompletionRT
         return isinstance(instance, (self._origin, CompletionRT))

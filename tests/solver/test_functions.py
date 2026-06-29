@@ -1,9 +1,9 @@
 """Tests for function call propagators ($countones, $clog2, user functions)"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.propagators.functions import (
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.propagators.functions import (
     CountOnesPropagator,
     Clog2Propagator,
     UserFunctionPropagator,
@@ -325,7 +325,7 @@ def test_countones_with_comparison():
     assert not result1.is_conflict()
     
     # Then constrain count > 2
-    from zuspec.dataclasses.solver.propagators import GreaterThanPropagator
+    from zuspec.be.py.solver.propagators import GreaterThanPropagator
     gt_prop = GreaterThanPropagator("count", "threshold")
     result2 = gt_prop.propagate(variables)
     assert not result2.is_conflict()

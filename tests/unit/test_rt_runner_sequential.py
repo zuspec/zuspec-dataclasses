@@ -7,10 +7,10 @@ from unittest import mock
 
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.activity_runner import ActivityRunner
-from zuspec.dataclasses.rt.action_context import ActionContext
-from zuspec.dataclasses.rt.pool_resolver import PoolResolver
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.activity_runner import ActivityRunner
+from zuspec.be.py.rt.action_context import ActionContext
+from zuspec.be.py.rt.pool_resolver import PoolResolver
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
 
 
 # ---------------------------------------------------------------------------

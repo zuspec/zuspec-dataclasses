@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt import with_tracer, Thread
+from zuspec.be.py.rt import with_tracer, Thread
 from typing import Dict, Any, Optional
 
 def test_smoke():

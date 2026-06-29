@@ -2,7 +2,7 @@
 
 import pytest
 from zuspec.dataclasses import dataclass, rand, randc, constraint
-from zuspec.dataclasses.solver.api import randomize_with, RandomizationError
+from zuspec.be.py.solver.api import randomize_with, RandomizationError
 
 
 @dataclass

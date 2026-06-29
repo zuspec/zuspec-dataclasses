@@ -9,8 +9,8 @@ import pytest
 from zuspec.ir.core.expr import ExprConstant, ExprAttribute, TypeExprRefSelf, ExprCall
 from zuspec.ir.core.stmt import StmtExpr
 
-from zuspec.dataclasses.rt.executor import ObjectExecutor
-from zuspec.dataclasses.rt.import_resolver import (
+from zuspec.be.py.rt.executor import ObjectExecutor
+from zuspec.be.py.rt.import_resolver import (
     ImportResolver, ImportSpec, PssImportError, use_resolver, current_resolver,
 )
 
@@ -109,7 +109,7 @@ def test_unrelated_self_call_not_intercepted():
 
 def test_async_executor_awaits_async_import_target():
     import asyncio
-    from zuspec.dataclasses.rt.executor import AsyncObjectExecutor
+    from zuspec.be.py.rt.executor import AsyncObjectExecutor
 
     seen = []
 
@@ -134,7 +134,7 @@ def test_async_executor_awaits_async_import_target():
 
 def test_async_executor_runs_sync_import_and_import_free_stmts():
     import asyncio
-    from zuspec.dataclasses.rt.executor import AsyncObjectExecutor
+    from zuspec.be.py.rt.executor import AsyncObjectExecutor
 
     class Obj:
         def __init__(self):
@@ -166,7 +166,7 @@ def test_async_executor_runs_sync_import_and_import_free_stmts():
 
 
 def test_ircompiler_bails_on_import_call():
-    from zuspec.dataclasses.rt.ir_compiler import IRCompiler
+    from zuspec.be.py.rt.ir_compiler import IRCompiler
 
     body = [StmtExpr(expr=_self_call("getval", _const(7)))]
     # Without import_names, the compiler emits self_comp.getval(7) (a method call).

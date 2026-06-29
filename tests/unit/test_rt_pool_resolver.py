@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.pool_resolver import PoolResolver, _action_comp_type
+from zuspec.be.py.rt.pool_resolver import PoolResolver, _action_comp_type
 
 
 # ---------------------------------------------------------------------------

@@ -1,12 +1,12 @@
 """Tests for implication constraint propagators"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.propagators.implication import (
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.propagators.implication import (
     ImplicationPropagator,
 )
-from zuspec.dataclasses.solver.propagators.relational import EqualPropagator
+from zuspec.be.py.solver.propagators.relational import EqualPropagator
 
 
 def test_implication_condition_true_enforces_consequence():

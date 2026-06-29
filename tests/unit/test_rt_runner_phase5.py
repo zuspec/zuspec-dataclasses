@@ -2,8 +2,8 @@
 import asyncio
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner, DeadlockError
-from zuspec.dataclasses.rt.tracer import ActivityTracer
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner, DeadlockError
+from zuspec.be.py.rt.tracer import ActivityTracer
 
 
 def _run(coro):

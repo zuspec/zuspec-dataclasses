@@ -12,7 +12,7 @@ from zuspec.ir.core.stmt import (
     StmtBreak, StmtExpr,
 )
 
-from zuspec.dataclasses.rt.ir_compiler import IRCompiler
+from zuspec.be.py.rt.ir_compiler import IRCompiler
 
 
 class _Obj:

@@ -8,10 +8,10 @@ Classes MUST be at module level so DataModelFactory's inspect.getsource() works.
 import dataclasses
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.solver.deterministic import (
+from zuspec.be.py.solver.deterministic import (
     build_from_struct, ConstraintAnalyser, PythonFunctionEmitter,
 )
-from zuspec.dataclasses.solver.deterministic.exceptions import PreconditionViolation
+from zuspec.be.py.solver.deterministic.exceptions import PreconditionViolation
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +238,7 @@ class TestIdempotency:
 class TestFastPathIntegration:
     def test_zdc_compiled_solve_is_set(self):
         """After first randomize_bound_cached(), the fast path should be cached on the class."""
-        from zuspec.dataclasses.solver._core_solve import (
+        from zuspec.be.py.solver._core_solve import (
             randomize_bound_cached,
         )
         # Ensure _zdc_struct is populated on the class (via explicit build)
@@ -248,7 +248,7 @@ class TestFastPathIntegration:
         if hasattr(DecodeRdAction, '_zdc_compiled_solve'):
             delattr(DecodeRdAction, '_zdc_compiled_solve')
         # Remove from analysis-done set so the first call triggers analysis
-        from zuspec.dataclasses.solver._core_solve import _DETERMINISTIC_ANALYSIS_DONE
+        from zuspec.be.py.solver._core_solve import _DETERMINISTIC_ANALYSIS_DONE
         _DETERMINISTIC_ANALYSIS_DONE.discard(DecodeRdAction)
 
         obj = DecodeRdAction.__new__(DecodeRdAction)

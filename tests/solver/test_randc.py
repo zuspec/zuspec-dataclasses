@@ -1,9 +1,9 @@
 """Tests for randc (random-cyclic) variable support"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable, VarKind
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.randc import RandCManager, RandCConfig
+from zuspec.be.py.solver.core.variable import Variable, VarKind
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.randc import RandCManager, RandCConfig
 
 
 def test_randc_state_initialization():

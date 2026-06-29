@@ -107,8 +107,8 @@ def test_unsatisfiable_constraints():
 def test_field_metadata_ir_flow():
     """Test that field metadata flows through IR correctly"""
     from zuspec.dataclasses.data_model_factory import DataModelFactory
-    from zuspec.dataclasses.solver.frontend.variable_extractor import VariableExtractor
-    from zuspec.dataclasses.solver.core.variable import VarKind
+    from zuspec.be.py.solver.frontend.variable_extractor import VariableExtractor
+    from zuspec.be.py.solver.core.variable import VarKind
     
     # Build IR
     factory = DataModelFactory()

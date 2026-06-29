@@ -5,8 +5,8 @@ from zuspec.ir.core.data_type import DataTypeInt, DataTypeStruct, Function
 from zuspec.ir.core.fields import Field
 from zuspec.ir.core.stmt import StmtExpr
 from zuspec.ir.core.expr import ExprBin, ExprRefField, ExprConstant, BinOp, TypeExprRefSelf
-from zuspec.dataclasses.solver.frontend import ConstraintSystemBuilder, BuildError
-from zuspec.dataclasses.solver.core import Variable, IntDomain, CompareConstraint
+from zuspec.be.py.solver.frontend import ConstraintSystemBuilder, BuildError
+from zuspec.be.py.solver.core import Variable, IntDomain, CompareConstraint
 
 
 class TestConstraintSystemBuilder:
@@ -282,7 +282,7 @@ from zuspec.ir.core.expr import ExprRefLocal
 import dataclasses as _dc
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.types import ClaimPool
-from zuspec.dataclasses.rt.resource_rt import make_resource
+from zuspec.be.py.rt.resource_rt import make_resource
 
 
 @zdc.dataclass

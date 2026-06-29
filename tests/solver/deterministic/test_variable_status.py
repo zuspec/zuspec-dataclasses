@@ -2,7 +2,7 @@
 import dataclasses
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.solver.deterministic.variable_status import (
+from zuspec.be.py.solver.deterministic.variable_status import (
     VarStatus, VarInfo, VarStatusMap, build_from_struct,
 )
 

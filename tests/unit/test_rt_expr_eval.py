@@ -1,7 +1,7 @@
 """Tests for rt/expr_eval.py — Phase 3."""
 import pytest
-from zuspec.dataclasses.rt.expr_eval import ExprEval
-from zuspec.dataclasses.rt.action_context import ActionContext
+from zuspec.be.py.rt.expr_eval import ExprEval
+from zuspec.be.py.rt.action_context import ActionContext
 from unittest.mock import MagicMock
 
 

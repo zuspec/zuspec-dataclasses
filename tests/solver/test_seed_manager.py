@@ -1,7 +1,7 @@
 """Tests for random seed management"""
 
 import pytest
-from zuspec.dataclasses.solver.engine.seed_manager import (
+from zuspec.be.py.solver.engine.seed_manager import (
     SeedManager,
     SeedState,
     PerObjectSeedManager,

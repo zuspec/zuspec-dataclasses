@@ -1,16 +1,16 @@
 """Tests for preprocessing pipeline."""
 
 import pytest
-from zuspec.dataclasses.solver.preprocessing import (
+from zuspec.be.py.solver.preprocessing import (
     ConstantFolder,
     RangeAnalyzer,
     DependencyAnalyzer,
     AlgebraicSimplifier,
     PreprocessingPipeline,
 )
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.core.constraint import Constraint
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.core.constraint import Constraint
 
 
 def test_range_analyzer_basic():
@@ -84,7 +84,7 @@ def test_dependency_analyzer_shared_variable():
 
 def test_preprocessing_pipeline_basic():
     """Test basic preprocessing pipeline."""
-    from zuspec.dataclasses.solver.core.constraint_system import ConstraintSystem
+    from zuspec.be.py.solver.core.constraint_system import ConstraintSystem
     
     system = ConstraintSystem()
     system.variables = {

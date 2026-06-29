@@ -1,8 +1,8 @@
 """Tests for Variable class"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable, VarKind, RandCState
-from zuspec.dataclasses.solver.core.domain import IntDomain
+from zuspec.be.py.solver.core.variable import Variable, VarKind, RandCState
+from zuspec.be.py.solver.core.domain import IntDomain
 
 
 class TestVariable:

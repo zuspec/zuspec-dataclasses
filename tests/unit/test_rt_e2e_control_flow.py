@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
 
 
 def _run(coro):

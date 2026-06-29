@@ -3,7 +3,7 @@ import asyncio
 import os
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt import with_tracer, VCDTracer, SignalTracer
+from zuspec.be.py.rt import with_tracer, VCDTracer, SignalTracer
 
 
 def test_vcd_tracer_implements_signal_tracer(tmp_path):

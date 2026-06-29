@@ -78,7 +78,7 @@ class TestSelectRoundRobin:
         """With round-robin, each successive call should prefer a different queue."""
         async def run():
             # Reset global counter
-            from zuspec.dataclasses.rt.select_rt import select_rt
+            from zuspec.be.py.rt.select_rt import select_rt
             if hasattr(select_rt, "_rr_counter"):
                 select_rt._rr_counter = 0
 

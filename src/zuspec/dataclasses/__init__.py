@@ -70,7 +70,7 @@ Lock strategies: :class:`QueueLock` (stall, no bypass),
 Trace / Observer
 ----------------
 After ``asyncio.run(comp.wait(...))``, access ``comp.<method>_trace`` for a
-:class:`~zuspec.dataclasses.rt.pipeline_rt.PipelineTrace` with Gantt output::
+:class:`~zuspec.be.py.rt.pipeline_rt.PipelineTrace` with Gantt output::
 
     comp.run_trace.add_observer(lambda tok, ev, **kw: ...)
     comp.run_trace.print_trace()
@@ -111,20 +111,20 @@ import zuspec.ir.core as ir
 from . import profiles
 from . import transform
 from .data_model_factory import DataModelFactory
-from .rt.edge import posedge, negedge, edge
-from .rt.gather import gather
-from .rt.scenario_runner import ScenarioRunner, run_action, run_action_sync, DeadlockError
-from .rt.coverage_model import PssCoverageModel
-from .rt.resource_rt import get_resource_fields, acquire_resources, release_resources, make_resource
-from .rt.binding_solver import BindingSolver
-from .rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
-from .rt.activity_runner import ScheduleGraph
-from .rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
-from .rt.regfile_rt import RegProcRT
-from .rt.indexed_pool_rt import IndexedPoolRT
-from .rt.memory_rt import MemoryRT
-from .rt.simulate import simulate
-from .rt.sim_domain import SimDomain
+from zuspec.be.py.rt.edge import posedge, negedge, edge
+from zuspec.be.py.rt.gather import gather
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner, run_action, run_action_sync, DeadlockError
+from zuspec.be.py.rt.coverage_model import PssCoverageModel
+from zuspec.be.py.rt.resource_rt import get_resource_fields, acquire_resources, release_resources, make_resource
+from zuspec.be.py.rt.binding_solver import BindingSolver
+from zuspec.be.py.rt.flow_obj_rt import BufferInstance, StreamInstance, StatePool
+from zuspec.be.py.rt.activity_runner import ScheduleGraph
+from zuspec.be.py.rt.indexed_regfile_rt import IndexedRegFileRT, IndexedRegFileClaim
+from zuspec.be.py.rt.regfile_rt import RegProcRT
+from zuspec.be.py.rt.indexed_pool_rt import IndexedPoolRT
+from zuspec.be.py.rt.memory_rt import MemoryRT
+from zuspec.be.py.rt.simulate import simulate
+from zuspec.be.py.rt.sim_domain import SimDomain
 # Interface protocol primitives (Phase 1/2)
 from .if_protocol import IfProtocol, call
 from .completion import Completion
@@ -132,12 +132,12 @@ from .queue_type import Queue, queue
 from .spawn import spawn, SpawnHandle
 from .select import select as iface_select
 from .simple_call import SimpleCall
-from .solver.api import randomize, randomize_with, RandomizationError
+from zuspec.be.py.solver.api import randomize, randomize_with, RandomizationError
 from .errors import (
     ZuspeccError, ZuspeccCDCError, ZuspeccWidthError,
     ZuspeccSynthError, ZuspeccConflictError,
 )
-from .coverage import (
+from zuspec.be.py.coverage import (
     Covergroup, coverpoint, cross,
     binsof, cross_bins, cross_ignore, cross_illegal
 )

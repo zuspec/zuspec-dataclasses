@@ -13,8 +13,8 @@ import asyncio
 
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
-from zuspec.dataclasses.rt.flow_constraint_store import FlowObjectConstraintStore
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.flow_constraint_store import FlowObjectConstraintStore
 
 
 def _run(coro):

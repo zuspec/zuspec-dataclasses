@@ -1,17 +1,17 @@
 """Tests for conditional constraints and ternary expressions"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.propagators.conditional import (
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.propagators.conditional import (
     ConditionalConstraint,
     TernaryExpressionPropagator,
 )
-from zuspec.dataclasses.solver.propagators.relational import (
+from zuspec.be.py.solver.propagators.relational import (
     LessThanPropagator,
     GreaterEqualPropagator,
 )
-from zuspec.dataclasses.solver.propagators.set_membership import RangeConstraintPropagator
+from zuspec.be.py.solver.propagators.set_membership import RangeConstraintPropagator
 
 
 def test_conditional_constraint_condition_true():

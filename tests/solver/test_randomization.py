@@ -1,10 +1,10 @@
 """Tests for randomized search order"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.engine.seed_manager import SeedManager
-from zuspec.dataclasses.solver.engine.randomization import (
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.engine.seed_manager import SeedManager
+from zuspec.be.py.solver.engine.randomization import (
     RandomizedVariableOrdering,
     RandomizedValueOrdering,
     MRVWithRandomTiebreaking,

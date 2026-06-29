@@ -1,44 +1,16 @@
-from __future__ import annotations
-import dataclasses as dc
-from typing import ClassVar, List, Optional, Protocol, Type, TYPE_CHECKING
+"""Compatibility shim — the runtime factory config moved to ``zuspec.be.py.model.config``.
 
-if TYPE_CHECKING:
-    from . import Event
+``Config`` (the component-factory singleton) and the ``ObjFactory`` protocol are
+object-model infrastructure (``Component.__new__`` builds instances through them),
+so they relocated with the object model into the Python backend.  Re-exported here
+so existing ``from zuspec.dataclasses.config import X`` imports keep working.
 
-from .types import Component, Timebase
+See docs/be-py-runtime-relocation-design.md (Phase 4).
+"""
+from zuspec.be.py.model import config as _src
 
-class ObjFactory(Protocol):
+for _name, _val in list(vars(_src).items()):
+    if not _name.startswith("__"):
+        globals()[_name] = _val
 
-    def mkComponent(self, cls : Type[Component], **kwargs) -> Component: ...
-    
-    def mkEvent(self, cls : Type['Event'], **kwargs) -> 'Event': ...
-
-@dc.dataclass
-class Config(object):
-    _factory_s : List[ObjFactory] = dc.field(default_factory=list)
-    _timebase_s : List[Timebase] = dc.field(default_factory=list)
-    _inst : ClassVar[Optional[Config]] = None
-
-    def __post_init__(self):
-        from .rt import ObjFactory, Timebase
-        self._factory_s.append(ObjFactory.inst())
-        self._timebase_s.append(Timebase())
-        pass
-
-    @property
-    def factory(self)-> ObjFactory:
-        assert len(self._factory_s) > 0
-        return self._factory_s[-1]
-
-    def push_factory(self, f : ObjFactory):
-        self._factory_s.append(f)
-
-    def pop_factory(self):
-        self._factory_s.pop()    
-
-    @classmethod
-    def inst(cls) -> Config:
-        if cls._inst is None:
-            cls._inst = Config()
-        return cls._inst
-
+del _name, _val, _src

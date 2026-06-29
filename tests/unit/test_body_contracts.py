@@ -8,8 +8,8 @@ import asyncio
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.decorators import ContractViolation
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
-from zuspec.dataclasses.rt.contract_checker import _get_body_contracts, check_body_contracts
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.contract_checker import _get_body_contracts, check_body_contracts
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ class TestBodyContractEnforcement:
 class TestContractCheckerWrap:
     def test_wrap_disabled_returns_plain_method(self):
         """When check_contracts=False, wrap() returns the plain bound method."""
-        from zuspec.dataclasses.rt.contract_checker import ContractChecker
+        from zuspec.be.py.rt.contract_checker import ContractChecker
 
         class _FakeAction:
             async def body(self):
@@ -238,7 +238,7 @@ class TestContractCheckerWrap:
 
     def test_wrap_enabled_returns_wrapper(self):
         """When check_contracts=True, wrap() returns a wrapper coroutine."""
-        from zuspec.dataclasses.rt.contract_checker import ContractChecker
+        from zuspec.be.py.rt.contract_checker import ContractChecker
         import inspect
 
         class _FakeComp2:

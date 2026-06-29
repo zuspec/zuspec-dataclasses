@@ -5,7 +5,7 @@ from zuspec.dataclasses import (
     dataclass, field, constraint, randomize, RandomizationError
 )
 from zuspec.dataclasses.types import Component, U
-from zuspec.dataclasses.rt.obj_factory import ObjFactory
+from zuspec.be.py.rt.obj_factory import ObjFactory
 from zuspec.dataclasses.data_model_factory import DataModelFactory
 
 
@@ -47,7 +47,7 @@ class TestRTIRAttachment:
     
     def test_extract_struct_type_with_manual_build(self):
         """Test _extract_struct_type with manually attached IR"""
-        from zuspec.dataclasses.solver.api import _extract_struct_type
+        from zuspec.be.py.solver.api import _extract_struct_type
         
         @dataclass
         class ManualStruct:
@@ -71,7 +71,7 @@ class TestRTIRAttachment:
     
     def test_extract_struct_type_lazy_build(self):
         """Test _extract_struct_type builds on demand if not attached"""
-        from zuspec.dataclasses.solver.api import _extract_struct_type
+        from zuspec.be.py.solver.api import _extract_struct_type
         
         @dataclass
         class LazyStruct:
@@ -96,8 +96,8 @@ class TestRandomizeWithIR:
     
     def test_randomize_with_manual_ir(self):
         """Test randomize() works when IR is manually attached"""
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         
         @dataclass
         class SimplePacket:
@@ -123,7 +123,7 @@ class TestRandomizeWithIR:
     
     def test_randomize_extracts_ir(self):
         """Test that randomize() can extract IR structure"""
-        from zuspec.dataclasses.solver.api import _extract_struct_type
+        from zuspec.be.py.solver.api import _extract_struct_type
         
         @dataclass
         class TestClass:

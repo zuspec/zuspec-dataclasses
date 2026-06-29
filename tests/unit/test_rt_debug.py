@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from unittest import mock
 
-from zuspec.dataclasses.rt.debug_rt import _fire_line_event
+from zuspec.be.py.rt.debug_rt import _fire_line_event
 
 
 def test_no_op_without_trace():

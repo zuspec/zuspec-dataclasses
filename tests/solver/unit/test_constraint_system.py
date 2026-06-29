@@ -1,10 +1,10 @@
 """Tests for ConstraintSystem class"""
 
 import pytest
-from zuspec.dataclasses.solver.core.constraint_system import ConstraintSystem
-from zuspec.dataclasses.solver.core.variable import Variable, VarKind
-from zuspec.dataclasses.solver.core.constraint import Constraint
-from zuspec.dataclasses.solver.core.domain import IntDomain
+from zuspec.be.py.solver.core.constraint_system import ConstraintSystem
+from zuspec.be.py.solver.core.variable import Variable, VarKind
+from zuspec.be.py.solver.core.constraint import Constraint
+from zuspec.be.py.solver.core.domain import IntDomain
 
 
 class SimpleConstraint(Constraint):

@@ -71,7 +71,7 @@ class NestedLocalCallComp(zdc.Component):
     result: zdc.u32 = zdc.field(default=0)
 
     def __post_init__(self):
-        from zuspec.dataclasses.rt.indexed_regfile_rt import IndexedRegFileRT
+        from zuspec.be.py.rt.indexed_regfile_rt import IndexedRegFileRT
         if self.gpr is None:
             self.gpr = IndexedRegFileRT(depth=32, read_ports=2, write_ports=1)
 

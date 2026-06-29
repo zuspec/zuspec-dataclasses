@@ -5,8 +5,8 @@ import dataclasses as dc
 import pytest
 
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.action_context import ActionContext
-from zuspec.dataclasses.rt.pool_resolver import PoolResolver
+from zuspec.be.py.rt.action_context import ActionContext
+from zuspec.be.py.rt.pool_resolver import PoolResolver
 
 
 @zdc.dataclass

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 
-from zuspec.dataclasses.rt.indexed_pool_rt import IndexedPoolRT
+from zuspec.be.py.rt.indexed_pool_rt import IndexedPoolRT
 from zuspec.dataclasses.decorators import indexed_pool
 
 

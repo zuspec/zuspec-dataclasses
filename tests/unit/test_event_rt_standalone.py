@@ -6,7 +6,7 @@ import sys
 import os
 
 # Direct import of EventRT module without going through package __init__
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src/zuspec/dataclasses/rt'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../zuspec-be-py/src/zuspec/be/py/rt'))
 from event_rt import EventRT
 
 

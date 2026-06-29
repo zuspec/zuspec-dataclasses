@@ -196,7 +196,7 @@ def test_sync_and_comb_together():
 def test_bitwise_not_unary():
     """ExprUnary Invert (~) produces bitwise complement masked to 64 bits."""
     from zuspec.ir.core.expr import ExprUnary, ExprConstant, UnaryOp
-    from zuspec.dataclasses.rt.executor import Executor
+    from zuspec.be.py.rt.executor import Executor
 
     class _FakeBackend:
         def signal_write(self, comp, name, value, width=32):
@@ -221,7 +221,7 @@ def test_bitwise_not_unary():
 def test_bit_slice_extraction():
     """ExprSubscript with ExprSlice extracts correct bit range."""
     from zuspec.ir.core.expr import ExprSubscript, ExprSlice, ExprConstant
-    from zuspec.dataclasses.rt.executor import Executor
+    from zuspec.be.py.rt.executor import Executor
 
     class _FakeBackend:
         def signal_write(self, comp, name, value, width=32):
@@ -253,7 +253,7 @@ def test_stmt_repeat_executes_n_times():
     """StmtRepeat executes its body exactly N times."""
     from zuspec.ir.core.stmt import StmtRepeat, StmtAugAssign
     from zuspec.ir.core.expr import ExprConstant, ExprRefLocal, AugOp
-    from zuspec.dataclasses.rt.executor import Executor
+    from zuspec.be.py.rt.executor import Executor
 
     class _FakeBackend:
         def signal_write(self, comp, name, value, width=32):
@@ -280,7 +280,7 @@ def test_stmt_assert_raises_on_false():
     import pytest
     from zuspec.ir.core.stmt import StmtAssert
     from zuspec.ir.core.expr import ExprConstant
-    from zuspec.dataclasses.rt.executor import Executor
+    from zuspec.be.py.rt.executor import Executor
 
     class _FakeBackend:
         def signal_write(self, comp, name, value, width=32): pass

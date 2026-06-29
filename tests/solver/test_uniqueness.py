@@ -1,9 +1,9 @@
 """Tests for uniqueness (AllDifferent) constraint propagators"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.propagators.uniqueness import (
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.propagators.uniqueness import (
     UniquePropagator,
     PairwiseUniquePropagator,
 )

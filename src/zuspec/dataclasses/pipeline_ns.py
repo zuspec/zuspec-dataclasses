@@ -78,7 +78,7 @@ class _StageHandle:
     """Async context manager returned by ``zdc.pipeline.stage()`` outside ``rt``.
 
     During ``rt`` execution :meth:`_PipelineNamespace.stage` returns a
-    :class:`~zuspec.dataclasses.rt.pipeline_rt.PipelineStage` instead, which
+    :class:`~zuspec.be.py.rt.pipeline_rt.PipelineStage` instead, which
     carries full cycle accounting.  This stub exists so pipeline methods can
     be imported, type-checked, and unit-tested without the rt engine running.
 
@@ -137,7 +137,7 @@ async def _auto_stall_wrap(rt, coro):
     if elapsed_fs > 0 and stage is not None and tok is not None:
         period = getattr(rt._domain, 'period', None)
         if period is not None:
-            from .rt.timebase import Timebase
+            from zuspec.be.py.rt.timebase import Timebase
             period_fs = Timebase._time_to_fs(period)
             if period_fs > 0:
                 extra = elapsed_fs // period_fs

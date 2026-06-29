@@ -1,19 +1,19 @@
 """Tests for propagation engine."""
 
 import pytest
-from zuspec.dataclasses.solver.engine import (
+from zuspec.be.py.solver.engine import (
     PropagationEngine,
     AdaptivePropagationEngine,
     WatchedLiteralEngine,
 )
-from zuspec.dataclasses.solver.propagators import (
+from zuspec.be.py.solver.propagators import (
     AddPropagator,
     EqualPropagator,
     LessThanPropagator,
     PropagationStatus,
 )
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
 
 
 def test_propagation_engine_basic():

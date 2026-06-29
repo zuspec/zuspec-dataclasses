@@ -1,16 +1,16 @@
 """Tests for foreach constraint expansion and soft constraints"""
 
 import pytest
-from zuspec.dataclasses.solver.core.variable import Variable
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.propagators.foreach import (
+from zuspec.be.py.solver.core.variable import Variable
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.propagators.foreach import (
     ForeachExpander,
     ForeachConstraintGroup,
     create_unique_array_foreach,
 )
-from zuspec.dataclasses.solver.propagators.relational import GreaterThanPropagator
-from zuspec.dataclasses.solver.propagators.uniqueness import PairwiseUniquePropagator
-from zuspec.dataclasses.solver.soft_constraints import (
+from zuspec.be.py.solver.propagators.relational import GreaterThanPropagator
+from zuspec.be.py.solver.propagators.uniqueness import PairwiseUniquePropagator
+from zuspec.be.py.solver.soft_constraints import (
     SoftConstraint,
     SoftConstraintManager,
 )

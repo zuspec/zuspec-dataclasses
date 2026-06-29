@@ -3,10 +3,10 @@ import asyncio
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.types import ClaimPool
-from zuspec.dataclasses.rt.resource_rt import make_resource
-from zuspec.dataclasses.rt.pool_resolver import PoolResolver
-from zuspec.dataclasses.rt.action_context import ActionContext
-from zuspec.dataclasses.rt.binding_solver import BindingSolver, HeadAssignment
+from zuspec.be.py.rt.resource_rt import make_resource
+from zuspec.be.py.rt.pool_resolver import PoolResolver
+from zuspec.be.py.rt.action_context import ActionContext
+from zuspec.be.py.rt.binding_solver import BindingSolver, HeadAssignment
 
 
 # ---------------------------------------------------------------------------

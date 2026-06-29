@@ -157,7 +157,7 @@ def test_ir_extraction_expr():
 def test_constraint_builder_accepts_both():
     """Test that constraint builder accepts both statement types"""
     from zuspec.dataclasses.data_model_factory import DataModelFactory
-    from zuspec.dataclasses.solver.frontend.constraint_system_builder import ConstraintSystemBuilder
+    from zuspec.be.py.solver.frontend.constraint_system_builder import ConstraintSystemBuilder
     
     # Test with assert syntax
     factory = DataModelFactory()

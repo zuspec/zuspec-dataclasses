@@ -245,7 +245,7 @@ class TestAcquire:
 class TestQueueLockRt:
     def test_reserve_and_release_sets_event(self):
         """reserve() adds event; release() signals it."""
-        from zuspec.dataclasses.rt.pipeline_locks_rt import QueueLockRt
+        from zuspec.be.py.rt.pipeline_locks_rt import QueueLockRt
 
         async def run():
             q = QueueLockRt()
@@ -261,7 +261,7 @@ class TestQueueLockRt:
 
     def test_block_returns_none(self):
         """block() always returns None (no bypass in QueueLock)."""
-        from zuspec.dataclasses.rt.pipeline_locks_rt import QueueLockRt
+        from zuspec.be.py.rt.pipeline_locks_rt import QueueLockRt
 
         async def run():
             q = QueueLockRt()
@@ -272,7 +272,7 @@ class TestQueueLockRt:
 
     def test_release_on_empty_queue_is_noop(self):
         """release() on an address with no reservations does not crash."""
-        from zuspec.dataclasses.rt.pipeline_locks_rt import QueueLockRt
+        from zuspec.be.py.rt.pipeline_locks_rt import QueueLockRt
 
         async def run():
             q = QueueLockRt()
@@ -284,7 +284,7 @@ class TestQueueLockRt:
 class TestBypassLockRt:
     def test_write_then_block_returns_value(self):
         """write() before block() → block returns immediately with the value."""
-        from zuspec.dataclasses.rt.pipeline_locks_rt import BypassLockRt
+        from zuspec.be.py.rt.pipeline_locks_rt import BypassLockRt
 
         async def run():
             b = BypassLockRt()
@@ -297,7 +297,7 @@ class TestBypassLockRt:
 
     def test_block_then_write_resolves_future(self):
         """block() before write() → future resolves when write() is called."""
-        from zuspec.dataclasses.rt.pipeline_locks_rt import BypassLockRt
+        from zuspec.be.py.rt.pipeline_locks_rt import BypassLockRt
 
         results = []
 
@@ -320,7 +320,7 @@ class TestBypassLockRt:
 
     def test_release_clears_bypass_when_no_writers(self):
         """release() removes bypass entry when writer count reaches zero."""
-        from zuspec.dataclasses.rt.pipeline_locks_rt import BypassLockRt
+        from zuspec.be.py.rt.pipeline_locks_rt import BypassLockRt
 
         async def run():
             b = BypassLockRt()
@@ -334,7 +334,7 @@ class TestBypassLockRt:
 
     def test_block_no_writer_returns_none(self):
         """block() when no writer is outstanding returns None immediately."""
-        from zuspec.dataclasses.rt.pipeline_locks_rt import BypassLockRt
+        from zuspec.be.py.rt.pipeline_locks_rt import BypassLockRt
 
         async def run():
             b = BypassLockRt()

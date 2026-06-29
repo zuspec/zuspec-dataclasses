@@ -17,9 +17,9 @@ from typing import Optional
 import pytest
 
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.action_registry import ActionRegistry
-from zuspec.dataclasses.rt.icl_table import ICLTable, ICLEntry
-from zuspec.dataclasses.rt.structural_solver import (
+from zuspec.be.py.rt.action_registry import ActionRegistry
+from zuspec.be.py.rt.icl_table import ICLTable, ICLEntry
+from zuspec.be.py.rt.structural_solver import (
     StructuralSolver,
     InferredAction,
     InferenceFeasibilityError,
@@ -133,7 +133,7 @@ class StandaloneScenario(zdc.Action[NetComp]):
 
 def run_action(action_type: type, comp_inst=None, seed: int = 42) -> object:
     """Run action_type as a scenario and return the traversed action instance."""
-    from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
+    from zuspec.be.py.rt.scenario_runner import ScenarioRunner
     if comp_inst is None:
         comp_type = _comp_of(action_type)
         comp_inst = comp_type()
@@ -142,7 +142,7 @@ def run_action(action_type: type, comp_inst=None, seed: int = 42) -> object:
 
 
 def _comp_of(action_type: type) -> type:
-    from zuspec.dataclasses.rt.pool_resolver import _action_comp_type
+    from zuspec.be.py.rt.pool_resolver import _action_comp_type
     return _action_comp_type(action_type)
 
 
@@ -228,8 +228,8 @@ class TestStructuralSolver:
         self.solver = StructuralSolver(self.icl, seed=0)
 
     def _make_ctx(self):
-        from zuspec.dataclasses.rt.action_context import ActionContext
-        from zuspec.dataclasses.rt.pool_resolver import PoolResolver
+        from zuspec.be.py.rt.action_context import ActionContext
+        from zuspec.be.py.rt.pool_resolver import PoolResolver
         return ActionContext(
             action=None,
             comp=self.comp,
@@ -253,8 +253,8 @@ class TestStructuralSolver:
         orphan_registry = ActionRegistry.build(orphan_comp)
         orphan_icl = ICLTable.build(orphan_registry)
         orphan_solver = StructuralSolver(orphan_icl, seed=0)
-        from zuspec.dataclasses.rt.action_context import ActionContext
-        from zuspec.dataclasses.rt.pool_resolver import PoolResolver
+        from zuspec.be.py.rt.action_context import ActionContext
+        from zuspec.be.py.rt.pool_resolver import PoolResolver
         ctx = ActionContext(
             action=None,
             comp=orphan_comp,
@@ -290,13 +290,13 @@ class TestStructuralInferenceEndToEnd:
         """The inferred ProducePacket sets a non-zero CRC."""
         comp = NetComp()
         # Run ConsumePacket directly and check the bound packet
-        from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
-        from zuspec.dataclasses.rt.action_registry import ActionRegistry
-        from zuspec.dataclasses.rt.icl_table import ICLTable
-        from zuspec.dataclasses.rt.structural_solver import StructuralSolver
-        from zuspec.dataclasses.rt.action_context import ActionContext
-        from zuspec.dataclasses.rt.pool_resolver import PoolResolver
-        from zuspec.dataclasses.rt.activity_runner import ActivityRunner
+        from zuspec.be.py.rt.scenario_runner import ScenarioRunner
+        from zuspec.be.py.rt.action_registry import ActionRegistry
+        from zuspec.be.py.rt.icl_table import ICLTable
+        from zuspec.be.py.rt.structural_solver import StructuralSolver
+        from zuspec.be.py.rt.action_context import ActionContext
+        from zuspec.be.py.rt.pool_resolver import PoolResolver
+        from zuspec.be.py.rt.activity_runner import ActivityRunner
 
         registry = ActionRegistry.build(comp)
         icl = ICLTable.build(registry)

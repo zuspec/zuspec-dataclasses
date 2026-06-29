@@ -1,13 +1,13 @@
 """Tests for solution generation and validation"""
 
 import pytest
-from zuspec.dataclasses.solver.solution import (
+from zuspec.be.py.solver.solution import (
     Solution, SolutionStatus, SolutionGenerator
 )
-from zuspec.dataclasses.solver.core.variable import Variable, VarKind
-from zuspec.dataclasses.solver.core.domain import IntDomain
-from zuspec.dataclasses.solver.propagators.arithmetic import AddPropagator
-from zuspec.dataclasses.solver.propagators.relational import EqualPropagator
+from zuspec.be.py.solver.core.variable import Variable, VarKind
+from zuspec.be.py.solver.core.domain import IntDomain
+from zuspec.be.py.solver.propagators.arithmetic import AddPropagator
+from zuspec.be.py.solver.propagators.relational import EqualPropagator
 
 
 def test_solution_creation():

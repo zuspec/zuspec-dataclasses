@@ -6,7 +6,7 @@ iterations and across ScenarioRunner / ExportApi instances — reuse it rather
 than rebuilding. This verifies that behaviour for the pure-Python backend.
 """
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.solver.backend.python_backend import (
+from zuspec.be.py.solver.backend.python_backend import (
     PythonSolverBackend, _class_cache,
 )
 

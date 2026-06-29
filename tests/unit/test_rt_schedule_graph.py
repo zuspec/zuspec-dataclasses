@@ -1,8 +1,8 @@
 """Tests for ScheduleGraph topological sort."""
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.activity_runner import ScheduleGraph
-from zuspec.dataclasses.rt.action_context import ActionContext
+from zuspec.be.py.rt.activity_runner import ScheduleGraph
+from zuspec.be.py.rt.action_context import ActionContext
 from unittest.mock import MagicMock
 
 from zuspec.ir.core.activity import ActivityAnonTraversal

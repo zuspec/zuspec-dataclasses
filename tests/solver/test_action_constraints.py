@@ -5,7 +5,7 @@ Classes must be at module level so inspect.getsource() can retrieve their source
 import dataclasses
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.solver.api import randomize, randomize_with, RandomizationError
+from zuspec.be.py.solver.api import randomize, randomize_with, RandomizationError
 from zuspec.dataclasses.types import ClaimPool
 
 
@@ -122,7 +122,7 @@ class TestActionConstraintIR:
     def test_ensures_constraint_collected_but_solver_skips(self):
         """@ensures should appear in IR but be excluded from solver constraints."""
         from zuspec.dataclasses.data_model_factory import DataModelFactory
-        from zuspec.dataclasses.solver.frontend.constraint_system_builder import (
+        from zuspec.be.py.solver.frontend.constraint_system_builder import (
             ConstraintSystemBuilder,
         )
         factory = DataModelFactory()
@@ -205,8 +205,8 @@ class TestActionConstraintSolver:
 
     def test_backend_caches_action_constraint_system(self):
         """Solver backend caches the constraint system for each action class."""
-        from zuspec.dataclasses.solver.backend.registry import get_backend
-        from zuspec.dataclasses.solver.backend import python_backend
+        from zuspec.be.py.solver.backend.registry import get_backend
+        from zuspec.be.py.solver.backend import python_backend
 
         active = get_backend()
 
@@ -290,7 +290,7 @@ class TestResourcePoolValueConstraint:
 
     def test_pool_value_cache_invalidated_on_change(self):
         """Changing pool slot values between calls must produce updated results."""
-        from zuspec.dataclasses.solver._core_solve import (
+        from zuspec.be.py.solver._core_solve import (
             _USED_BOUND_PATHS, _BOUND_ASSIGN_CACHE, _USED_POOL_VALUES,
         )
         # Clear any stale cache entries for this class

@@ -14,7 +14,7 @@ can retrieve their source when the constraint compiler processes them.
 import dataclasses
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.solver.api import randomize, RandomizationError
+from zuspec.be.py.solver.api import randomize, RandomizationError
 
 
 # ---------------------------------------------------------------------------
@@ -449,17 +449,17 @@ class TestSextPropagator:
     """Direct unit tests for the SextPropagator."""
 
     def _make_vars(self, result_domain, value_domain, width=32):
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain(result_domain, width=width, signed=True))
         value = Variable("value", IntDomain(value_domain, width=width, signed=False))
         return result, value
 
     def test_forward_positive(self):
         """sext(7, 4) → 7 (positive, no sign flip)."""
-        from zuspec.dataclasses.solver.propagators.functions import SextPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import SextPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(-8, 7)], width=32, signed=True))
         value = Variable("value", IntDomain([(7, 7)], width=32, signed=False))
         prop = SextPropagator("result", "value", bits=4)
@@ -469,9 +469,9 @@ class TestSextPropagator:
 
     def test_forward_negative(self):
         """sext(15, 4) → -1 (all-ones 4-bit sign-extends to -1)."""
-        from zuspec.dataclasses.solver.propagators.functions import SextPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import SextPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(-8, 7)], width=32, signed=True))
         value = Variable("value", IntDomain([(15, 15)], width=32, signed=False))
         prop = SextPropagator("result", "value", bits=4)
@@ -481,9 +481,9 @@ class TestSextPropagator:
 
     def test_backward_constrain_source(self):
         """Backward: result==-1 with bits=4 → value must be 15."""
-        from zuspec.dataclasses.solver.propagators.functions import SextPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import SextPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(-1, -1)], width=32, signed=True))
         value = Variable("value", IntDomain([(0, 15)], width=32, signed=False))
         prop = SextPropagator("result", "value", bits=4)
@@ -497,9 +497,9 @@ class TestCbitPropagator:
 
     def test_forward_non_zero(self):
         """cbit(inner=5) → 1."""
-        from zuspec.dataclasses.solver.propagators.functions import CbitPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import CbitPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(0, 1)], width=1, signed=False))
         inner = Variable("inner", IntDomain([(5, 5)], width=32, signed=False))
         prop = CbitPropagator("result", "inner")
@@ -509,9 +509,9 @@ class TestCbitPropagator:
 
     def test_forward_zero(self):
         """cbit(inner=0) → 0."""
-        from zuspec.dataclasses.solver.propagators.functions import CbitPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import CbitPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(0, 1)], width=1, signed=False))
         inner = Variable("inner", IntDomain([(0, 0)], width=32, signed=False))
         prop = CbitPropagator("result", "inner")
@@ -521,9 +521,9 @@ class TestCbitPropagator:
 
     def test_backward_result_one_excludes_zero(self):
         """Backward: result=1 → inner domain must exclude 0."""
-        from zuspec.dataclasses.solver.propagators.functions import CbitPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import CbitPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(1, 1)], width=1, signed=False))
         inner = Variable("inner", IntDomain([(0, 10)], width=32, signed=False))
         prop = CbitPropagator("result", "inner")
@@ -536,9 +536,9 @@ class TestSignedViewPropagator:
 
     def test_forward_unsigned_to_signed(self):
         """Forward: inner=0xFFFFFFFF (unsigned) → result=-1 (signed 32-bit)."""
-        from zuspec.dataclasses.solver.propagators.functions import SignedViewPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import SignedViewPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(-2**31, 2**31 - 1)], width=32, signed=True))
         inner = Variable("inner", IntDomain([(0xFFFF_FFFF, 0xFFFF_FFFF)], width=32, signed=False))
         prop = SignedViewPropagator("result", "inner", width=32)
@@ -548,9 +548,9 @@ class TestSignedViewPropagator:
 
     def test_forward_positive_unchanged(self):
         """Forward: inner=42 → result=42 (no sign flip needed)."""
-        from zuspec.dataclasses.solver.propagators.functions import SignedViewPropagator
-        from zuspec.dataclasses.solver.core.variable import Variable
-        from zuspec.dataclasses.solver.core.domain import IntDomain
+        from zuspec.be.py.solver.propagators.functions import SignedViewPropagator
+        from zuspec.be.py.solver.core.variable import Variable
+        from zuspec.be.py.solver.core.domain import IntDomain
         result = Variable("result", IntDomain([(-2**31, 2**31 - 1)], width=32, signed=True))
         inner = Variable("inner", IntDomain([(42, 42)], width=32, signed=False))
         prop = SignedViewPropagator("result", "inner", width=32)

@@ -14,7 +14,7 @@ import asyncio
 
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ class TestForwardConstraintPropagation:
     def test_propagator_substitute_ast(self):
         """Unit test for ForwardConstraintPropagator.substitute() directly."""
         import ast
-        from zuspec.dataclasses.rt.forward_constraint_propagator import ForwardConstraintPropagator
+        from zuspec.be.py.rt.forward_constraint_propagator import ForwardConstraintPropagator
 
         prop = ForwardConstraintPropagator()
         prop._values["a"] = {"out_val": 42}
@@ -223,7 +223,7 @@ class TestForwardConstraintPropagation:
     def test_propagator_no_values_returns_original(self):
         """substitute() returns original list when no values are recorded."""
         import ast
-        from zuspec.dataclasses.rt.forward_constraint_propagator import ForwardConstraintPropagator
+        from zuspec.be.py.rt.forward_constraint_propagator import ForwardConstraintPropagator
 
         prop = ForwardConstraintPropagator()
         stmts = ast.parse("assert x == 1").body

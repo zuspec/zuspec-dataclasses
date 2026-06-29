@@ -28,8 +28,8 @@ from typing import Callable
 import pytest
 import zuspec.dataclasses as zdc
 from zuspec.dataclasses.types import ClaimPool
-from zuspec.dataclasses.rt.resource_rt import make_resource
-from zuspec.dataclasses.rt.scenario_runner import ScenarioRunner
+from zuspec.be.py.rt.resource_rt import make_resource
+from zuspec.be.py.rt.scenario_runner import ScenarioRunner
 
 
 # ---------------------------------------------------------------------------

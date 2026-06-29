@@ -1,7 +1,7 @@
 """Tests for Domain classes"""
 
 import pytest
-from zuspec.dataclasses.solver.core.domain import IntDomain, EnumDomain, BitVectorDomain
+from zuspec.be.py.solver.core.domain import IntDomain, EnumDomain, BitVectorDomain
 
 
 class TestIntDomain:

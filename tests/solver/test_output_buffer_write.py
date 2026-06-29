@@ -8,7 +8,7 @@ Classes must be at module level for inspect.getsource() to work.
 import dataclasses
 import pytest
 import zuspec.dataclasses as zdc
-from zuspec.dataclasses.solver.api import randomize, RandomizationError
+from zuspec.be.py.solver.api import randomize, RandomizationError
 
 
 # ---------------------------------------------------------------------------

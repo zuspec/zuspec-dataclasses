@@ -1,7 +1,7 @@
 """Tests for EvalExpr IR nodes, EvalExprVisitor, ConstFold, and collect_vars."""
 import pytest
 from zuspec.ir.core.expr import BinOp, UnaryOp
-from zuspec.dataclasses.solver.deterministic.eval_expr import (
+from zuspec.be.py.solver.deterministic.eval_expr import (
     ExprConst, ExprVar, ExprBinOp, ExprUnary, ExprCbit,
     ExprSigned, ExprSext, ExprIf, ExprLookup, ExprMask,
     EvalExprVisitor, ConstFold, collect_vars,

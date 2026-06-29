@@ -42,7 +42,7 @@ def test_pool_with_default_factory():
 
 def test_pool_on_component_field():
     """pool() can be declared on a Component field."""
-    from zuspec.dataclasses.rt.resource_rt import make_resource
+    from zuspec.be.py.rt.resource_rt import make_resource
 
     @zdc.dataclass
     class Chan(zdc.Resource):
