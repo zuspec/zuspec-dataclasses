@@ -2,12 +2,10 @@
 
 import asyncio
 import pytest
-import sys
-import os
 
-# Direct import of EventRT module without going through package __init__
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../zuspec-be-py/src/zuspec/be/py/rt'))
-from event_rt import EventRT
+# EventRT now lives in the be-py backend; rt/__init__ is lazy (PEP 562) so this
+# import does not trigger heavy package fan-out.
+from zuspec.be.py.rt.event_rt import EventRT
 
 
 def test_event_rt_basic():
