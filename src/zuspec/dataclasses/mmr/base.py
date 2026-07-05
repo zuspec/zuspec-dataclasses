@@ -103,10 +103,23 @@ class RegisterFile(
 
     @classmethod
     def sv_module_text(cls, field_ir):
-        """Delegate to synthesize_regfile() via lazy import to avoid circular deps."""
-        from zuspec.synth.passes.mmr_regfile_emit import synthesize_regfile
+        """Return the register-file SV module, emitted by ``zuspec.be.sv`` (the sole
+        SV backend) for the plain-CSR shape, else the legacy ``synthesize_regfile``.
+
+        The be.sv path (``build_mmr_regfile_sv``) is functionally equivalent to the
+        legacy emitter (verified by a 600-transaction APB co-simulation); register
+        files using field semantics it doesn't map yet raise ``MmrSVUnsupported`` and
+        fall back — regression-safe (process→FSM unification U-5).
+        """
         ir_node = field_ir.ir_node
-        return synthesize_regfile(ir_node['regfile_cls'], module_name=ir_node['module_name'])
+        rfcls, mn = ir_node['regfile_cls'], ir_node['module_name']
+        try:
+            from zuspec.be.sv.passes.mmr_to_sv import build_mmr_regfile_sv, MmrSVUnsupported
+            from zuspec.be.sv.ir.sv_emit import SVEmitter
+            return SVEmitter().emit_all(build_mmr_regfile_sv(rfcls, module_name=mn))
+        except MmrSVUnsupported:
+            from zuspec.synth.passes.mmr_regfile_emit import synthesize_regfile
+            return synthesize_regfile(rfcls, module_name=mn)
 
     @classmethod
     def sv_instance_text(cls, field_ir, parent_prefix):

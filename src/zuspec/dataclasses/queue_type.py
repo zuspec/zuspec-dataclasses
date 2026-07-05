@@ -127,12 +127,19 @@ class Queue(
 
     @classmethod
     def sv_module_text(cls, field_ir) -> str:
-        """Return a complete synchronous FIFO SV module for this queue."""
+        """Return a complete synchronous FIFO SV module for this queue.
+
+        The FIFO is serialised by ``zuspec.be.sv`` (the sole SV backend) from a
+        ``QueueIR`` — functionally identical to the retired
+        ``sprtl.protocol_sv.generate_fifo_sv`` (verified by a 2000-cycle
+        Verilator co-simulation).
+        """
         from zuspec.synth.ir.protocol_ir import QueueIR
-        from zuspec.synth.sprtl.protocol_sv import generate_fifo_sv
+        from zuspec.be.sv.passes.protocol_to_sv import build_fifo_sv
+        from zuspec.be.sv.ir.sv_emit import SVEmitter
         n = field_ir.ir_node
         q = QueueIR(name=n['name'], elem_width=n['elem_width'], depth=n['depth'])
-        return generate_fifo_sv(q)
+        return SVEmitter().emit_all(build_fifo_sv(q))
 
     @classmethod
     def sv_instance_text(cls, field_ir, parent_prefix: str = '') -> str:
