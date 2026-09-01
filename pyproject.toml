@@ -2,6 +2,11 @@
 [project]
 name = "zuspec-dataclasses"
 dynamic = ["version"]
+# Previously undeclared, which means "any Python at all" to a resolver -- pip
+# would happily install this on 3.8 and fail at import. 3.10 is the floor the
+# rest of the estate declares and the oldest interpreter this source compiles
+# under.
+requires-python = ">=3.10"
 dependencies = [
     "networkx>=3.0",
     "zuspec-ir-core",
