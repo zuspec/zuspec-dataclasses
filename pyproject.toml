@@ -1,7 +1,7 @@
 
 [project]
 name = "zuspec-dataclasses"
-version = "0.0.1"
+dynamic = ["version"]
 dependencies = [
     "networkx>=3.0",
     "zuspec-ir-core",
@@ -44,3 +44,4 @@ zuspec-dataclasses = "zuspec.dataclasses.skills:skills"
     "SKILL.md",
     "resources/*.md",
 ]
+
