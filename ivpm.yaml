@@ -10,6 +10,8 @@ package:
         src: pypi
       - name: pytest-asyncio
         src: pypi
+      - name: uvloop
+        src: pypi
       - name: flake8
         src: pypi
       - name: sphinx
