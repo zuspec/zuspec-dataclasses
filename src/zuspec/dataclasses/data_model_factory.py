@@ -845,7 +845,9 @@ class DataModelFactory(object):
 
         # Extract class-level ClockDomain / ResetDomain declarations.
         # These are non-field class attributes (not annotated dataclass fields).
-        clock_domain, reset_domain = self._extract_component_domains(t)
+        clock, reset = self._extract_component_domains(t)
+        clock_domain = clock[1] if clock else None
+        reset_domain = reset[1] if reset else None
 
         dm = DataTypeComponent(
             super=super_dt,
@@ -862,15 +864,19 @@ class DataModelFactory(object):
             clock_domain=clock_domain,
             reset_domain=reset_domain,
         )
+        # The same domains as the domain IR (domain_ir.py).
+        from .domain_ir import add_domains
+        add_domains(dm, self._context.type_m, clock, reset)
         return dm
 
     def _extract_component_domains(self, t: Type):
         """Scan *t*'s MRO for class-level ClockDomain / ResetDomain attributes.
 
-        Returns ``(clock_domain, reset_domain)`` where each is the first
-        concrete domain object found walking up the MRO (most-derived wins),
-        or ``None`` if no domain is declared on this component or any ancestor
-        up to (but not including) :class:`~zuspec.dataclasses.types.Component`.
+        Returns ``(clock, reset)`` where each is ``(attribute name, domain)``
+        for the first concrete domain object found walking up the MRO
+        (most-derived wins), or ``None`` if no domain is declared on this
+        component or any ancestor up to (but not including)
+        :class:`~zuspec.dataclasses.types.Component`.
 
         The search deliberately stops at ``Component`` so that framework-level
         base classes do not accidentally inject domains into user types.
@@ -892,9 +898,9 @@ class DataModelFactory(object):
                         continue
 
                 if clock_domain is None and isinstance(attr_val, ClockDomain):
-                    clock_domain = attr_val
+                    clock_domain = (attr_name, attr_val)
                 if reset_domain is None and isinstance(attr_val, ResetDomain):
-                    reset_domain = attr_val
+                    reset_domain = (attr_name, attr_val)
 
             if clock_domain is not None and reset_domain is not None:
                 break
